@@ -23,3 +23,15 @@ def test_dry_run_prints_commands_and_touches_no_network(tmp_path, capsys, monkey
     assert "show cdp neighbors GigabitEthernet3/0/20 detail" in out
     # Excluded data-quality rows are visibly excluded:
     assert "EXCLUDED" in out
+
+
+def test_malformed_config_yields_error_message_not_traceback(tmp_path, capsys):
+    csv = tmp_path / "top20.csv"
+    shutil.copy(FIXTURES / "sample_top20.csv", csv)
+    bad_config = tmp_path / "config.yaml"
+    bad_config.write_text("thresholds: [unclosed\n  - :::")
+
+    rc = main(["run", str(csv), "--dry-run", "--config", str(bad_config)])
+
+    assert rc == 2
+    assert "could not load configuration" in capsys.readouterr().err
