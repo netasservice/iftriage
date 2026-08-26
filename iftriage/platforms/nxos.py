@@ -24,61 +24,61 @@ _COUNTER_COLUMNS = {
 
 def _parse_show_interface(raw: str) -> dict:
     result: dict = {}
-    m = re.search(r"^(\S+) is (\S+)", raw, re.MULTILINE)
-    if m:
-        result["link_status"] = m.group(2).strip(" ,").lower()
-    m = re.search(r"admin state is (\S+)", raw)
-    if m:
-        result["protocol_status"] = m.group(1).strip(",").lower()
-    m = re.search(r"(full|half|auto)-duplex,\s*([^,\n]+)", raw, re.IGNORECASE)
-    if m:
-        result["duplex"] = m.group(1).lower()
-        result["speed"] = m.group(2).strip()
-    m = re.search(r"^\s*(\d+)\s+input packets", raw, re.MULTILINE)
-    if m:
-        result["input_packets"] = int(m.group(1))
-    m = re.search(r"^\s*(\d+)\s+output packets", raw, re.MULTILINE)
-    if m:
-        result["output_packets"] = int(m.group(1))
-    m = re.search(r"(\d+)\s+CRC", raw)
-    if m:
-        result["crc_errors"] = int(m.group(1))
-    m = re.search(r"(\d+)\s+input error", raw)
-    if m:
-        result["input_errors"] = int(m.group(1))
-    m = re.search(r"(\d+)\s+input discard", raw)
-    if m:
-        result["discards_in"] = int(m.group(1))
-    m = re.search(r"(\d+)\s+output discard", raw)
-    if m:
-        result["discards_out"] = int(m.group(1))
-    m = re.search(r"(\d+)\s+late collision", raw)
-    if m:
-        result["late_collisions"] = int(m.group(1))
+    match = re.search(r"^(\S+) is (\S+)", raw, re.MULTILINE)
+    if match:
+        result["link_status"] = match.group(2).strip(" ,").lower()
+    match = re.search(r"admin state is (\S+)", raw)
+    if match:
+        result["protocol_status"] = match.group(1).strip(",").lower()
+    match = re.search(r"(full|half|auto)-duplex,\s*([^,\n]+)", raw, re.IGNORECASE)
+    if match:
+        result["duplex"] = match.group(1).lower()
+        result["speed"] = match.group(2).strip()
+    match = re.search(r"^\s*(\d+)\s+input packets", raw, re.MULTILINE)
+    if match:
+        result["input_packets"] = int(match.group(1))
+    match = re.search(r"^\s*(\d+)\s+output packets", raw, re.MULTILINE)
+    if match:
+        result["output_packets"] = int(match.group(1))
+    match = re.search(r"(\d+)\s+CRC", raw)
+    if match:
+        result["crc_errors"] = int(match.group(1))
+    match = re.search(r"(\d+)\s+input error", raw)
+    if match:
+        result["input_errors"] = int(match.group(1))
+    match = re.search(r"(\d+)\s+input discard", raw)
+    if match:
+        result["discards_in"] = int(match.group(1))
+    match = re.search(r"(\d+)\s+output discard", raw)
+    if match:
+        result["discards_out"] = int(match.group(1))
+    match = re.search(r"(\d+)\s+late collision", raw)
+    if match:
+        result["late_collisions"] = int(match.group(1))
     return result
 
 
 def _parse_transceiver_details(raw: str) -> dict:
     result: dict = {}
-    m = re.search(r"Tx Power\s+(-?[\d.]+)\s+dBm", raw)
-    if m:
-        result["dom_tx_power_dbm"] = float(m.group(1))
-    m = re.search(r"Rx Power\s+(-?[\d.]+)\s+dBm", raw)
-    if m:
-        result["dom_rx_power_dbm"] = float(m.group(1))
+    match = re.search(r"Tx Power\s+(-?[\d.]+)\s+dBm", raw)
+    if match:
+        result["dom_tx_power_dbm"] = float(match.group(1))
+    match = re.search(r"Rx Power\s+(-?[\d.]+)\s+dBm", raw)
+    if match:
+        result["dom_rx_power_dbm"] = float(match.group(1))
     return result
 
 
 def _parse_version(raw: str) -> dict:
     result: dict = {}
-    m = re.search(r"NXOS: version\s+(\S+)", raw) or re.search(
+    match = re.search(r"NXOS: version\s+(\S+)", raw) or re.search(
         r"system:\s+version\s+(\S+)", raw
     )
-    if m:
-        result["os_version"] = m.group(1)
-    m = re.search(r"cisco\s+(Nexus\S*(?:\s+\S+)?)\s+[Cc]hassis", raw)
-    if m:
-        result["model"] = m.group(1)
+    if match:
+        result["os_version"] = match.group(1)
+    match = re.search(r"cisco\s+(Nexus\S*(?:\s+\S+)?)\s+[Cc]hassis", raw)
+    if match:
+        result["model"] = match.group(1)
     return result
 
 

@@ -46,9 +46,9 @@ def ingest_csv(
 ) -> tuple[list[InterfaceCase], list[DataQualityFinding]]:
     path = Path(path)
     df = pd.read_csv(path, dtype=str, keep_default_na=False)
-    df.columns = [c.strip() for c in df.columns]
+    df.columns = [column.strip() for column in df.columns]
 
-    missing = [c for c in EXPECTED_COLUMNS if c not in df.columns]
+    missing = [column for column in EXPECTED_COLUMNS if column not in df.columns]
     if missing:
         raise IngestError(
             f"CSV is missing expected columns: {missing}. Found: {list(df.columns)}"
@@ -88,7 +88,7 @@ def _data_quality_checks(cases: list[InterfaceCase]) -> list[DataQualityFinding]
         key = (case.counter, case.prev_count, case.count)
         by_values.setdefault(key, []).append(case)
     for (counter, prev, count), group in by_values.items():
-        switches = {c.switch for c in group}
+        switches = {row.switch for row in group}
         if len(switches) > 1:
             for case in group:
                 case.dq_flags.append("cross_device_identical")
@@ -103,7 +103,7 @@ def _data_quality_checks(cases: list[InterfaceCase]) -> list[DataQualityFinding]
                         "Physically near-impossible — indicates duplicated "
                         "indexing/collection at the source. Excluded from analysis."
                     ),
-                    rows=[c.row_index for c in group],
+                    rows=[row.row_index for row in group],
                 )
             )
 
@@ -140,14 +140,14 @@ def _data_quality_checks(cases: list[InterfaceCase]) -> list[DataQualityFinding]
                     detail=(
                         f"{switch} {interface} {counter} listed "
                         f"{len(group)} times with values "
-                        f"{[(c.prev_count, c.count) for c in group]}."
+                        f"{[(row.prev_count, row.count) for row in group]}."
                     ),
-                    rows=[c.row_index for c in group],
+                    rows=[row.row_index for row in group],
                 )
             )
 
     # 4. Misaligned _time windows (they never align — always note it).
-    times = sorted({c.poll_time for c in cases if c.poll_time})
+    times = sorted({row.poll_time for row in cases if row.poll_time})
     if len(times) > 1:
         findings.append(
             DataQualityFinding(

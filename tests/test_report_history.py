@@ -17,13 +17,13 @@ from iftriage.report import build_summary, render_report
 def _results():
     cases, findings = ingest_csv(FIXTURES / "sample_top20.csv")
     results = []
-    for i, case in enumerate(cases):
+    for index, case in enumerate(cases):
         result = CaseResult(case=case)
         if case.excluded:
             result.verdict = Verdict(
                 VerdictCategory.IGNORE, "IGNORE — data-quality artifact."
             )
-        elif i % 2:
+        elif index % 2:
             result.verdict = Verdict(
                 VerdictCategory.PHYSICAL_MEDIA, "PHYSICAL_MEDIA — test reason."
             )
