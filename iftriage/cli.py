@@ -116,7 +116,11 @@ def _dry_run(cases, config, history) -> int:
 
 
 def _cmd_run(args) -> int:
-    config = load_config(args.config)
+    try:
+        config = load_config(args.config)
+    except Exception as exc:  # malformed YAML must not surface as a traceback
+        print(f"error: could not load configuration: {exc}", file=sys.stderr)
+        return 2
     if args.workers:
         config.connection.workers = args.workers
     if args.db:
@@ -153,54 +157,57 @@ def _cmd_run(args) -> int:
         )
 
     history = History(config.db_path)
-    history.archive_ingest(args.csv, Path(args.csv).read_text(), cases)
-    run_id = history.start_run(args.csv, repoll_minutes)
-
-    credentials = _credentials_from_env_or_prompt()
-    stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    audit = AuditLog(output_dir / f"iftriage_audit_{stamp}.log")
-    print(f"Audit log: {audit.path}")
-
     try:
-        print(
-            f"Collecting from "
-            f"{len({case.mgmt_ip for case in cases if not case.excluded})} "
-            f"device(s), {config.connection.workers} workers max ..."
-        )
-        results = collect(cases, config, credentials, audit, history)
+        history.archive_ingest(args.csv, Path(args.csv).read_text(), cases)
+        run_id = history.start_run(args.csv, repoll_minutes)
 
-        if repoll_minutes:
+        credentials = _credentials_from_env_or_prompt()
+        stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        audit = AuditLog(output_dir / f"iftriage_audit_{stamp}.log")
+        print(f"Audit log: {audit.path}")
+
+        try:
             print(
-                f"Waiting {repoll_minutes:g} min before re-poll "
-                "(answers: is it still incrementing NOW?) ..."
+                f"Collecting from "
+                f"{len({case.mgmt_ip for case in cases if not case.excluded})} "
+                f"device(s), {config.connection.workers} workers max ..."
             )
-            time.sleep(repoll_minutes * 60)
-            repoll_pass(results, config, credentials, audit, history, repoll_minutes)
-    except RunAborted as exc:
-        print(f"\nRUN ABORTED: {exc}", file=sys.stderr)
-        history.finish_run(run_id, {"aborted": str(exc)})
+            results = collect(cases, config, credentials, audit, history)
+
+            if repoll_minutes:
+                print(
+                    f"Waiting {repoll_minutes:g} min before re-poll "
+                    "(answers: is it still incrementing NOW?) ..."
+                )
+                time.sleep(repoll_minutes * 60)
+                repoll_pass(
+                    results, config, credentials, audit, history, repoll_minutes
+                )
+        except RunAborted as exc:
+            print(f"\nRUN ABORTED: {exc}", file=sys.stderr)
+            history.finish_run(run_id, {"aborted": str(exc)})
+            return 3
+
+        for result in results:
+            result.verdict = evaluate_case(
+                case=result.case,
+                stats=result.stats,
+                repoll_stats=result.repoll_stats,
+                repoll_minutes=result.repoll_minutes,
+                thresholds=config.thresholds,
+                collection_error=result.collection_error,
+                parse_errors=result.parse_errors,
+            )
+            result.recurrence = history.recurrence_count(
+                result.case.switch, result.case.interface
+            )
+        mark_portchannel_duplicates(results)
+
+        history.save_results(run_id, results)
+        summary = build_summary(results)
+        history.finish_run(run_id, summary)
+    finally:
         history.close()
-        return 3
-
-    for result in results:
-        result.verdict = evaluate_case(
-            case=result.case,
-            stats=result.stats,
-            repoll_stats=result.repoll_stats,
-            repoll_minutes=result.repoll_minutes,
-            thresholds=config.thresholds,
-            collection_error=result.collection_error,
-            parse_errors=result.parse_errors,
-        )
-        result.recurrence = history.recurrence_count(
-            result.case.switch, result.case.interface
-        )
-    mark_portchannel_duplicates(results)
-
-    history.save_results(run_id, results)
-    summary = build_summary(results)
-    history.finish_run(run_id, summary)
-    history.close()
 
     meta = {
         "csv_file": args.csv,
