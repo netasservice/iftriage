@@ -163,7 +163,8 @@ def _cmd_run(args) -> int:
 
     try:
         print(
-            f"Collecting from {len({c.mgmt_ip for c in cases if not c.excluded})} "
+            f"Collecting from "
+            f"{len({case.mgmt_ip for case in cases if not case.excluded})} "
             f"device(s), {config.connection.workers} workers max ..."
         )
         results = collect(cases, config, credentials, audit, history)

@@ -121,7 +121,9 @@ def expand_interface(platform: Platform, name: str) -> str:
 
     # Generic: unique canonical name starting with the given prefix
     # (handles longer abbreviations like 'Gig', 'Ether', 'Hun').
-    candidates = [c for c in _CANONICAL[platform] if c.lower().startswith(prefix_lower)]
+    candidates = [
+        name for name in _CANONICAL[platform] if name.lower().startswith(prefix_lower)
+    ]
     if len(candidates) == 1:
         return f"{candidates[0]}{number}"
 

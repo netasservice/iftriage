@@ -24,34 +24,34 @@ _COUNTER_COLUMNS = {
 
 def _parse_show_interfaces(raw: str) -> dict:
     result: dict = {}
-    m = re.search(r"^(\S+) is (.+?), line protocol is (\S+)", raw, re.MULTILINE)
-    if m:
-        admin = m.group(2).strip().lower()
+    match = re.search(r"^(\S+) is (.+?), line protocol is (\S+)", raw, re.MULTILINE)
+    if match:
+        admin = match.group(2).strip().lower()
         result["link_status"] = "up" if admin == "up" else admin
-        result["protocol_status"] = m.group(3).strip().lower()
-    m = re.search(r"(Full|Half|Auto)-duplex,\s*([^,\n]+)", raw)
-    if m:
-        result["duplex"] = m.group(1).lower()
-        result["speed"] = m.group(2).strip()
-    m = re.search(r"(\d+) packets input", raw)
-    if m:
-        result["input_packets"] = int(m.group(1))
-    m = re.search(r"(\d+) packets output", raw)
-    if m:
-        result["output_packets"] = int(m.group(1))
-    m = re.search(r"(\d+) input errors, (\d+) CRC", raw)
-    if m:
-        result["input_errors"] = int(m.group(1))
-        result["crc_errors"] = int(m.group(2))
-    m = re.search(r"(\d+) input discards", raw)
-    if m:
-        result["discards_in"] = int(m.group(1))
-    m = re.search(r"(\d+) output discards", raw)
-    if m:
-        result["discards_out"] = int(m.group(1))
-    m = re.search(r"(\d+) late collision", raw)
-    if m:
-        result["late_collisions"] = int(m.group(1))
+        result["protocol_status"] = match.group(3).strip().lower()
+    match = re.search(r"(Full|Half|Auto)-duplex,\s*([^,\n]+)", raw)
+    if match:
+        result["duplex"] = match.group(1).lower()
+        result["speed"] = match.group(2).strip()
+    match = re.search(r"(\d+) packets input", raw)
+    if match:
+        result["input_packets"] = int(match.group(1))
+    match = re.search(r"(\d+) packets output", raw)
+    if match:
+        result["output_packets"] = int(match.group(1))
+    match = re.search(r"(\d+) input errors, (\d+) CRC", raw)
+    if match:
+        result["input_errors"] = int(match.group(1))
+        result["crc_errors"] = int(match.group(2))
+    match = re.search(r"(\d+) input discards", raw)
+    if match:
+        result["discards_in"] = int(match.group(1))
+    match = re.search(r"(\d+) output discards", raw)
+    if match:
+        result["discards_out"] = int(match.group(1))
+    match = re.search(r"(\d+) late collision", raw)
+    if match:
+        result["late_collisions"] = int(match.group(1))
     return result
 
 
@@ -72,12 +72,12 @@ def _parse_transceiver(raw: str, canonical: str) -> dict:
 
 def _parse_version(raw: str) -> dict:
     result: dict = {}
-    m = re.search(r"Software image version:\s+(\S+)", raw)
-    if m:
-        result["os_version"] = m.group(1)
-    m = re.search(r"^Arista\s+(\S+)", raw, re.MULTILINE)
-    if m:
-        result["model"] = m.group(1)
+    match = re.search(r"Software image version:\s+(\S+)", raw)
+    if match:
+        result["os_version"] = match.group(1)
+    match = re.search(r"^Arista\s+(\S+)", raw, re.MULTILINE)
+    if match:
+        result["model"] = match.group(1)
     return result
 
 

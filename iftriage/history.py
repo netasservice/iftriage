@@ -89,20 +89,20 @@ class History:
                 [
                     (
                         ingest_id,
-                        c.row_index,
-                        c.poll_time,
-                        c.switch,
-                        c.mgmt_ip,
-                        c.interface,
-                        c.description,
-                        c.status,
-                        c.protocol,
-                        c.counter,
-                        c.prev_count,
-                        c.count,
-                        c.change,
+                        case.row_index,
+                        case.poll_time,
+                        case.switch,
+                        case.mgmt_ip,
+                        case.interface,
+                        case.description,
+                        case.status,
+                        case.protocol,
+                        case.counter,
+                        case.prev_count,
+                        case.count,
+                        case.change,
                     )
-                    for c in cases
+                    for case in cases
                 ],
             )
             self._conn.commit()
@@ -130,20 +130,20 @@ class History:
                 [
                     (
                         run_id,
-                        r.case.switch,
-                        r.case.mgmt_ip,
-                        r.case.interface,
-                        r.case.counter,
-                        r.platform.value if r.platform else None,
-                        r.verdict.category.value if r.verdict else None,
-                        r.verdict.reason if r.verdict else None,
-                        _stats_json(r.stats),
-                        _stats_json(r.repoll_stats),
-                        json.dumps(r.raw_outputs),
-                        r.collection_error,
-                        json.dumps(r.parse_errors),
+                        result.case.switch,
+                        result.case.mgmt_ip,
+                        result.case.interface,
+                        result.case.counter,
+                        result.platform.value if result.platform else None,
+                        result.verdict.category.value if result.verdict else None,
+                        result.verdict.reason if result.verdict else None,
+                        _stats_json(result.stats),
+                        _stats_json(result.repoll_stats),
+                        json.dumps(result.raw_outputs),
+                        result.collection_error,
+                        json.dumps(result.parse_errors),
                     )
-                    for r in results
+                    for result in results
                 ],
             )
             self._conn.commit()

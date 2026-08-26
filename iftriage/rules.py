@@ -105,13 +105,18 @@ def _repoll_delta(
     """(counter_delta, packet_delta) between the two samples, or None."""
     if repoll is None:
         return None
-    a, b = getattr(stats, field), getattr(repoll, field)
-    pa, pb = stats.input_packets, repoll.input_packets
-    if a is None or b is None or pa is None or pb is None:
+    first_value, second_value = getattr(stats, field), getattr(repoll, field)
+    first_packets, second_packets = stats.input_packets, repoll.input_packets
+    if (
+        first_value is None
+        or second_value is None
+        or first_packets is None
+        or second_packets is None
+    ):
         return None
-    if b < a or pb < pa:  # counter reset between samples
-        return None
-    return (b - a, pb - pa)
+    if second_value < first_value or second_packets < first_packets:
+        return None  # counter reset between samples
+    return (second_value - first_value, second_packets - first_packets)
 
 
 def evaluate_case(
@@ -149,7 +154,11 @@ def evaluate_case(
             "error counter; a 24h increase is normal operation. No action.",
         )
 
-    missing = [f for f in _REQUIRED_FIELDS[cls] if getattr(stats, f) is None]
+    missing = [
+        field_name
+        for field_name in _REQUIRED_FIELDS[cls]
+        if getattr(stats, field_name) is None
+    ]
     if missing:
         return Verdict(
             VerdictCategory.PARSE_ERROR,

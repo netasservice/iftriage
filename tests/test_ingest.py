@@ -7,7 +7,7 @@ def test_ingest_sample_csv():
     cases, findings = ingest_csv(FIXTURES / "sample_top20.csv")
     assert len(cases) == 9
 
-    kinds = {f.kind for f in findings}
+    kinds = {finding.kind for finding in findings}
     assert kinds == {
         "cross_device_identical",
         "negative_delta",

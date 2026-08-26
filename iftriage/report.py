@@ -16,7 +16,9 @@ def _templates_dir() -> Path:
 
 
 def build_summary(results: list[CaseResult]) -> dict:
-    counts = Counter(r.verdict.category for r in results if r.verdict is not None)
+    counts = Counter(
+        result.verdict.category for result in results if result.verdict is not None
+    )
     ordered = [
         (category.value, counts.get(category, 0))
         for category in VERDICT_ORDER

@@ -184,7 +184,9 @@ def _collect_device(
     if not targets:
         return
 
-    canonicals = [r.canonical_interface for r in targets if r.canonical_interface]
+    canonicals = [
+        result.canonical_interface for result in targets if result.canonical_interface
+    ]
     allowed = profile.allowed_commands(canonicals)
     session = ReadOnlySession(
         host=mgmt_ip,
@@ -301,8 +303,8 @@ def collect(
     history: History | None,
 ) -> list[CaseResult]:
     """First (full) collection pass. Returns one CaseResult per case."""
-    results = [CaseResult(case=c) for c in cases]
-    live = [r for r in results if not r.case.excluded]
+    results = [CaseResult(case=case) for case in cases]
+    live = [result for result in results if not result.case.excluded]
     by_ip: dict[str, list[CaseResult]] = {}
     for result in live:
         by_ip.setdefault(result.case.mgmt_ip, []).append(result)
@@ -323,9 +325,11 @@ def repoll(
 ) -> None:
     """Second sample of the same interface counters (caller waits in between)."""
     eligible = [
-        r
-        for r in results
-        if not r.case.excluded and r.collection_error is None and r.stats is not None
+        result
+        for result in results
+        if not result.case.excluded
+        and result.collection_error is None
+        and result.stats is not None
     ]
     by_ip: dict[str, list[CaseResult]] = {}
     for result in eligible:
