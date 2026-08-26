@@ -1,0 +1,16 @@
+Interface Ethernet4/15 detected 1 LLDP neighbors:
+
+  Neighbor 985d.82bb.0001/"Ethernet21", age 12 seconds
+  Discovered 41 days, 6 hours ago; Last changed 41 days, 6 hours ago
+  - Chassis ID type: MAC address (4)
+    Chassis ID     : 985d.82bb.0001
+  - Port ID type: Interface name (5)
+    Port ID     : "Ethernet21"
+  - Time To Live: 120 seconds
+  - Port Description: "downlink leaf3"
+  - System Name: "spine1.example.net"
+  - System Description: "Arista Networks EOS version 4.28.3M running on an Arista Networks DCS-7508"
+  - System Capabilities : Bridge, Router
+    Enabled Capabilities: Bridge, Router
+  - Management Address Subtype: IPv4
+    Management Address        : 10.0.1.1

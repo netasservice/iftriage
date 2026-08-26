@@ -1,0 +1,2 @@
+Port Channel Po214:
+  Active Ports: Ethernet4/16 Ethernet4/17

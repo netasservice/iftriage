@@ -1,0 +1,5 @@
+                                                                        Last
+                     Temp     Voltage  Bias     Optical   Optical      Update
+Port                 (C)      (V)      (mA)     Tx (dBm)  Rx (dBm)     Time
+------------------- -------- -------- -------- --------- ------------ ------------
+Et4/15               31.42    3.28     7.06     -2.63     -15.21       0:00:03 ago

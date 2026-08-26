@@ -1,0 +1,16 @@
+Cisco IOS XE Software, Version 17.06.05
+Cisco IOS Software [Bengaluru], Catalyst L3 Switch Software (CAT9K_IOSXE), Version 17.6.5, RELEASE SOFTWARE (fc2)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2022 by Cisco Systems, Inc.
+
+ROM: IOS-XE ROMMON
+BOOTLDR: System Bootstrap, Version 17.6.1r
+
+switch1 uptime is 41 weeks, 3 days, 2 hours, 11 minutes
+Uptime for this control processor is 41 weeks, 3 days, 2 hours, 13 minutes
+
+cisco C9300-48P (X86) processor with 1338934K/6147K bytes of memory.
+Processor board ID FCW2245L0AB
+
+Model Number                       : C9300-48P
+System Serial Number               : FCW2245L0AB

@@ -1,0 +1,181 @@
+"""Verdict engine tests — including the fail-closed PARSE_ERROR behavior."""
+
+from iftriage.config import Thresholds
+from iftriage.models import InterfaceCase, NormalizedInterfaceStats, VerdictCategory
+from iftriage.rules import CounterClass, classify_counter, evaluate_case
+
+T = Thresholds()
+
+
+def make_case(counter="Rcv-Err", change=1000):
+    return InterfaceCase(
+        poll_time="2026-08-24T03:12:00",
+        switch="sw-a",
+        mgmt_ip="10.0.0.1",
+        interface="Gi3/0/20",
+        description="",
+        status="up",
+        protocol="up",
+        counter=counter,
+        prev_count=0,
+        count=change,
+        change=change,
+        row_index=0,
+    )
+
+
+def make_stats(**kwargs):
+    defaults = dict(
+        link_status="up",
+        protocol_status="up",
+        duplex="full",
+        input_packets=1_000_000,
+        input_errors=0,
+        crc_errors=0,
+        late_collisions=0,
+        discards_in=0,
+        discards_out=0,
+    )
+    defaults.update(kwargs)
+    return NormalizedInterfaceStats(**defaults)
+
+
+def run(case, stats, repoll=None, minutes=None, error=None, parse_errors=()):
+    return evaluate_case(
+        case,
+        stats,
+        repoll,
+        minutes,
+        T,
+        collection_error=error,
+        parse_errors=parse_errors,
+    )
+
+
+# ---- classification --------------------------------------------------------
+
+
+def test_counter_classification():
+    assert classify_counter("Late-Col") is CounterClass.LATE_COLLISIONS
+    assert classify_counter("Rcv-Err") is CounterClass.RECEIVE_ERRORS
+    assert classify_counter("InDiscards") is CounterClass.IN_DISCARDS
+    assert classify_counter("Rx") is CounterClass.TOTAL_TRAFFIC
+    assert classify_counter("weird-thing") is CounterClass.GENERIC_ERRORS
+
+
+# ---- fail-closed behavior (the most important tests in this file) ----------
+
+
+def test_unreachable_device_is_unverified():
+    verdict = run(make_case(), None, error="connection failed: timeout")
+    assert verdict.category is VerdictCategory.UNVERIFIED
+
+
+def test_missing_crc_is_parse_error_never_ignore():
+    # crc=None must NEVER be treated as 0 -> false IGNORE.
+    stats = make_stats(crc_errors=None)
+    verdict = run(make_case("Rcv-Err"), stats)
+    assert verdict.category is VerdictCategory.PARSE_ERROR
+    assert "crc" in verdict.reason.lower()
+
+
+def test_missing_duplex_on_late_col_is_parse_error():
+    stats = make_stats(duplex=None, late_collisions=10)
+    verdict = run(make_case("Late-Col"), stats)
+    assert verdict.category is VerdictCategory.PARSE_ERROR
+
+
+def test_no_stats_at_all_is_parse_error():
+    verdict = run(make_case(), None)
+    assert verdict.category is VerdictCategory.PARSE_ERROR
+
+
+# ---- late collisions -------------------------------------------------------
+
+
+def test_late_col_on_full_duplex_is_config_issue():
+    stats = make_stats(late_collisions=42, duplex="full")
+    verdict = run(make_case("Late-Col"), stats)
+    assert verdict.category is VerdictCategory.CONFIG_ISSUE
+    assert "duplex mismatch" in verdict.reason.lower()
+
+
+def test_late_col_on_half_duplex_is_physical():
+    stats = make_stats(late_collisions=42, duplex="half")
+    verdict = run(make_case("Late-Col"), stats)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+
+
+def test_late_col_zero_on_device_is_ignore():
+    stats = make_stats(late_collisions=0)
+    verdict = run(make_case("Late-Col"), stats)
+    assert verdict.category is VerdictCategory.IGNORE
+
+
+# ---- receive errors --------------------------------------------------------
+
+
+def test_high_crc_rate_is_physical_media():
+    stats = make_stats(input_errors=3271, crc_errors=3271, input_packets=1_000_000)
+    verdict = run(make_case("Rcv-Err"), stats)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+
+
+def test_negligible_rate_is_ignore():
+    stats = make_stats(input_errors=5, crc_errors=5, input_packets=1_000_000_000)
+    verdict = run(make_case("Rcv-Err"), stats)
+    assert verdict.category is VerdictCategory.IGNORE
+
+
+def test_flat_repoll_with_low_rate_is_ignore():
+    stats = make_stats(input_errors=500, crc_errors=500, input_packets=100_000_000)
+    repoll = make_stats(input_errors=500, crc_errors=500, input_packets=101_000_000)
+    verdict = run(make_case("Rcv-Err"), stats, repoll, minutes=10)
+    assert verdict.category is VerdictCategory.IGNORE
+    assert "flat" in verdict.reason.lower()
+
+
+def test_incrementing_repoll_at_meaningful_rate_is_physical():
+    stats = make_stats(input_errors=1000, crc_errors=1000, input_packets=100_000_000)
+    repoll = make_stats(input_errors=1600, crc_errors=1600, input_packets=101_000_000)
+    # 600 errors / 1M packets in the window = 6e-4 >= rate_high
+    verdict = run(make_case("Rcv-Err"), stats, repoll, minutes=10)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert "incrementing" in verdict.reason.lower()
+
+
+def test_dom_out_of_range_is_physical_media():
+    stats = make_stats(
+        input_errors=100,
+        crc_errors=100,
+        input_packets=1_000_000_000,
+        dom_rx_power_dbm=-16.2,
+    )
+    verdict = run(make_case("Rcv-Err"), stats)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert "dom" in verdict.reason.lower()
+
+
+# ---- discards --------------------------------------------------------------
+
+
+def test_indiscards_at_rate_is_capacity_not_physical():
+    stats = make_stats(discards_in=388, input_packets=1_000_000)
+    verdict = run(make_case("InDiscards"), stats)
+    assert verdict.category is VerdictCategory.CAPACITY
+    assert "not a physical error" in verdict.reason.lower()
+
+
+def test_negligible_discards_is_ignore():
+    stats = make_stats(discards_in=3, input_packets=1_000_000_000)
+    verdict = run(make_case("InDiscards"), stats)
+    assert verdict.category is VerdictCategory.IGNORE
+
+
+# ---- total traffic ---------------------------------------------------------
+
+
+def test_rx_counter_is_ignore():
+    verdict = run(make_case("Rx"), make_stats())
+    assert verdict.category is VerdictCategory.IGNORE
+    assert "not an error" in verdict.reason.lower()

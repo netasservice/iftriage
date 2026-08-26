@@ -1,0 +1,21 @@
+Ethernet4/15 is up, line protocol is up (connected)
+  Hardware is Ethernet, address is 985d.82aa.1b2c (bia 985d.82aa.1b2c)
+  Description: UPLINK-SPINE1
+  Ethernet MTU 9214 bytes, BW 10000000 kbit
+  Full-duplex, 10Gb/s, auto negotiation: off, uni-link: n/a
+  Up 41 days, 6 hours, 22 minutes
+  Loopback Mode : None
+  4 link status changes since last clear
+  Last clearing of "show interface" counters never
+  5 minutes input rate 1.02 Mbps (0.0% with framing overhead), 891 packets/sec
+  5 minutes output rate 3.14 Mbps (0.0% with framing overhead), 1021 packets/sec
+     215883911 packets input, 198765432109 bytes
+     Received 43821 broadcasts, 872341 multicast
+     0 runts, 0 giants
+     21503 input errors, 21503 CRC, 0 alignment, 0 symbol, 0 input discards
+     0 PAUSE input
+     198234567 packets output, 176543210987 bytes
+     Sent 9123 broadcasts, 452312 multicast
+     0 output errors, 0 collisions
+     0 late collision, 0 deferred, 0 output discards
+     0 PAUSE output

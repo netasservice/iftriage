@@ -1,0 +1,10 @@
+_time,switch,mgmt_ip,interface,description,status,protocol,counter,prev_count,count,change
+2026-08-24T03:12:00,sw-a,10.0.0.1,Gi3/0/20,printer floor3,up,up,Rcv-Err,1000,4271,3271
+2026-08-24T05:47:00,sw-b,10.0.0.2,Et4/15,uplink spine1,up,up,Rcv-Err,50,21503,21453
+2026-08-24T06:02:00,sw-c,10.0.0.3,Eth4/15,uplink core,up,up,InDiscards,100,488,388
+2026-08-24T06:02:00,sw-d,10.0.0.4,Gi1/0/1,dup artifact 1,up,up,Rcv-Err,777,888,111
+2026-08-24T06:30:00,sw-e,10.0.0.5,Gi1/0/2,dup artifact 2,up,up,Rcv-Err,777,888,111
+2026-08-24T07:00:00,sw-f,10.0.0.6,Gi1/0/3,reset case,up,up,Late-Col,500,20,-480
+2026-08-24T07:10:00,sw-g,10.0.0.7,Po214,po case,up,up,InDiscards,10,20,10
+2026-08-24T07:12:00,sw-g,10.0.0.7,Po214,po case again,up,up,InDiscards,10,25,15
+2026-08-24T07:20:00,sw-h,10.0.0.8,Gi2/0/1,rx traffic,up,up,Rx,1000000,2000000,1000000

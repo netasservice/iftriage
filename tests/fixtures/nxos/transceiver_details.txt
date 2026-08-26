@@ -1,0 +1,25 @@
+Ethernet4/15
+    transceiver is present
+    type is 10Gbase-SR
+    name is CISCO-FINISAR
+    part number is FTLX8571D3BCL-C2
+    revision is A
+    serial number is FNS17221H4A
+    nominal bitrate is 10300 MBit/sec
+    Link length supported for 50/125um OM2 fiber is 82 m
+    cisco id is --
+    cisco extended id number is 4
+
+           SFP Detail Diagnostics Information (internal calibration)
+  ----------------------------------------------------------------------------
+                Current              Alarms                  Warnings
+                Measurement     High        Low         High          Low
+  ----------------------------------------------------------------------------
+  Temperature   30.51 C        75.00 C     -5.00 C     70.00 C        0.00 C
+  Voltage        3.28 V         3.63 V      2.97 V      3.46 V        3.13 V
+  Current        7.15 mA       11.80 mA     4.00 mA    10.80 mA       5.00 mA
+  Tx Power       -2.25 dBm      1.69 dBm  -11.30 dBm   -1.30 dBm     -7.30 dBm
+  Rx Power       -3.55 dBm      1.99 dBm  -13.90 dBm   -1.00 dBm     -9.90 dBm
+  Transmit Fault Count = 0
+  ----------------------------------------------------------------------------
+  Note: ++  high-alarm; +  high-warning; --  low-alarm; -  low-warning

@@ -1,0 +1,5 @@
+Port          Align-Err     FCS-Err    Xmit-Err     Rcv-Err  UnderSize  OutDiscards
+Gi3/0/20              0        3271           0        3271          0           42
+
+Port        Single-Col  Multi-Col   Late-Col  Excess-Col  Carri-Sen      Runts     Giants
+Gi3/0/20             0          0          0           0          0          0          0

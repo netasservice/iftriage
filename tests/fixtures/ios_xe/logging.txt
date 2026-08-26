@@ -1,0 +1,2 @@
+Aug 24 02:11:41.520: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to down
+Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to up

@@ -1,0 +1,31 @@
+# iftriage configuration. All thresholds and operational limits are tunable here.
+
+thresholds:
+  # Normalized error rate = error_delta / packet_delta (repoll) or errors/packets lifetime.
+  rate_high: 1.0e-4      # >= 100 errors per million frames -> high
+  rate_warn: 1.0e-5      # >= 10 errors per million frames  -> warn
+  dom_rx_low_dbm: -14.0  # DOM receive power below this -> out of range
+  dom_rx_high_dbm: 2.0   # DOM receive power above this -> out of range
+
+connection:
+  workers: 10            # bounded concurrency
+  timeout_seconds: 30    # per-command read timeout
+  jitter_min: 0.5        # random delay before each connection (seconds)
+  jitter_max: 2.0
+  aaa_failure_abort: 2   # consecutive auth failures before aborting the whole run
+
+repoll:
+  default_minutes: 10
+
+# Manual platform overrides by mgmt_ip or hostname. Values: ios_xe | nxos | eos
+platform_overrides: {}
+#  10.0.0.5: eos
+#  core-sw-01: nxos
+
+history:
+  db_path: iftriage_history.db
+
+report:
+  # Template base name; templates/<template>.html.j2 and templates/<template>.txt.j2
+  template: report_en
+  output_dir: reports

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Interface Error Triage — {{ generated_at }}</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; margin: 2em auto;
+         max-width: 900px; color: #1a1a1a; line-height: 1.45; }
+  h1 { font-size: 1.4em; } h2 { font-size: 1.15em; margin-top: 1.6em; }
+  .summary { background: #f4f6f8; border: 1px solid #d6dbe0; border-radius: 6px;
+             padding: 0.9em 1.2em; font-size: 1.05em; }
+  .dq { background: #fff8e6; border: 1px solid #e6d9a8; border-radius: 6px;
+        padding: 0.7em 1.1em; margin: 0.5em 0; }
+  .case { border: 1px solid #d6dbe0; border-radius: 6px; padding: 0.8em 1.2em;
+          margin: 0.8em 0; }
+  .verdict { font-weight: 700; padding: 0.1em 0.5em; border-radius: 4px;
+             display: inline-block; }
+  .v-PHYSICAL_MEDIA { background: #fde3e3; color: #8f1d1d; }
+  .v-CONFIG_ISSUE  { background: #fdefd8; color: #8a5a00; }
+  .v-CAPACITY      { background: #e3ecfd; color: #1d3f8f; }
+  .v-IGNORE        { background: #e5f5e6; color: #1e6b2a; }
+  .v-UNVERIFIED    { background: #ececec; color: #555; }
+  .v-PARSE_ERROR   { background: #f3e3fd; color: #5d1d8f; }
+  details { margin-top: 0.6em; }
+  pre { background: #0f1720; color: #d8e1ea; padding: 0.8em; border-radius: 6px;
+        overflow-x: auto; font-size: 0.8em; }
+  .muted { color: #667; font-size: 0.9em; }
+  table.kv td { padding: 0.05em 0.9em 0.05em 0; }
+</style>
+</head>
+<body>
+<h1>Interface Error Triage — Top-{{ summary.total }} verification</h1>
+<p class="muted">Generated {{ generated_at }} · source: {{ meta.csv_file }}
+{% if meta.repoll_minutes %} · re-poll window: {{ meta.repoll_minutes }} min{% endif %}</p>
+
+<div class="summary"><strong>Executive summary:</strong> {{ summary.line }}</div>
+
+{% if findings %}
+<h2>Data quality (surfaced, not analyzed)</h2>
+{% for f in findings %}
+<div class="dq"><strong>{{ f.kind.replace('_', ' ') }}</strong>
+{% if f.rows %} (rows {{ f.rows | join(', ') }}){% endif %}<br>
+{{ f.detail }}</div>
+{% endfor %}
+{% endif %}
+
+<h2>Cases</h2>
+{% for r in results %}
+<div class="case">
+  <div>
+    <span class="verdict v-{{ r.verdict.category.value if r.verdict else 'UNVERIFIED' }}">
+      {{ r.verdict.category.value if r.verdict else 'UNVERIFIED' }}</span>
+    &nbsp;<strong>{{ r.case.switch }}</strong> — {{ r.case.interface }}
+    ({{ r.case.counter }}, Δ24h={{ r.case.change }})
+  </div>
+  {% if r.case.description %}<div class="muted">{{ r.case.description }}</div>{% endif %}
+  <p>{{ r.verdict.reason if r.verdict else 'No verdict.' }}</p>
+  {% if r.duplicate_of %}
+  <p class="muted">Note: member of {{ r.duplicate_of }}, which is also in this
+  report — same physical issue counted twice.</p>
+  {% endif %}
+  {% if r.recurrence > 1 %}
+  <p class="muted">Recurrence: this interface has appeared in {{ r.recurrence }}
+  ingested top-20 lists.</p>
+  {% endif %}
+  {% if r.case.dq_flags %}
+  <p class="muted">Data-quality flags: {{ r.case.dq_flags | join(', ') }}</p>
+  {% endif %}
+  {% if r.verdict and r.verdict.details %}
+  <p class="muted">{{ r.verdict.details | join(' · ') }}</p>
+  {% endif %}
+  {% if r.raw_outputs %}
+  <details><summary>Raw evidence ({{ r.raw_outputs | length }} commands)</summary>
+    {% for key, raw in r.raw_outputs.items() %}
+    <p class="muted">{{ key }}</p>
+    <pre>{{ raw }}</pre>
+    {% endfor %}
+  </details>
+  {% endif %}
+</div>
+{% endfor %}
+
+<p class="muted">iftriage is a read-only diagnostic tool. Every command sent is
+recorded in the session audit log{% if meta.audit_log %} ({{ meta.audit_log }}){% endif %}.</p>
+</body>
+</html>

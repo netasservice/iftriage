@@ -1,0 +1,21 @@
+----------------------------------------
+Device ID:core-sw-01(FDO12345678)
+System Name: core-sw-01
+
+Interface address(es):
+    IPv4 Address: 10.0.0.1
+Platform: N9K-C9336C-FX2, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
+Interface: Ethernet4/15, Port ID (outgoing port): Ethernet1/33
+Holdtime: 176 sec
+
+Version:
+Cisco Nexus Operating System (NX-OS) Software, Version 9.3(10)
+
+Advertisement Version: 2
+
+Native VLAN: 1
+Duplex: full
+MTU: 1500
+Physical Location: snmplocation
+Mgmt address(es):
+    IPv4 Address: 10.0.0.1

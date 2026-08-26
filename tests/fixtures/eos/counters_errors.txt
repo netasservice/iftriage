@@ -1,0 +1,2 @@
+Port          FCS    Align  Symbol       Rx  Runts  Giants       Tx
+Et4/15      21503        0       0    21503      0       0        0

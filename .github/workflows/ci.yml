@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e '.[dev]'
+      - name: Lint
+        run: ruff check .
+      - name: Format check
+        run: ruff format --check .
+      - name: Type check
+        run: mypy iftriage
+      - name: Tests
+        run: pytest --cov=iftriage --cov-report=term-missing
+      - name: Read-only guarantee (no driver send methods outside session.py)
+        run: |
+          if grep -rn "send_command\|send_config\|ConnectHandler" iftriage/ | grep -v "iftriage/session.py"; then
+            echo "::error::Driver send/connect call found outside session.py — automatic rejection (PROJECT_SPEC.md §3, CLAUDE.md security review rule 1)."
+            exit 1
+          fi

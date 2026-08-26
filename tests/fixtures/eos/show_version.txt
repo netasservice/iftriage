@@ -1,0 +1,14 @@
+Arista DCS-7808-CH
+Hardware version: 12.00
+Serial number: JPE12345678
+Hardware MAC address: 985d.82aa.0001
+System MAC address: 985d.82aa.0001
+
+Software image version: 4.28.3M
+Architecture: x86_64
+Internal build version: 4.28.3M-28837868.4283M
+Internal build ID: 4f8d5cb1-6c1e-4b3e-91d2-3a2b7e6c4a55
+
+Uptime: 41 weeks, 3 days, 2 hours and 11 minutes
+Total memory: 32818372 kB
+Free memory: 24123456 kB
