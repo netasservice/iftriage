@@ -10,7 +10,7 @@ switch1 uptime is 41 weeks, 3 days, 2 hours, 11 minutes
 Uptime for this control processor is 41 weeks, 3 days, 2 hours, 13 minutes
 
 cisco C9300-48P (X86) processor with 1338934K/6147K bytes of memory.
-Processor board ID FCW2245L0AB
+Processor board ID FCW0000TEST4
 
 Model Number                       : C9300-48P
-System Serial Number               : FCW2245L0AB
+System Serial Number               : FCW0000TEST4

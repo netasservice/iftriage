@@ -119,4 +119,7 @@ description.
   collectors and CLI are tested through `--dry-run` and pure logic paths. A test that
   opens a network connection is rejected.
 - Real device outputs added as fixtures (Phase 2) must be sanitized: hostnames, IPs,
-  serials, and MACs replaced with fictional values before commit.
+  serials, MACs, interface descriptions, and neighbor names replaced with fictional values
+  before commit. Descriptions matter as much as the rest: site naming conventions
+  (`SERVER-<rack>-RU<slot>`) leak the customer's physical topology even when every
+  identifier around them is fake.
