@@ -40,6 +40,16 @@ class SessionError(Exception):
     """Non-safety connection/session failure (timeout, auth, bad prompt)."""
 
 
+class EnableRequired(SessionError):
+    """The device landed in user exec and no enable secret was supplied.
+
+    The enable secret is optional, so this is a per-device skip (the case ends
+    up UNVERIFIED), never a run-level failure. The message deliberately avoids
+    the substring 'auth': collectors._is_auth_error matches on it and would
+    count this towards the AAA circuit breaker.
+    """
+
+
 class AuditLog:
     """Append-only, thread-safe session log. Never receives secrets."""
 
@@ -112,8 +122,9 @@ class ReadOnlySession:
             # This is the only sanctioned exception to the allow-list.
             if not self._credentials.enable_secret:
                 self.disconnect()
-                raise SessionError(
-                    f"{self._host}: landed in user exec and no enable secret provided"
+                raise EnableRequired(
+                    f"{self._host}: device requires enable but no enable secret "
+                    "was provided"
                 )
             conn.enable()
             self._audit.record(self._host, "<enable elevation>")

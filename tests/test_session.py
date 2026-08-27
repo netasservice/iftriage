@@ -10,6 +10,7 @@ from iftriage.session import (
     AuditLog,
     CommandNotAllowed,
     ConfigModeDetected,
+    EnableRequired,
     ReadOnlySession,
     SessionError,
 )
@@ -123,9 +124,14 @@ def test_user_exec_without_enable_secret_fails(tmp_path):
         audit=audit,
         connect_fn=lambda host, dt, creds, timeout: fake,
     )
-    with pytest.raises(SessionError):
+    with pytest.raises(EnableRequired) as excinfo:
         session.connect()
     assert fake.disconnected
+    assert "requires enable" in str(excinfo.value)
+    # collectors._is_auth_error matches the substring 'auth': a missing optional
+    # enable secret must never be counted towards the AAA circuit breaker.
+    assert "auth" not in str(excinfo.value).lower()
+    assert issubclass(EnableRequired, SessionError)
 
 
 def test_credentials_repr_never_exposes_secrets():

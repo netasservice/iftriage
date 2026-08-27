@@ -57,6 +57,13 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print targets and exact commands; connect to nothing",
     )
+    run.add_argument(
+        "--user",
+        default=None,
+        metavar="USERNAME",
+        help="Device username (default: $IFTRIAGE_USER, else prompt). "
+        "Passwords are never accepted as arguments.",
+    )
     run.add_argument("--config", default=None, help="Path to config.yaml")
     run.add_argument("--output", default=None, help="Report/audit output directory")
     run.add_argument(
@@ -66,15 +73,52 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _credentials_from_env_or_prompt() -> Credentials:
-    username = os.environ.get("IFTRIAGE_USER") or input("Device username: ")
-    password = os.environ.get("IFTRIAGE_PASS") or getpass.getpass(
-        f"Password for {username}: "
+class CredentialError(Exception):
+    """Credentials could not be resolved (missing value, or no usable stdin)."""
+
+
+def _ask(label: str, *, secret: bool) -> str:
+    """Read one credential from the terminal.
+
+    A closed or absent stdin (piped input, cron) would otherwise surface as a
+    bare EOFError traceback; it becomes an actionable message instead.
+    """
+    try:
+        return getpass.getpass(label) if secret else input(label)
+    except (EOFError, KeyboardInterrupt, OSError) as exc:
+        raise CredentialError(
+            "cannot prompt for credentials without an interactive terminal — "
+            "pass --user and set IFTRIAGE_PASS (and IFTRIAGE_ENABLE if the "
+            "fleet needs enable)"
+        ) from exc
+
+
+def _resolve_credentials(username_arg: str | None) -> Credentials:
+    """Resolve credentials: CLI flag -> environment -> interactive prompt.
+
+    Passwords are deliberately never accepted as arguments; they would land in
+    the shell history and in `ps` output.
+    """
+    username = (
+        username_arg
+        or os.environ.get("IFTRIAGE_USER")
+        or _ask("Device username: ", secret=False)
     )
+    if not username:
+        raise CredentialError(
+            "no username provided — pass --user, set IFTRIAGE_USER, "
+            "or answer the prompt"
+        )
+    password = os.environ.get("IFTRIAGE_PASS") or _ask(
+        f"Password for {username}: ", secret=True
+    )
+    # An enable secret that is set but empty means "this fleet needs no enable"
+    # and suppresses the prompt; a blank answer at the prompt means the same.
     enable = os.environ.get("IFTRIAGE_ENABLE")
     if enable is None:
-        enable = getpass.getpass(
-            "Enable secret (blank if accounts land in priv-exec): "
+        enable = _ask(
+            "Enable secret (Enter to skip; devices that require it stay UNVERIFIED): ",
+            secret=True,
         )
     return Credentials(
         username=username, password=password, enable_secret=enable or None
@@ -156,12 +200,19 @@ def _cmd_run(args) -> int:
             args.repoll if args.repoll is not None else config.repoll_default_minutes
         )
 
+    # Resolved before the history database is opened so that abandoning a
+    # prompt does not leave an orphan run row behind.
+    try:
+        credentials = _resolve_credentials(args.user)
+    except CredentialError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     history = History(config.db_path)
     try:
         history.archive_ingest(args.csv, Path(args.csv).read_text(), cases)
         run_id = history.start_run(args.csv, repoll_minutes)
 
-        credentials = _credentials_from_env_or_prompt()
         stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         audit = AuditLog(output_dir / f"iftriage_audit_{stamp}.log")
         print(f"Audit log: {audit.path}")
