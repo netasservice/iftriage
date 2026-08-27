@@ -214,18 +214,39 @@ def evaluate_case(
                 details=details,
             )
         duplex = (stats.duplex or "").lower()
+        neighbor_duplex = (stats.neighbor_duplex or "").lower()
+        mismatch_logged = bool(stats.duplex_mismatch_logged)
         if duplex.startswith("full"):
             corroboration = ""
-            if (stats.neighbor_duplex or "").lower().startswith("half"):
+            if neighbor_duplex.startswith("half"):
                 corroboration = (
                     f" Neighbor {stats.neighbor_name or '?'} reports "
                     "half-duplex — mismatch confirmed on both ends."
                 )
+            elif mismatch_logged:
+                corroboration = " Device log confirms a CDP duplex-mismatch event."
             return Verdict(
                 VerdictCategory.CONFIG_ISSUE,
                 f"CONFIG_ISSUE — {lc:,} late collisions on a full-duplex link "
                 "(impossible under CSMA/CD-free operation): duplex mismatch. "
                 f"Fix via CLI, not by touching media.{corroboration}"
+                + (f" {repoll_note.capitalize()}." if repoll_note else ""),
+                details=details,
+            )
+        # Local half-duplex with the far end on full duplex (or the device
+        # logging a duplex-mismatch event) is a confirmed mismatch, not a
+        # legacy half-duplex segment.
+        if neighbor_duplex.startswith("full") or mismatch_logged:
+            evidence = (
+                f"neighbor {stats.neighbor_name or '?'} reports full duplex"
+                if neighbor_duplex.startswith("full")
+                else "the device log records a CDP duplex-mismatch event"
+            )
+            return Verdict(
+                VerdictCategory.CONFIG_ISSUE,
+                f"CONFIG_ISSUE — {lc:,} late collisions on a half-duplex link "
+                f"while {evidence}: duplex mismatch confirmed. Fix via CLI "
+                "(align both ends), not by touching media."
                 + (f" {repoll_note.capitalize()}." if repoll_note else ""),
                 details=details,
             )

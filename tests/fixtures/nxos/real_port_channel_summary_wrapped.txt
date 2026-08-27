@@ -1,0 +1,26 @@
+switch_nexus# show port-channel summary
+Flags:  D - Down        P - Up in port-channel (members)
+        I - Individual  H - Hot-standby (LACP only)
+        s - Suspended   r - Module-removed
+        b - BFD Session Wait
+        S - Switched    R - Routed
+        U - Up (port-channel)
+        p - Up in delay-lacp mode (member)
+        M - Not in use. Min-links not met
+--------------------------------------------------------------------------------
+Group Port-       Type     Protocol  Member Ports
+      Channel
+--------------------------------------------------------------------------------
+1     Po1(SU)     Eth      LACP      Eth3/1(P)    Eth4/1(P)
+2     Po2(SD)     Eth      LACP      Eth3/4(D)
+3     Po3(SD)     Eth      LACP      Eth4/4(D)
+7     Po7(RD)     Eth      LACP      Eth3/5(D)    Eth4/5(D)
+10    Po10(RU)    Eth      LACP      Eth3/7(P)    Eth4/7(P)
+11    Po11(SD)    Eth      LACP      Eth3/6(D)
+12    Po12(SD)    Eth      LACP      Eth3/2(D)    Eth4/2(D)
+13    Po13(SD)    Eth      LACP      Eth3/9(D)    Eth4/9(D)
+14    Po14(SD)    Eth      LACP      Eth3/10(D)   Eth4/10(D)
+15    Po15(SD)    Eth      LACP      Eth3/11(D)   Eth4/11(D)
+21    Po21(SU)    Eth      LACP      Eth3/14(P)   Eth3/15(P)   Eth4/14(P)
+                                     Eth4/15(P)
+22    Po22(SD)    Eth      LACP      Eth4/3(D)

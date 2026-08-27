@@ -56,17 +56,36 @@ def _parse_show_interfaces(raw: str) -> dict:
 
 
 def _parse_transceiver(raw: str, canonical: str) -> dict:
-    """Parse the EOS transceiver table: Temp, Voltage, Bias, Tx dBm, Rx dBm."""
+    """Parse the EOS transceiver table: Temp, Voltage, Bias, Tx dBm, Rx dBm.
+
+    Handles both row layouts seen in the fleet:
+      Et4/15        31.42  3.28  7.06  -2.63  -3.27   0:00:03 ago
+      Ethernet3/25  3      22.09 3.27  6.70  -1.50  -6.66  0:00:01 ago
+    The second is the breakout form: the port column holds the parent
+    interface and a separate Channel column holds the lane number.
+    """
     result: dict = {}
     for line in raw.splitlines():
         tokens = line.split()
-        if len(tokens) >= 6 and interface_matches_token(tokens[0], canonical):
+        if len(tokens) < 6:
+            continue
+        matched = interface_matches_token(tokens[0], canonical)
+        if not matched and tokens[1].isdigit():
+            matched = interface_matches_token(f"{tokens[0]}/{tokens[1]}", canonical)
+        if not matched:
+            continue
+        numbers: list[float] = []
+        for token in tokens[1:]:
             try:
-                result["dom_tx_power_dbm"] = float(tokens[4])
-                result["dom_rx_power_dbm"] = float(tokens[5])
+                numbers.append(float(token))
             except ValueError:
-                pass
-            break
+                continue
+        # Row carries temp, voltage, bias, tx, rx (plus the channel number in
+        # the breakout form); tx/rx are always the last two numeric columns.
+        if len(numbers) >= 5:
+            result["dom_tx_power_dbm"] = numbers[-2]
+            result["dom_rx_power_dbm"] = numbers[-1]
+        break
     return result
 
 

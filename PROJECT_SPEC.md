@@ -50,8 +50,8 @@ entire project. Diagnostic tool only — it must NEVER modify device state.
 - An explicit closed allow-list of exact command templates per platform (derived from
   `PlatformProfile` definitions). NOT a deny-list.
 - The interface parameter is validated by regex before substitution into the template.
-- Any command not matching the allow-list raises and aborts. The full list is ~7 commands ×
-  3 platforms — enumerable and auditable.
+- Any command not matching the allow-list raises and aborts. The full list is 7–8 commands ×
+  3 platforms (see section 5) — enumerable and auditable.
 
 ### Layer 3 — Mode verification
 - Before and after every command, verify the prompt is privileged-exec (`#`) and NOT config mode
@@ -127,10 +127,15 @@ show version
 show interface <intf>
 show interface <intf> counters errors
 show interface <intf> transceiver details
+show lldp neighbors interface <intf> detail
 show cdp neighbors interface <intf> detail
 show port-channel summary
 show logging logfile | include <intf-pattern>
 ```
+
+(NX-OS runs both neighbor protocols: non-Cisco uplinks — e.g. Arista — do not
+speak CDP, so LLDP is collected as well; CDP wins the merge when it finds an
+entry. Confirmed against real fleet output in Phase 2.)
 
 **EOS (Arista):**
 ```
@@ -167,7 +172,10 @@ show logging | include <intf-pattern>
 
 - `Late-Col` (late collisions): on a full-duplex link these must be ZERO (no CSMA/CD). Late
   collisions + full duplex ⇒ duplex mismatch (verify far end via CDP/LLDP neighbor if reachable).
-  On legacy half-duplex: cable out of spec / failing NIC.
+  On half-duplex: if the far end reports FULL duplex (CDP `Duplex: full (Mismatch)`) or the
+  device log records `%CDP-4-DUPLEX_MISMATCH`, it is a confirmed duplex mismatch (CONFIG_ISSUE),
+  not a legacy segment — real fleet case validated in Phase 2. Only an uncorroborated legacy
+  half-duplex link points to cable out of spec / failing NIC.
 - `Rcv-Err`: aggregate receive errors. Use `counters errors` to split CRC/FCS (physical: cable,
   transceiver, EMI) from align/runts. On fiber, correlate with DOM rx power.
 - `InDiscards`: frame arrived FINE and was dropped — almost always buffer congestion, VLAN not

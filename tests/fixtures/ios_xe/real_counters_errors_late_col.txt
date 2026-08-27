@@ -1,0 +1,6 @@
+switch_catalyst#show int gi3/0/20 counters errors
+Port        Align-Err     FCS-Err    Xmit-Err     Rcv-Err  UnderSize  OutDiscards
+Gi3/0/20            0           0      936686           0          0       223462
+
+Port      Single-Col  Multi-Col   Late-Col  Excess-Col  Carri-Sen      Runts
+Gi3/0/20     2221984     463596   38445927         516          0          0

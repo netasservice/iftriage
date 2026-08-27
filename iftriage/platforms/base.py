@@ -14,12 +14,16 @@ from abc import ABC, abstractmethod
 from ..models import Platform
 from ..normalize import expand_interface, interface_matches_token
 
-# Canonical command keys, in collection order.
+# Canonical command keys, in collection order. Profiles may omit keys.
+# "neighbors_lldp" comes before "neighbors" so that when a platform runs both
+# (NX-OS: LLDP fallback for non-Cisco neighbors), CDP data wins the merge
+# whenever it found an entry.
 COMMAND_KEYS = (
     "version",
     "interface",
     "counters",
     "transceiver",
+    "neighbors_lldp",
     "neighbors",
     "portchannel",
     "logging",
@@ -124,7 +128,9 @@ def parse_counters_table(
     return result
 
 
-_PC_TOKEN_RE = re.compile(r"([A-Za-z][A-Za-z-]*\d+(?:/\d+)*)\(([\w-]+)\)")
+# Member/flag tokens like Gi3/0/20(P), Eth4/15(P), Et3/1/1(PG+), Po21(SU).
+# The flag class must accept EOS dense flags (+, ^, *).
+_PC_TOKEN_RE = re.compile(r"([A-Za-z][A-Za-z-]*\d+(?:/\d+)*)\(([\w+^*-]+)\)")
 
 
 def parse_portchannel_summary(raw: str) -> dict:
@@ -159,28 +165,34 @@ def parse_portchannel_summary(raw: str) -> dict:
 def parse_cdp_neighbor_detail(raw: str) -> dict:
     """Extract neighbor identity from CDP/LLDP detail output."""
     result: dict = {}
-    m = re.search(r"Device ID:\s*(\S+)", raw) or re.search(
+    match = re.search(r"Device ID:\s*(\S+)", raw) or re.search(
         r'System Name:\s*"?([^"\n]+)"?', raw
     )
-    if m:
-        result["neighbor_name"] = m.group(1).strip()
-    m = re.search(r"Port ID \(outgoing port\):\s*(\S+)", raw) or re.search(
-        r'Port ID\s*:\s*"?([^"\n]+)"?', raw
+    if match:
+        result["neighbor_name"] = match.group(1).strip()
+    # CDP port ids can contain spaces ("Port 1" on IP phones); NX-OS LLDP
+    # prints "Port id:" in lowercase.
+    match = re.search(r"Port ID \(outgoing port\):\s*([^\n]+)", raw) or re.search(
+        r'Port [Ii][Dd]\s*:\s*"?([^"\n]+)"?', raw
     )
-    if m:
-        result["neighbor_port"] = m.group(1).strip()
-    m = re.search(r"Duplex(?: Mode)?:\s*(\S+)", raw, re.IGNORECASE)
-    if m:
-        result["neighbor_duplex"] = m.group(1).strip().lower()
+    if match:
+        result["neighbor_port"] = match.group(1).strip().strip('"')
+    match = re.search(r"Duplex(?: Mode)?:\s*(\S+)", raw, re.IGNORECASE)
+    if match:
+        result["neighbor_duplex"] = match.group(1).strip().lower()
     return result
 
 
 def parse_flap_count(raw: str) -> dict:
-    """Count link up/down transitions in filtered logging output."""
+    """Count link up/down transitions in filtered logging output, and flag
+    logged duplex-mismatch events (%CDP-4-DUPLEX_MISMATCH)."""
     if not raw.strip():
-        return {"flap_count": 0}
+        return {"flap_count": 0, "duplex_mismatch_logged": False}
     count = 0
     for line in raw.splitlines():
         if re.search(r"(UPDOWN|changed state to|LINEPROTO|IF_DOWN|IF_UP)", line):
             count += 1
-    return {"flap_count": count}
+    return {
+        "flap_count": count,
+        "duplex_mismatch_logged": bool(re.search(r"DUPLEX_MISMATCH", raw)),
+    }

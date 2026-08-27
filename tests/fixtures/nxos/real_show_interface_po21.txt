@@ -1,0 +1,42 @@
+switch_nexus# show interface po21
+port-channel21 is up
+admin state is up
+ vPC Status: Up, vPC number: 21
+  Hardware: Port-Channel, address: 0011.22aa.bb02 (bia 0011.22aa.bb02)
+  Description: DIST-TRUNK-PO21
+  MTU 1500 bytes, BW 40000000 Kbit, DLY 10 usec
+  reliability 255/255, txload 4/255, rxload 87/255
+  Encapsulation ARPA, medium is broadcast
+  Port mode is trunk
+  full-duplex, 10 Gb/s
+  Input flow-control is off, output flow-control is off
+  Auto-mdix is turned off
+  Switchport monitor is off
+  EtherType is 0x8100
+  Members in this channel: Eth3/14, Eth3/15, Eth4/14, Eth4/15
+  Last clearing of "show interface" counters 5y11w
+  0 interface resets
+  Load-Interval #1: 30 seconds
+    30 seconds input rate 13766521736 bits/sec, 1290466 packets/sec
+    30 seconds output rate 701450048 bits/sec, 318257 packets/sec
+    input rate 13.77 Gbps, 1.29 Mpps; output rate 701.45 Mbps, 318.26 Kpps
+  Load-Interval #2: 5 minute (300 seconds)
+    300 seconds input rate 11868928448 bits/sec, 1121823 packets/sec
+    300 seconds output rate 712875672 bits/sec, 288499 packets/sec
+    input rate 11.87 Gbps, 1.12 Mpps; output rate 712.88 Mbps, 288.50 Kpps
+  RX
+    17208071738568 unicast packets  4459807434 multicast packets  8360263320 broadcast packets
+    17216303954170 input packets  18214751430401734 bytes
+    0 jumbo packets  0 storm suppression packets
+    0 runts  0 giants  0 CRC/FCS  0 no buffer
+    0 input error  0 short frame  0 overrun   0 underrun  0 ignored
+    0 watchdog  0 bad etype drop  0 bad proto drop  0 if down drop
+    0 input with dribble  177631552 input discard
+    0 Rx pause
+  TX
+    11547663052687 unicast packets  12551593905 multicast packets  6848828795 broadcast packets
+    11564125334628 output packets  10176826808786858 bytes
+    0 jumbo packets
+    0 output error  0 collision  0 deferred  0 late collision
+    0 lost carrier  0 no carrier  0 babble  20655 output discard
+    0 Tx pause

@@ -86,8 +86,8 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 2. Archive the raw CSV to SQLite **before** analysis.
 3. Collection pass: group cases by management IP, resolve platform
    (override → cache → SSHDetect), open one `ReadOnlySession` per device, run
-   the 7-command set per interface (device-level commands once per device),
-   parse into `NormalizedInterfaceStats`.
+   the per-interface command set from the platform profile (device-level
+   commands once per device), parse into `NormalizedInterfaceStats`.
 4. Optional re-poll pass after N minutes re-runs the counter commands to
    answer: still incrementing NOW, or historical?
 5. `rules.py` produces one `Verdict` per case; port-channel members listed

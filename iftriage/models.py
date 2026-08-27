@@ -96,6 +96,9 @@ class NormalizedInterfaceStats:
         None  # Po name -> member interfaces
     )
     flap_count: int | None = None
+    # Corroborative only (e.g. %CDP-4-DUPLEX_MISMATCH in logging); never a
+    # required field, so its absence cannot cause PARSE_ERROR.
+    duplex_mismatch_logged: bool | None = None
     model: str | None = None
     os_version: str | None = None
     collected_at: datetime | None = None

@@ -1,0 +1,2 @@
+switch_nexus# show cdp neighbors interface eth4/15 detail
+Note: CDP Neighbor entry not found

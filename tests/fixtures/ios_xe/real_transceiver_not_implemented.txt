@@ -1,0 +1,2 @@
+switch_catalyst#show int gi3/0/20 transceiver detail
+Diagnostic Monitoring is not implemented.
