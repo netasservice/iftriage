@@ -4,7 +4,7 @@ Ethernet4/15
     name is CISCO-FINISAR
     part number is FTLX8571D3BCL-C2
     revision is A
-    serial number is FNS17221H4A
+    serial number is FNS0000TEST5
     nominal bitrate is 10300 MBit/sec
     Link length supported for 50/125um OM2 fiber is 82 m
     cisco id is --

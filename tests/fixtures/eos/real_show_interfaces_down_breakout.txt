@@ -1,7 +1,7 @@
 switch_arista(s1)#show interface et3/25/3
 Ethernet3/25/3 is down, line protocol is down (notconnect)
   Hardware is Ethernet, address is 0011.22aa.bb03 (bia 0011.22aa.bb03)
-  Description: SERVER-205-RU15
+  Description: SERVER-RACK01-RU01
   Member of Port-Channel195
   Ethernet MTU 10218 bytes, Ethernet MRU 10240 bytes, BW 25000000 kbit
   Full-duplex, 25Gb/s over 1 lane, auto negotiation: off, uni-link: disabled

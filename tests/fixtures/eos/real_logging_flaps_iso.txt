@@ -1,4 +1,4 @@
 switch_arista(s1)#show logging | include Ethernet3/25/3
 2026-06-23T05:03:09.197939-04:00 switch_arista SandLanz: %QUEUEMONITOR-6-LENGTH_OVER_THRESHOLD: Interface Et8/31/1 tc 0 (ingress port-set Ethernet3/25/1,Ethernet3/25/2,Ethernet3/25/3,Ethernet3/25/4,Ethernet3/26/1,Ethernet3/26/2,Ethernet3/26/3,Ethernet3/26/4,Ethernet3/27/1,Ethernet3/27/2,Ethernet3/28/1,Ethernet3/28/2,Ethernet3/28/3,Ethernet3/28/4,Ethernet3/29/1,Ethernet3/29/2,Ethernet3/29/3,Ethernet3/29/4,Ethernet3/30/1,Ethernet3/30/2,Ethernet3/30/3) over high threshold of 5242880, current length is 5839040
-2026-08-05T07:58:35.249460-04:00 switch_arista Ebra: %LINEPROTO-5-UPDOWN: Line protocol on Interface Ethernet3/25/3 (SERVER-205-RU15), changed state to down
-2026-08-05T07:58:41.680148-04:00 switch_arista Ebra: %LINEPROTO-5-UPDOWN: Line protocol on Interface Ethernet3/25/3 (SERVER-205-RU15), changed state to up
+2026-08-05T07:58:35.249460-04:00 switch_arista Ebra: %LINEPROTO-5-UPDOWN: Line protocol on Interface Ethernet3/25/3 (SERVER-RACK01-RU01), changed state to down
+2026-08-05T07:58:41.680148-04:00 switch_arista Ebra: %LINEPROTO-5-UPDOWN: Line protocol on Interface Ethernet3/25/3 (SERVER-RACK01-RU01), changed state to up

@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   change a verdict.
 
 ### Changed
+- Fixture sanitization now covers interface descriptions and neighbor names, not
+  just hostnames/IPs/serials/MACs. Real rack-and-slot descriptions
+  (`SERVER-205-RU15`, `ACCESS-PHONE-205-RU15`) and two genuine-format serials
+  (`FCW2245L0AB`, `FNS17221H4A`) that predated the rule were replaced with
+  fictional equivalents. No canonical field is derived from either, so no
+  parser, rule, or assertion changes.
 - The enable secret is explicitly optional: an empty answer (or
   `IFTRIAGE_ENABLE=""`) runs without one, and a device that requires enable is
   skipped with `device skipped: ... requires enable but no enable secret was

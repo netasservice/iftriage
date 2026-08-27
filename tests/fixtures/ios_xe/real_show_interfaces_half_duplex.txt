@@ -1,7 +1,7 @@
 switch_catalyst#show int gi3/0/20
 GigabitEthernet3/0/20 is up, line protocol is up (connected)
   Hardware is Gigabit Ethernet, address is 0011.22aa.bb01 (bia 0011.22aa.bb01)
-  Description: ACCESS-PHONE-205-RU15
+  Description: ACCESS-PHONE-RACK01-RU01
   MTU 9160 bytes, BW 100000 Kbit/sec, DLY 100 usec,
      reliability 255/255, txload 1/255, rxload 1/255
   Encapsulation ARPA, loopback not set
