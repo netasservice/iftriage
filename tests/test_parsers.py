@@ -80,6 +80,19 @@ def test_ios_xe_logging_flaps():
     assert IOS.parse("logging", "", "GigabitEthernet3/0/20")["flap_count"] == 0
 
 
+def test_ios_xe_logging_ignores_neighbouring_ports():
+    """`| include GigabitEthernet3/0/2` also matches /20, /21, /29 on the
+    device; only the port under analysis may count."""
+    raw = load_fixture("ios_xe", "logging_neighbor_ports.txt")
+    parsed = IOS.parse("logging", raw, "GigabitEthernet3/0/2")
+    assert parsed["flap_count"] == 1
+    assert parsed["duplex_mismatch_logged"] is False
+
+    sibling = IOS.parse("logging", raw, "GigabitEthernet3/0/21")
+    assert sibling["flap_count"] == 0
+    assert sibling["duplex_mismatch_logged"] is True
+
+
 def test_ios_xe_version():
     parsed = IOS.parse(
         "version", load_fixture("ios_xe", "show_version.txt"), "GigabitEthernet3/0/20"

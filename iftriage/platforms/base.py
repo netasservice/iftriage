@@ -12,7 +12,11 @@ import re
 from abc import ABC, abstractmethod
 
 from ..models import Platform
-from ..normalize import expand_interface, interface_matches_token
+from ..normalize import (
+    expand_interface,
+    interface_matches_token,
+    line_references_interface,
+)
 
 # Canonical command keys, in collection order. Profiles may omit keys.
 # "neighbors_lldp" comes before "neighbors" so that when a platform runs both
@@ -183,16 +187,22 @@ def parse_cdp_neighbor_detail(raw: str) -> dict:
     return result
 
 
-def parse_flap_count(raw: str) -> dict:
+def parse_flap_count(raw: str, canonical_interface: str) -> dict:
     """Count link up/down transitions in filtered logging output, and flag
-    logged duplex-mismatch events (%CDP-4-DUPLEX_MISMATCH)."""
-    if not raw.strip():
-        return {"flap_count": 0, "duplex_mismatch_logged": False}
+    logged duplex-mismatch events (%CDP-4-DUPLEX_MISMATCH).
+
+    Every line is re-scoped to the interface under analysis: the device-side
+    `| include <name>` filter matches substrings, so output collected for
+    GigabitEthernet3/0/2 also carries GigabitEthernet3/0/20 events, and a
+    neighbouring port's mismatch must never corroborate this port's verdict.
+    """
     count = 0
+    mismatch_logged = False
     for line in raw.splitlines():
+        if not line_references_interface(line, canonical_interface):
+            continue
         if re.search(r"(UPDOWN|changed state to|LINEPROTO|IF_DOWN|IF_UP)", line):
             count += 1
-    return {
-        "flap_count": count,
-        "duplex_mismatch_logged": bool(re.search(r"DUPLEX_MISMATCH", raw)),
-    }
+        if "DUPLEX_MISMATCH" in line:
+            mismatch_logged = True
+    return {"flap_count": count, "duplex_mismatch_logged": mismatch_logged}

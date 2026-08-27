@@ -69,6 +69,10 @@ entire project. Diagnostic tool only — it must NEVER modify device state.
   (protects against account lockout across the fleet with centralized AAA).
 - Bounded concurrency (default ~10 workers), per-device timeouts (~30s), small random jitter
   between connection attempts (avoid hammering TACACS).
+- Command output is bounded client-side (`limits` in `config.yaml`): a hard byte ceiling in
+  `session.get()` and a line bound on the evidence copy that reaches SQLite and the report.
+  `show logging | include <intf>` can return thousands of lines on a noisy port. The command
+  set itself is unchanged — see section 5, which remains the allow-list of record.
 - Per-device try/except: one failed device never kills the run; it becomes `UNVERIFIED`.
 - NO `clear counters`, ever (deltas come from re-polling, not clearing). No `debug`, no
   `show tech`, no config mode under any circumstance.

@@ -50,6 +50,30 @@ class EnableRequired(SessionError):
     """
 
 
+# Hard ceiling on the output of a single command. This is a memory/storage
+# safety net, not a feature: `show logging | include <intf>` on a noisy port can
+# return megabytes, and every byte would otherwise reach the history DB and the
+# HTML report.
+DEFAULT_MAX_OUTPUT_BYTES = 1_000_000
+
+
+def _truncate_output(output: str, max_bytes: int) -> str:
+    """Keep the tail of an oversized command output, with a visible marker.
+
+    The tail is kept because the one command that realistically reaches the
+    ceiling is `show logging`, whose newest — and therefore most relevant —
+    events are printed last. The marker travels with the output into
+    raw_outputs, so a truncated result is never silently presented as complete.
+    """
+    total = len(output)
+    if total <= max_bytes:
+        return output
+    return (
+        f"[iftriage: output truncated, kept last {max_bytes} of {total} bytes]\n"
+        + output[-max_bytes:]
+    )
+
+
 class AuditLog:
     """Append-only, thread-safe session log. Never receives secrets."""
 
@@ -97,6 +121,7 @@ class ReadOnlySession:
         audit: AuditLog,
         connect_fn: Callable | None = None,
         read_timeout: int = 30,
+        max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
     ):
         self._host = host
         self._device_type = device_type
@@ -105,6 +130,7 @@ class ReadOnlySession:
         self._audit = audit
         self._connect_fn = connect_fn or _default_connect
         self._read_timeout = read_timeout
+        self._max_output_bytes = max_output_bytes
         self.__conn = None  # private: the raw driver connection
 
     # -- lifecycle -----------------------------------------------------------
@@ -166,7 +192,7 @@ class ReadOnlySession:
         output = self.__conn.send_command(command, read_timeout=self._read_timeout)
         self._assert_privileged_exec()
         self._audit.record(self._host, command)
-        return output
+        return _truncate_output(output, self._max_output_bytes)
 
     # -- prompt guards (layer 3) --------------------------------------------
 

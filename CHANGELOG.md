@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   CDP (non-Cisco uplinks do not speak CDP); CDP wins the merge when present.
 - Canonical field `duplex_mismatch_logged` set when filtered logging contains
   `%CDP-4-DUPLEX_MISMATCH` (corroborative only, never required).
+- `limits` section in `config.yaml`: `max_output_bytes` (default 1000000) is a
+  hard per-command ceiling enforced in `ReadOnlySession.get()`, and
+  `evidence_max_lines` (default 300) bounds the head+tail copy of raw output
+  stored in the history database and rendered in the report. Truncation is
+  marked inline; parsers always receive the full output, so neither limit can
+  change a verdict.
 
 ### Changed
 - The enable secret is explicitly optional: an empty answer (or
@@ -36,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   event) is now `CONFIG_ISSUE` (confirmed mismatch), not `PHYSICAL_MEDIA`.
 
 ### Fixed
+- Logging analysis is now scoped to the interface under analysis. Device-side
+  `| include <name>` matches substrings, so output collected for
+  `GigabitEthernet3/0/2` also contained `GigabitEthernet3/0/20`–`/29` events:
+  `flap_count` counted a neighbouring port's flaps, and — with user-visible
+  consequences — a neighbouring port's `%CDP-4-DUPLEX_MISMATCH` could
+  corroborate this port's `CONFIG_ISSUE` verdict. Both fields are now derived
+  only from lines that reference the target interface.
 - NX-OS `counters errors`: the fourth (InDiscards) table block is now mapped
   to `discards_in`.
 - EOS transceiver parser understands the breakout Slot/Channel row layout

@@ -5,6 +5,7 @@ from iftriage.normalize import (
     InterfaceNameError,
     expand_interface,
     interface_matches_token,
+    line_references_interface,
 )
 
 
@@ -62,3 +63,46 @@ def test_expand_interface_rejects_unsafe_names(bad):
 )
 def test_interface_matches_token(token, canonical, expected):
     assert interface_matches_token(token, canonical) is expected
+
+
+# Device-side `| include <name>` is a substring match: filtered logging output
+# for a low-numbered port also carries its higher-numbered siblings.
+@pytest.mark.parametrize(
+    "line,canonical,expected",
+    [
+        (
+            "%LINK-3-UPDOWN: Interface GigabitEthernet3/0/2, changed state to down",
+            "GigabitEthernet3/0/2",
+            True,
+        ),
+        (
+            "%LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to down",
+            "GigabitEthernet3/0/2",
+            False,
+        ),
+        (
+            "%LINEPROTO-5-UPDOWN: Line protocol on Interface Gi3/0/2, changed state",
+            "GigabitEthernet3/0/2",
+            True,
+        ),
+        (
+            "%QUEUEMONITOR-6-LENGTH_OVER_THRESHOLD: ingress port-set "
+            "Ethernet3/25/1,Ethernet3/25/3,Ethernet3/26/1 over high threshold",
+            "Ethernet3/25/3",
+            True,
+        ),
+        (
+            "Aug 24 02:11:41.520: %SYS-5-CONFIG_I: configured from console",
+            "Vlan3",
+            False,
+        ),
+        (
+            "%LINK-3-UPDOWN: Interface Vlan20, changed state to up",
+            "GigabitEthernet3/0/20",
+            False,
+        ),
+        ("", "GigabitEthernet3/0/2", False),
+    ],
+)
+def test_line_references_interface(line, canonical, expected):
+    assert line_references_interface(line, canonical) is expected

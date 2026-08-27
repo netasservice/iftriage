@@ -144,3 +144,23 @@ def interface_matches_token(token: str, canonical: str) -> bool:
     tok_prefix = tok.group(1).lower().replace("-", "")
     can_prefix = can.group(1).lower().replace("-", "")
     return can_prefix.startswith(tok_prefix) or tok_prefix.startswith(can_prefix)
+
+
+# Interface-shaped tokens inside free text ("Interface GigabitEthernet3/0/20,",
+# "port-set Ethernet3/25/1,Ethernet3/25/2"). Deliberately loose: false hits like
+# "LINK-3" are rejected by interface_matches_token below.
+_INTERFACE_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z-]*\d+(?:/\d+)*(?:\.\d+)?")
+
+
+def line_references_interface(line: str, canonical: str) -> bool:
+    """True when a free-text line (a syslog message) mentions the canonical
+    interface itself, and not merely a name it is a prefix of.
+
+    Device-side `| include <name>` is a substring match, so logging output
+    filtered for GigabitEthernet3/0/2 also carries GigabitEthernet3/0/20
+    events; this is what re-scopes such output to the interface under analysis.
+    """
+    return any(
+        interface_matches_token(token, canonical)
+        for token in _INTERFACE_TOKEN_RE.findall(line)
+    )

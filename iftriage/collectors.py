@@ -122,6 +122,31 @@ class _AaaBreaker:
             self._consecutive = 0
 
 
+# Lines kept from the head of an oversized output, so a truncated table still
+# shows its header row.
+_EVIDENCE_HEAD_LINES = 50
+
+
+def _bounded_evidence(raw: str, max_lines: int) -> str:
+    """Bound the copy of a command output that is persisted and reported.
+
+    Head and tail are both kept: the head carries table headers (show
+    interfaces, show port-channel summary), the tail carries the newest syslog
+    lines. Parsing still runs on the full text, so bounding evidence never
+    changes a verdict.
+    """
+    lines = raw.splitlines()
+    if len(lines) <= max_lines or max_lines <= _EVIDENCE_HEAD_LINES:
+        return raw
+    tail_lines = max_lines - _EVIDENCE_HEAD_LINES
+    elided = len(lines) - max_lines
+    marker = (
+        f"[iftriage: {elided} lines elided, kept first "
+        f"{_EVIDENCE_HEAD_LINES} and last {tail_lines}]"
+    )
+    return "\n".join(lines[:_EVIDENCE_HEAD_LINES] + [marker] + lines[-tail_lines:])
+
+
 def _merge_stats(parsed_by_key: dict[str, dict]) -> NormalizedInterfaceStats:
     merged: dict = {}
     for key in COMMAND_KEYS:  # later commands (counters table) win
@@ -196,6 +221,7 @@ def _collect_device(
         allowed_commands=allowed,
         audit=audit,
         read_timeout=config.connection.timeout_seconds,
+        max_output_bytes=config.limits.max_output_bytes,
     )
     try:
         session.connect()
@@ -234,7 +260,9 @@ def _collect_device(
                         raw = session.get(command)
                         if key in DEVICE_LEVEL_KEYS:
                             device_level_raw[command] = raw
-                    result.raw_outputs[key] = raw
+                    result.raw_outputs[key] = _bounded_evidence(
+                        raw, config.limits.evidence_max_lines
+                    )
                 except SafetyViolation:
                     raise
                 except Exception as exc:

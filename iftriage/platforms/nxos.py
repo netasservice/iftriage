@@ -111,7 +111,7 @@ class NxosProfile(PlatformProfile):
         if key == "portchannel":
             return parse_portchannel_summary(raw)
         if key == "logging":
-            return parse_flap_count(raw)
+            return parse_flap_count(raw, canonical_interface)
         if key == "version":
             return _parse_version(raw)
         return {}
