@@ -1,0 +1,6 @@
+switch_catalyst#show logging | include GigabitEthernet3/0/2
+Aug 24 02:11:41.520: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to down
+Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to up
+Aug 24 03:02:07.884: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/2, changed state to down
+Aug 24 03:59:12.310: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet3/0/29, changed state to down
+Aug 26 2026 18:30:29.655 EDT: %CDP-4-DUPLEX_MISMATCH: duplex mismatch discovered on GigabitEthernet3/0/21 (not full duplex), with SEP001122AABB99 Port 1 (full duplex).

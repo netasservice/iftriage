@@ -32,6 +32,14 @@ timeouts, jitter between connections, per-device try/except (a failed device
 becomes `UNVERIFIED`). No `clear counters`, no `debug`, no `show tech`, no
 config mode, ever.
 
+**Bounded output:** `show logging | include <intf>` can return thousands of
+lines on a noisy port. Two limits under `limits` in `config.yaml` keep that
+from inflating the history database or the report — `max_output_bytes`
+(default 1000000, a hard per-command ceiling that keeps the tail) and
+`evidence_max_lines` (default 300, the head+tail copy stored and rendered).
+Parsing always sees the full output, so neither limit can change a verdict;
+truncation is marked inline in the raw evidence.
+
 **Fail-closed analysis:** a missing/unparsed critical field never yields a
 clean verdict — it becomes `PARSE_ERROR`, never a false `IGNORE`.
 

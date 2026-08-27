@@ -26,9 +26,20 @@ class ConnectionSettings:
 
 
 @dataclass
+class Limits:
+    """Bounds on command output, so one noisy interface cannot inflate the
+    history DB or make the HTML report unusable. `show logging | include ...`
+    is the command that reaches these in practice."""
+
+    max_output_bytes: int = 1_000_000
+    evidence_max_lines: int = 300
+
+
+@dataclass
 class Config:
     thresholds: Thresholds = field(default_factory=Thresholds)
     connection: ConnectionSettings = field(default_factory=ConnectionSettings)
+    limits: Limits = field(default_factory=Limits)
     repoll_default_minutes: float = 10.0
     platform_overrides: dict[str, str] = field(default_factory=dict)
     db_path: str = "iftriage_history.db"
@@ -54,6 +65,9 @@ def load_config(path: str | Path | None = None) -> Config:
         if hasattr(cfg.connection, key):
             current = getattr(cfg.connection, key)
             setattr(cfg.connection, key, type(current)(value))
+    for key, value in (data.get("limits") or {}).items():
+        if hasattr(cfg.limits, key):
+            setattr(cfg.limits, key, int(value))
     repoll = data.get("repoll") or {}
     if "default_minutes" in repoll:
         cfg.repoll_default_minutes = float(repoll["default_minutes"])

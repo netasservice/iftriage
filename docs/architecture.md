@@ -60,7 +60,12 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 4. **Fail-closed analysis.** `NormalizedInterfaceStats` fields are `Optional`;
    `None` is never coerced to zero. `rules.py` declares required fields per
    counter class and returns `PARSE_ERROR` when any are missing.
-5. **One failed device never kills the run** — it degrades to `UNVERIFIED`.
+5. **Bounded evidence.** `session.get()` enforces a hard byte ceiling per
+   command (keeping the tail, with a visible marker), and `collectors.py`
+   stores a line-bounded head+tail copy in `raw_outputs`. Parsing always runs
+   on the full output, so bounding evidence can never change a verdict. Both
+   limits are configurable under `limits` in `config.yaml`.
+6. **One failed device never kills the run** — it degrades to `UNVERIFIED`.
    The two deliberate exceptions that DO abort everything: a safety violation
    and the AAA circuit breaker (2 consecutive auth failures).
 
@@ -87,7 +92,8 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 3. Collection pass: group cases by management IP, resolve platform
    (override → cache → SSHDetect), open one `ReadOnlySession` per device, run
    the per-interface command set from the platform profile (device-level
-   commands once per device), parse into `NormalizedInterfaceStats`.
+   commands once per device), parse into `NormalizedInterfaceStats`. The raw
+   output kept as evidence is bounded; the text handed to parsers is not.
 4. Optional re-poll pass after N minutes re-runs the counter commands to
    answer: still incrementing NOW, or historical?
 5. `rules.py` produces one `Verdict` per case; port-channel members listed

@@ -138,3 +138,48 @@ def test_credentials_repr_never_exposes_secrets():
     text = repr(CREDS)
     assert "pw" not in text
     assert "S3cr3t-Enable" not in text
+
+
+def test_oversized_output_is_truncated_to_the_tail(tmp_path):
+    """`show logging` on a noisy port can return megabytes. get() bounds it,
+    keeps the newest (trailing) lines, and says so in the output itself."""
+
+    class HugeConn(FakeConn):
+        def send_command(self, command, read_timeout=None):
+            self.sent.append(command)
+            return "\n".join(f"line {i}" for i in range(20000))
+
+    fake = HugeConn(["switch#"])
+    audit = AuditLog(tmp_path / "audit.log")
+    session = ReadOnlySession(
+        host="10.0.0.1",
+        device_type="cisco_xe",
+        credentials=CREDS,
+        allowed_commands=ALLOWED,
+        audit=audit,
+        connect_fn=lambda host, dt, creds, timeout: fake,
+        max_output_bytes=500,
+    )
+    session.connect()
+    out = session.get("show version")
+
+    assert "output truncated" in out.splitlines()[0]
+    assert len(out) < 700  # ceiling plus the one-line marker
+    assert out.endswith("line 19999")
+    assert "show version" in audit.path.read_text()
+
+
+def test_output_within_the_ceiling_is_returned_verbatim(tmp_path):
+    fake = FakeConn(["switch#"])
+    audit = AuditLog(tmp_path / "audit.log")
+    session = ReadOnlySession(
+        host="10.0.0.1",
+        device_type="cisco_xe",
+        credentials=CREDS,
+        allowed_commands=ALLOWED,
+        audit=audit,
+        connect_fn=lambda host, dt, creds, timeout: fake,
+        max_output_bytes=500,
+    )
+    session.connect()
+    assert session.get("show version") == "output of show version"
