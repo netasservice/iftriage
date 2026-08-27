@@ -168,3 +168,7 @@ way: unparsed critical fields produce `PARSE_ERROR`, never a clean verdict.
 
 Full-fleet polling, Splunk API integration, ticketing integration, any
 configuration capability whatsoever, async at scale.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

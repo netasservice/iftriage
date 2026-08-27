@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- MIT `LICENSE`, declared in `pyproject.toml` as a PEP 639 license expression
+  (which raises the build requirement to `setuptools>=77`).
 - `--user USERNAME` on `iftriage run`: the device username can now be passed as
   an argument. Resolution order per credential is flag (username only) →
   environment variable → terminal prompt. Passwords are still never accepted as
