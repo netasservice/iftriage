@@ -72,13 +72,20 @@ entire project. Diagnostic tool only — it must NEVER modify device state.
 - Per-device try/except: one failed device never kills the run; it becomes `UNVERIFIED`.
 - NO `clear counters`, ever (deltas come from re-polling, not clearing). No `debug`, no
   `show tech`, no config mode under any circumstance.
-- Credentials: env vars (`IFTRIAGE_USER`, `IFTRIAGE_PASS`, `IFTRIAGE_ENABLE`) or interactive
-  getpass. Never hardcoded, never logged, never written to disk.
+- Credentials: username from `--user`, else `IFTRIAGE_USER`, else an interactive prompt.
+  Secrets from `IFTRIAGE_PASS` / `IFTRIAGE_ENABLE`, else interactive getpass. Passwords are
+  never accepted as command-line arguments (shell history, `ps`). Never hardcoded, never
+  logged, never written to disk. With no interactive terminal and no env vars, the run exits
+  2 with an actionable message rather than an `EOFError` traceback.
 
 ### Enable handling
 - Most accounts land directly in privileged exec. Some devices require enable; the enable password
   is THE SAME across all devices.
-- Prompt for it once per run (getpass) or read `IFTRIAGE_ENABLE`.
+- Prompt for it once per run (getpass) or read `IFTRIAGE_ENABLE`. It is OPTIONAL: an empty answer
+  (or `IFTRIAGE_ENABLE=""`) means the run carries no enable secret.
+- A device that lands in user exec when no enable secret was provided is skipped (`EnableRequired`,
+  a `SessionError` subclass): its cases become `UNVERIFIED` and the run continues. It is not an
+  authentication failure and never counts towards the AAA circuit breaker.
 - `ReadOnlySession` elevates ONLY if it detects a user-exec prompt (`>`), using the driver's native
   `.enable()` — the only sanctioned exception to the allow-list (mode elevation is read-only).
 

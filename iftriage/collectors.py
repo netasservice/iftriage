@@ -25,7 +25,7 @@ from .models import (
 from .normalize import InterfaceNameError
 from .platforms import get_profile
 from .platforms.base import COMMAND_KEYS, DEVICE_LEVEL_KEYS, REPOLL_KEYS
-from .session import AuditLog, ReadOnlySession, SafetyViolation
+from .session import AuditLog, EnableRequired, ReadOnlySession, SafetyViolation
 
 
 class RunAborted(Exception):
@@ -89,6 +89,7 @@ def _autodetect(
         host=mgmt_ip,
         username=credentials.username,
         password=credentials.password,
+        secret=credentials.enable_secret or "",
         conn_timeout=timeout,
     )
     try:
@@ -200,6 +201,12 @@ def _collect_device(
         session.connect()
     except SafetyViolation:
         raise
+    except EnableRequired as exc:
+        # Not a connection or credential failure: the run is simply missing an
+        # optional secret this device insists on. Skip it, keep the run going.
+        for result in targets:
+            result.collection_error = f"device skipped: {exc}"
+        return
     except Exception as exc:
         if _is_auth_error(exc):
             breaker.record_failure()

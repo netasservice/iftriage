@@ -33,7 +33,7 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 
 | Module | Responsibility | May touch devices? |
 |---|---|---|
-| `cli.py` | Argument parsing, run orchestration, credential prompts | no (delegates) |
+| `cli.py` | Argument parsing, run orchestration, credential resolution (flag → env → prompt) | no (delegates) |
 | `ingest.py` | CSV parsing + data-quality checks | no |
 | `models.py` | Shared dataclasses; `None` always means "unknown" | no |
 | `session.py` | `ReadOnlySession`: safety layers 1–4, audit log | **only module allowed** |

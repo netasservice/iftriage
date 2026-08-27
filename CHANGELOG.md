@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `--user USERNAME` on `iftriage run`: the device username can now be passed as
+  an argument. Resolution order per credential is flag (username only) →
+  environment variable → terminal prompt. Passwords are still never accepted as
+  arguments, only from `IFTRIAGE_PASS` / `IFTRIAGE_ENABLE` or `getpass`.
 - Phase 2 validation: 21 sanitized fixtures transcribed from real fleet
   captures (Catalyst C9410R, Nexus, Arista DCS-7808-CH), including a live
   duplex-mismatch case, a vPC port-channel, an SFP-10G-SR DOM readout, a
@@ -18,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `%CDP-4-DUPLEX_MISMATCH` (corroborative only, never required).
 
 ### Changed
+- The enable secret is explicitly optional: an empty answer (or
+  `IFTRIAGE_ENABLE=""`) runs without one, and a device that requires enable is
+  skipped with `device skipped: ... requires enable but no enable secret was
+  provided` (verdict `UNVERIFIED`) instead of being reported as a connection
+  failure. It never counts towards the AAA circuit breaker.
+- Credentials are resolved before the history database is opened, so abandoning
+  a prompt no longer leaves an orphan run row.
+- A credential prompt with no interactive terminal exits 2 with an actionable
+  message instead of an `EOFError` traceback.
 - Late-collision rule refined with the real fleet case: half-duplex local
   port whose neighbor reports full duplex (or with a logged duplex-mismatch
   event) is now `CONFIG_ISSUE` (confirmed mismatch), not `PHYSICAL_MEDIA`.

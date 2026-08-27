@@ -47,17 +47,34 @@ pytest
 ## Usage
 
 ```bash
-export IFTRIAGE_USER=youruser
-export IFTRIAGE_PASS=...          # or omit: interactive getpass
-export IFTRIAGE_ENABLE=...        # same enable secret fleet-wide; optional
+# Username on the command line, secrets typed into the terminal (getpass):
+iftriage run top20.csv --user youruser --repoll 10
 
-# See targets and the exact commands, connecting to nothing:
+# See targets and the exact commands, connecting to nothing (no prompts):
 iftriage run top20.csv --dry-run
 
-# Full run with a 10-minute re-poll (is the counter still incrementing NOW?):
-iftriage run top20.csv --repoll 10
+iftriage run top20.csv --user youruser --no-repoll --output reports/ --workers 5
+```
 
-iftriage run top20.csv --no-repoll --output reports/ --workers 5
+Credentials are resolved per value, first match wins:
+
+| Credential | 1st | 2nd | 3rd |
+|---|---|---|---|
+| Username | `--user` | `$IFTRIAGE_USER` | terminal prompt |
+| Password | — | `$IFTRIAGE_PASS` | terminal prompt (`getpass`) |
+| Enable secret | — | `$IFTRIAGE_ENABLE` | terminal prompt (`getpass`) |
+
+Passwords are never accepted as arguments — they would be left behind in the
+shell history and visible in `ps`. The enable secret is optional and the same
+fleet-wide: press Enter to skip it, or set `IFTRIAGE_ENABLE=""` to skip the
+prompt in unattended runs. It is only used on devices that land in user exec
+(`>`); a device that requires it when it was not supplied is skipped and its
+cases are reported `UNVERIFIED` — the run continues.
+
+```bash
+export IFTRIAGE_USER=youruser
+export IFTRIAGE_PASS=...          # unattended runs; otherwise omit and get prompted
+export IFTRIAGE_ENABLE=...        # same enable secret fleet-wide; optional
 ```
 
 Outputs: HTML + plain-text report in the output directory, the session audit
@@ -70,6 +87,7 @@ ingested CSV, run results, and the IP→platform cache.
 |---|---|
 | `iftriage run <csv>` | Triage every case in a top-N CSV |
 | `--dry-run` | Print targets and exact commands; connect to nothing |
+| `--user USERNAME` | Device username (default: `$IFTRIAGE_USER`, else prompt) |
 | `--repoll MINUTES` | Re-poll counters after N minutes (default: config value) |
 | `--no-repoll` | Skip the re-poll pass |
 | `--config PATH` | Alternate `config.yaml` |
@@ -101,7 +119,7 @@ description.
 | `CONFIG_ISSUE` | Duplex mismatch confirmed (late-col on full-duplex) — fixed via CLI |
 | `CAPACITY` | Discards under load — saturation, not media |
 | `IGNORE` | Negligible normalized rate / flat on re-poll / not an error counter |
-| `UNVERIFIED` | Device unreachable / auth failed — CSV data only |
+| `UNVERIFIED` | Device unreachable / auth failed / required an enable secret that was not provided — CSV data only |
 | `PARSE_ERROR` | Output did not parse or critical fields missing (fail closed) |
 
 Rates are normalized: `error_delta / packet_delta` (re-poll window) or

@@ -2,9 +2,14 @@
 
 import shutil
 
+import pytest
 from conftest import FIXTURES
 
-from iftriage.cli import main
+from iftriage.cli import CredentialError, _resolve_credentials, main
+
+
+def _never_prompt(label):
+    raise AssertionError(f"unexpected prompt: {label!r}")
 
 
 def test_dry_run_prints_commands_and_touches_no_network(tmp_path, capsys, monkeypatch):
@@ -35,3 +40,135 @@ def test_malformed_config_yields_error_message_not_traceback(tmp_path, capsys):
 
     assert rc == 2
     assert "could not load configuration" in capsys.readouterr().err
+
+
+def _clear_credential_env(monkeypatch):
+    for name in ("IFTRIAGE_USER", "IFTRIAGE_PASS", "IFTRIAGE_ENABLE"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_user_flag_wins_over_environment(monkeypatch):
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setenv("IFTRIAGE_USER", "from-env")
+    monkeypatch.setenv("IFTRIAGE_PASS", "pw")
+    monkeypatch.setenv("IFTRIAGE_ENABLE", "en")
+    monkeypatch.setattr("builtins.input", _never_prompt)
+
+    credentials = _resolve_credentials("from-flag")
+
+    assert credentials.username == "from-flag"
+    assert credentials.password == "pw"
+    assert credentials.enable_secret == "en"
+
+
+def test_environment_username_used_when_flag_absent(monkeypatch):
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setenv("IFTRIAGE_USER", "from-env")
+    monkeypatch.setenv("IFTRIAGE_PASS", "pw")
+    monkeypatch.setenv("IFTRIAGE_ENABLE", "en")
+    monkeypatch.setattr("builtins.input", _never_prompt)
+
+    assert _resolve_credentials(None).username == "from-env"
+
+
+def test_secrets_are_prompted_when_environment_is_empty(monkeypatch):
+    _clear_credential_env(monkeypatch)
+    asked: list[str] = []
+
+    def fake_getpass(label):
+        asked.append(label)
+        return "typed-secret"
+
+    monkeypatch.setattr("iftriage.cli.getpass.getpass", fake_getpass)
+    monkeypatch.setattr("builtins.input", _never_prompt)
+
+    credentials = _resolve_credentials("jperez")
+
+    assert credentials.password == "typed-secret"
+    assert credentials.enable_secret == "typed-secret"
+    assert "Password for jperez: " in asked[0]
+    assert "Enable secret" in asked[1]
+
+
+def test_username_is_prompted_when_neither_flag_nor_environment(monkeypatch):
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setenv("IFTRIAGE_PASS", "pw")
+    monkeypatch.setenv("IFTRIAGE_ENABLE", "en")
+    monkeypatch.setattr("builtins.input", lambda label: "typed-user")
+
+    assert _resolve_credentials(None).username == "typed-user"
+
+
+def test_blank_enable_answer_means_no_enable_secret(monkeypatch):
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setenv("IFTRIAGE_PASS", "pw")
+    monkeypatch.setattr("iftriage.cli.getpass.getpass", lambda label: "")
+    monkeypatch.setattr("builtins.input", _never_prompt)
+
+    assert _resolve_credentials("jperez").enable_secret is None
+
+
+def test_empty_enable_environment_variable_suppresses_the_prompt(monkeypatch):
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setenv("IFTRIAGE_PASS", "pw")
+    monkeypatch.setenv("IFTRIAGE_ENABLE", "")
+    monkeypatch.setattr(
+        "iftriage.cli.getpass.getpass", lambda label: pytest.fail("prompted")
+    )
+    monkeypatch.setattr("builtins.input", _never_prompt)
+
+    assert _resolve_credentials("jperez").enable_secret is None
+
+
+def test_blank_username_answer_is_an_error_not_a_connection_attempt(monkeypatch):
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setattr("builtins.input", lambda label: "")
+
+    with pytest.raises(CredentialError):
+        _resolve_credentials(None)
+
+
+def test_resolved_credentials_never_expose_secrets(monkeypatch):
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setenv("IFTRIAGE_PASS", "pw-secret")
+    monkeypatch.setenv("IFTRIAGE_ENABLE", "enable-secret")
+    monkeypatch.setattr("builtins.input", _never_prompt)
+
+    text = repr(_resolve_credentials("jperez"))
+
+    assert "pw-secret" not in text
+    assert "enable-secret" not in text
+
+
+def test_non_interactive_run_without_environment_errors_cleanly(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _clear_credential_env(monkeypatch)
+
+    def closed_stdin(label):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", closed_stdin)
+    csv = tmp_path / "top20.csv"
+    shutil.copy(FIXTURES / "sample_top20.csv", csv)
+
+    rc = main(["run", str(csv), "--no-repoll"])
+
+    assert rc == 2
+    assert "interactive terminal" in capsys.readouterr().err
+    # No history database was created: the run aborted before opening one.
+    assert not list(tmp_path.glob("*.db"))
+
+
+def test_dry_run_never_asks_for_credentials(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setattr(
+        "iftriage.cli._resolve_credentials",
+        lambda username_arg: pytest.fail("dry run must not need credentials"),
+    )
+    csv = tmp_path / "top20.csv"
+    shutil.copy(FIXTURES / "sample_top20.csv", csv)
+
+    assert main(["run", str(csv), "--dry-run", "--user", "jperez"]) == 0
