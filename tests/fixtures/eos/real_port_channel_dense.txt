@@ -1,0 +1,24 @@
+switch_arista(s1)#show port-channel dense
+
+                    Flags
+------------------------- ---------------------------------- -----------------------
+  a - LACP Active          p - LACP Passive                   * - static fallback
+  F - Fallback enabled     f - Fallback configured            ^ - individual fallback
+  U - In Use               D - Down
+  + - In-Sync              - - Out-of-Sync                    i - incompatible with agg
+  P - bundled in Po        s - suspended                      G - Aggregable
+  I - Individual           S - ShortTimeout                   w - wait for agg
+  C - Transmit disabled    M - Exceeds maximum weight
+  E - Inactive. The number of configured port channels exceeds the config limit
+
+Number of channels in use: 695
+Number of aggregators: 698
+
+   Port-Channel       Protocol       Ports
+------------------ -------------- ----------------
+   Po1(U)             LACP(a)        Et3/1/1(PG+) Et3/36/1(PG+) Et4/1/1(PG+) Et4/36/1(PG+)
+                                     Et5/1/1(PG+) Et5/36/1(PG+) Et6/1/1(PG+) Et6/36/1(D)
+                                     Et7/1/1(PG+) Et7/36/1(D) Et8/1/1(PG+) Et8/36/1(D)
+   Po101(U)           LACP(af^)      Et4/10/2(PG+) PEt4/10/2(P)
+   Po102(U)           LACP(af^)      Et4/10/3(PG+) PEt4/10/3(P)
+   Po103(U)           LACP(af^)      Et4/10/4(PG+) PEt4/10/4(P)

@@ -1,0 +1,19 @@
+switch_nexus# show lldp neighbors interface eth4/15 detail
+Capability codes:
+  (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+  (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+Device ID            Local Intf      Hold-time  Capability  Port ID
+
+Chassis id: 0011.22aa.bb05
+Port id: Ethernet45
+Local Port id: Eth4/15
+Port Description: UPLINK-ARISTA E4/15
+System Name: arista switch
+System Description: Arista Networks EOS version 4.32.5.1M running on an Arista Networks DCS-7280SR-48C6
+Time remaining: 106 seconds
+System Capabilities: B, R
+Enabled Capabilities: B, R
+Management Address: 192.0.2.24
+Vlan ID: 1
+
+Total entries displayed: 1

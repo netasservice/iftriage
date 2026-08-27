@@ -1,0 +1,21 @@
+switch_catalyst#show cdp neighbors gi3/0/20 detail
+-------------------------
+Device ID: SEP001122AABB99
+Entry address(es):
+  IP address: 192.0.2.98
+Platform: Cisco IP Phone 8841,  Capabilities: Host Phone Two-port Mac Relay
+Interface: GigabitEthernet3/0/20,  Port ID (outgoing port): Port 1
+Holdtime : 143 sec
+Second Port Status: Up
+
+Version :
+sip88xx.14-4-1-0001-36.loads
+
+advertisement version: 2
+Duplex: full (Mismatch)
+Power drawn: 6.086 Watts
+Power request id: 4822, Power management id: 4
+Power request levels are:6086 0 0 0 0
+
+
+Total cdp entries displayed : 1

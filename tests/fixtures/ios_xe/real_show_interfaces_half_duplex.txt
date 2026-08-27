@@ -1,0 +1,32 @@
+switch_catalyst#show int gi3/0/20
+GigabitEthernet3/0/20 is up, line protocol is up (connected)
+  Hardware is Gigabit Ethernet, address is 0011.22aa.bb01 (bia 0011.22aa.bb01)
+  Description: ACCESS-PHONE-205-RU15
+  MTU 9160 bytes, BW 100000 Kbit/sec, DLY 100 usec,
+     reliability 255/255, txload 1/255, rxload 1/255
+  Encapsulation ARPA, loopback not set
+  Keepalive set (10 sec)
+  Half-duplex, 100Mb/s, media type is 10/100/1000BaseTX
+  input flow-control is off, output flow-control is unsupported
+  Auto-MDIX on (operational: on)
+  ARP type: ARPA, ARP Timeout 04:00:00
+  Last input 00:00:08, output 00:00:00, output hang never
+  Last clearing of "show interface" counters 2w5d
+  Input queue: 0/375/0/0 (size/max/drops/flushes); Total output drops: 223462
+  Queueing strategy: Class-based queueing
+  Output queue: 0/40 (size/max)
+  30 second input rate 27000 bits/sec, 9 packets/sec
+  30 second output rate 52000 bits/sec, 16 packets/sec
+     92971720 packets input, 13935173874 bytes, 0 no buffer
+     Received 176683 broadcasts (171017 multicasts)
+     0 runts, 0 giants, 0 throttles
+     0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+     0 watchdog, 171017 multicast, 0 pause input
+     0 input packets with dribble condition detected
+     13870983 packets output, 18832791594 bytes, 0 underruns
+     Output 1030318 broadcasts (3421639 multicasts)
+     936685 output errors, 2686094 collisions, 0 interface resets
+     0 unknown protocol drops
+     0 babbles, 38445916 late collision, 0 deferred
+     0 lost carrier, 0 no carrier, 0 pause output
+     0 output buffer failures, 0 output buffers swapped out

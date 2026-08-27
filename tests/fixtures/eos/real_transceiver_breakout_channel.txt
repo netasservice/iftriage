@@ -1,0 +1,10 @@
+switch_arista(s1)#show interface et3/25/3 transceiver
+Please consider using show interfaces transceiver dom.
+If device is externally calibrated, only calibrated values are printed.
+n/a: not applicable, Tx: transmit, Rx: receive.
+mA: milliamperes, dBm: decibels (milliwatts).
+                                        Bias      Optical   Optical
+                    Temp      Voltage   Current   Tx Power  Rx Power
+Slot       Channel  (Celsius) (Volts)   (mA)      (dBm)     (dBm)      Last Update
+------------ ------- --------- ------- --------- --------- ---------  ------------
+Ethernet3/25       3     22.09    3.27      6.70     -1.50     -6.66   0:00:01 ago

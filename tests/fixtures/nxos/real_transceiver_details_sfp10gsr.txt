@@ -1,0 +1,32 @@
+switch_nexus# show interface eth4/15 transceiver details
+Ethernet4/15
+    transceiver is present
+    type is 10Gbase-SR
+    name is CISCO-AVAGO
+    part number is SFBR-709SMZ-CS1
+    revision is G4.1
+    serial number is AVD0000TEST1
+    nominal bitrate is 10300 MBit/sec
+    Link length supported for 50/125um OM2 fiber is 82 m
+    Link length supported for 62.5/125um fiber is 26 m
+    Link length supported for 50/125um OM3 fiber is 300 m
+    cisco id is --
+    cisco extended id number is 4
+    cisco part number is 10-2415-03
+    cisco product id is SFP-10G-SR
+    cisco vendor id is V03
+    number of lanes 1
+
+           SFP Detail Diagnostics Information (internal calibration)
+  ----------------------------------------------------------------------------
+                Current              Alarms                  Warnings
+                Measurement     High        Low         High          Low
+  ----------------------------------------------------------------------------
+  Temperature   27.05 C        75.00 C     -5.00 C     70.00 C        0.00 C
+  Voltage        3.32 V         3.63 V      2.97 V      3.46 V        3.13 V
+  Current        6.32 mA       10.50 mA     2.50 mA    10.50 mA       2.50 mA
+  Tx Power       -2.18 dBm      1.69 dBm  -11.30 dBm   -1.30 dBm     -7.30 dBm
+  Rx Power       -2.94 dBm      2.00 dBm  -13.90 dBm   -1.00 dBm     -9.90 dBm
+  Transmit Fault Count = 0
+  ----------------------------------------------------------------------------
+  Note: ++  high-alarm; +  high-warning; --  low-alarm; -  low-warning

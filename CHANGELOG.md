@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Phase 2 validation: 21 sanitized fixtures transcribed from real fleet
+  captures (Catalyst C9410R, Nexus, Arista DCS-7808-CH), including a live
+  duplex-mismatch case, a vPC port-channel, an SFP-10G-SR DOM readout, a
+  down/down breakout interface, and each platform's copper/empty transceiver
+  response — all with real prompt/echo lines, which parsers now tolerate.
+- NX-OS collects `show lldp neighbors interface <intf> detail` in addition to
+  CDP (non-Cisco uplinks do not speak CDP); CDP wins the merge when present.
+- Canonical field `duplex_mismatch_logged` set when filtered logging contains
+  `%CDP-4-DUPLEX_MISMATCH` (corroborative only, never required).
+
+### Changed
+- Late-collision rule refined with the real fleet case: half-duplex local
+  port whose neighbor reports full duplex (or with a logged duplex-mismatch
+  event) is now `CONFIG_ISSUE` (confirmed mismatch), not `PHYSICAL_MEDIA`.
+
+### Fixed
+- NX-OS `counters errors`: the fourth (InDiscards) table block is now mapped
+  to `discards_in`.
+- EOS transceiver parser understands the breakout Slot/Channel row layout
+  (`Ethernet3/25  3  ...` for `Et3/25/3`).
+- Port-channel member tokens with EOS dense flags (`(PG+)`, `(af^)`) parse
+  correctly; NX-OS member lists that wrap onto continuation lines were
+  already handled and are now covered by a real fixture.
+- CDP/LLDP neighbor parsing: port ids containing spaces (`Port 1` on IP
+  phones) are captured whole, and NX-OS's lowercase `Port id:` is matched.
+
 ## [0.1.0] - 2026-08-25
 
 ### Added

@@ -106,6 +106,25 @@ def test_late_col_on_half_duplex_is_physical():
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
 
 
+def test_late_col_half_duplex_with_full_duplex_neighbor_is_config_issue():
+    # Real fleet case: switch port fell back to half, IP phone reports full.
+    stats = make_stats(
+        late_collisions=38_445_916,
+        duplex="half",
+        neighbor_name="SEP001122AABB99",
+        neighbor_duplex="full",
+    )
+    verdict = run(make_case("Late-Col"), stats)
+    assert verdict.category is VerdictCategory.CONFIG_ISSUE
+    assert "mismatch confirmed" in verdict.reason.lower()
+
+
+def test_late_col_half_duplex_with_logged_mismatch_is_config_issue():
+    stats = make_stats(late_collisions=42, duplex="half", duplex_mismatch_logged=True)
+    verdict = run(make_case("Late-Col"), stats)
+    assert verdict.category is VerdictCategory.CONFIG_ISSUE
+
+
 def test_late_col_zero_on_device_is_ignore():
     stats = make_stats(late_collisions=0)
     verdict = run(make_case("Late-Col"), stats)

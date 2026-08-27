@@ -19,6 +19,7 @@ _COUNTER_COLUMNS = {
     "rcv-err": "input_errors",
     "outdiscards": "discards_out",
     "late-col": "late_collisions",
+    "indiscards": "discards_in",  # NX-OS prints a fourth InDiscards block
 }
 
 
@@ -90,6 +91,9 @@ class NxosProfile(PlatformProfile):
         "interface": "show interface {interface}",
         "counters": "show interface {interface} counters errors",
         "transceiver": "show interface {interface} transceiver details",
+        # Non-Cisco neighbors (e.g. Arista uplinks) do not speak CDP; LLDP is
+        # collected first and CDP overrides it in the merge when present.
+        "neighbors_lldp": "show lldp neighbors interface {interface} detail",
         "neighbors": "show cdp neighbors interface {interface} detail",
         "portchannel": "show port-channel summary",
         "logging": "show logging logfile | include {interface}",
@@ -102,7 +106,7 @@ class NxosProfile(PlatformProfile):
             return parse_counters_table(raw, canonical_interface, _COUNTER_COLUMNS)
         if key == "transceiver":
             return _parse_transceiver_details(raw)
-        if key == "neighbors":
+        if key in ("neighbors", "neighbors_lldp"):
             return parse_cdp_neighbor_detail(raw)
         if key == "portchannel":
             return parse_portchannel_summary(raw)

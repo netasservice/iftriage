@@ -20,8 +20,10 @@ from iftriage.normalize import (
         (Platform.NXOS, "Et4/15", "Ethernet4/15"),
         (Platform.NXOS, "Po214", "port-channel214"),
         (Platform.EOS, "Et4/15", "Ethernet4/15"),
+        (Platform.EOS, "Et3/25/3", "Ethernet3/25/3"),
         (Platform.EOS, "Po214", "Port-Channel214"),
         (Platform.EOS, "Ethernet4/15", "Ethernet4/15"),
+        (Platform.NXOS, "Po21", "port-channel21"),
     ],
 )
 def test_expand_interface(platform, short, expected):
