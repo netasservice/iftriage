@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Report templates now live inside the package (`iftriage/templates/`) and are
+  loaded with Jinja2's `PackageLoader` instead of a path walked up from
+  `report.py`. The old location resolved to `<site-packages>/templates`, which
+  does not exist in an installed distribution, so any run that reached the
+  rendering step from a `pip install`-ed copy (as opposed to an editable
+  install) failed. Selecting a report language is unchanged: drop a new
+  `report_<lang>.html.j2` / `.txt.j2` pair in `iftriage/templates/`.
+
 ### Added
 - MIT `LICENSE`, declared in `pyproject.toml` as a PEP 639 license expression
   (which raises the build requirement to `setuptools>=77`).

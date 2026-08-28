@@ -6,13 +6,9 @@ from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment, PackageLoader, select_autoescape
 
 from .models import VERDICT_ORDER, CaseResult, DataQualityFinding, VerdictCategory
-
-
-def _templates_dir() -> Path:
-    return Path(__file__).resolve().parent.parent / "templates"
 
 
 def build_summary(results: list[CaseResult]) -> dict:
@@ -45,7 +41,7 @@ def render_report(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     env = Environment(
-        loader=FileSystemLoader(str(_templates_dir())),
+        loader=PackageLoader("iftriage", "templates"),
         autoescape=select_autoescape(["html"]),
         trim_blocks=True,
         lstrip_blocks=True,

@@ -20,7 +20,7 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
               ├──> platforms/  │                  rules.py (pure, no I/O)
               │     base.py ───┘                     │
               │     ios_xe.py / nxos.py / eos.py     v
-              │        │                          report.py ──> templates/
+              │        │                          report.py ──> iftriage/templates/
               │        v
               ├──> normalize.py (interface-name expansion, validation)
               │
@@ -78,7 +78,7 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
   profile (`parse(key, raw, canonical_interface)`); swapping to Genie or
   textfsm affects only the platform layer. Every parser change ships with a
   raw fixture under `tests/fixtures/<platform>/`.
-- **Report language**: a new Jinja2 template pair in `templates/`
+- **Report language**: a new Jinja2 template pair in `iftriage/templates/`
   (`report_<lang>.html.j2` / `.txt.j2`) selected via `config.yaml` — zero code
   changes.
 - **Second optional CSV** (future traffic totals for better normalization):

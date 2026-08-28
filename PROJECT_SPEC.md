@@ -265,8 +265,9 @@ iftriage/
 │   │   └── eos.py
 │   ├── rules.py              # verdict engine — PURE functions, no I/O, fully testable
 │   ├── history.py            # SQLite persistence
-│   └── report.py             # Jinja2 HTML/text report
-├── templates/                # report templates (language lives here)
+│   ├── report.py             # Jinja2 HTML/text report
+│   └── templates/            # report templates, shipped as package data
+│                             # (language lives here)
 ├── tests/
 │   ├── fixtures/             # raw .txt show outputs per platform/command/case
 │   └── ...                   # rules tested against fixtures; session tested for

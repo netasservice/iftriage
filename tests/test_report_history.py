@@ -1,5 +1,7 @@
 """Smoke tests: report rendering and SQLite history round-trip."""
 
+from importlib.resources import files
+
 from conftest import FIXTURES
 
 from iftriage.history import History
@@ -53,6 +55,13 @@ def test_render_report_html_and_txt(tmp_path):
     assert "Executive summary" in html
     assert "PHYSICAL_MEDIA" in html
     assert "Data quality" in html
+
+
+def test_templates_ship_inside_the_package():
+    """A template resolved outside the package is missing from an installed wheel."""
+    template_dir = files("iftriage") / "templates"
+    names = {entry.name for entry in template_dir.iterdir()}
+    assert {"report_en.html.j2", "report_en.txt.j2"} <= names
 
 
 def test_history_roundtrip(tmp_path):

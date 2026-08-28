@@ -36,8 +36,8 @@ Two documents deserve special care:
 
 All code, identifiers, comments, commit messages, PR descriptions, and documentation are
 written in English, regardless of the language used to discuss the work. Report language
-is the one exception by design: it lives in `templates/` (a Spanish report is a new
-template file, zero code changes).
+is the one exception by design: it lives in `iftriage/templates/` (a Spanish report is
+a new template file, zero code changes).
 
 ## Coding principles
 
