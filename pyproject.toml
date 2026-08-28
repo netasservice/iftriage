@@ -32,6 +32,9 @@ iftriage = "iftriage.cli:main"
 [tool.setuptools.packages.find]
 include = ["iftriage*"]
 
+[tool.setuptools.package-data]
+iftriage = ["templates/*.j2"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
