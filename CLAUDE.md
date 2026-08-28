@@ -31,6 +31,10 @@ Two documents deserve special care:
 - `main` is protected: no direct pushes, PRs require passing CI checks before merge.
 - Keep PRs scoped to one issue. If a PR touches anything noted in the security review
   section below, say so explicitly in the PR description.
+- Releases are cut from `main` only: bump `__version__`, close `[Unreleased]` in the
+  changelog, merge, then push a `vX.Y.Z` tag. `.github/workflows/release.yml` rejects a
+  tag that is not an ancestor of `main`, disagrees with `__version__`, or has no
+  changelog section — see the README "Releasing" section.
 
 ## English-only rule
 

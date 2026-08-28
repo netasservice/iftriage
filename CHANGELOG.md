@@ -6,16 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-- Report templates now live inside the package (`iftriage/templates/`) and are
-  loaded with Jinja2's `PackageLoader` instead of a path walked up from
-  `report.py`. The old location resolved to `<site-packages>/templates`, which
-  does not exist in an installed distribution, so any run that reached the
-  rendering step from a `pip install`-ed copy (as opposed to an editable
-  install) failed. Selecting a report language is unchanged: drop a new
-  `report_<lang>.html.j2` / `.txt.j2` pair in `iftriage/templates/`.
-
 ### Added
+- Continuous delivery: pushing a `vX.Y.Z` tag runs
+  `.github/workflows/release.yml`, which re-runs the CI gate (`ci.yml` is now a
+  reusable workflow, so the checks are shared rather than copied), builds the
+  wheel and sdist, smoke-tests the wheel in a clean environment outside the
+  source tree, and publishes a GitHub Release with both artifacts and the
+  matching changelog section as its notes. Three guards must pass first: the
+  tag is an ancestor of `main`, it matches `iftriage.__version__`, and the
+  changelog documents that version. Distribution stays inside this repository —
+  no package index is involved.
 - MIT `LICENSE`, declared in `pyproject.toml` as a PEP 639 license expression
   (which raises the build requirement to `setuptools>=77`).
 - `--user USERNAME` on `iftriage run`: the device username can now be passed as
@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   change a verdict.
 
 ### Changed
+- `pyproject.toml` no longer carries its own `version`; it reads
+  `iftriage.__version__` as a dynamic attribute, so a release cannot ship with
+  the two out of step.
 - Fixture sanitization now covers interface descriptions and neighbor names, not
   just hostnames/IPs/serials/MACs. Real rack-and-slot descriptions
   (`SERVER-205-RU15`, `ACCESS-PHONE-205-RU15`) and two genuine-format serials
@@ -59,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   event) is now `CONFIG_ISSUE` (confirmed mismatch), not `PHYSICAL_MEDIA`.
 
 ### Fixed
+- Report templates now live inside the package (`iftriage/templates/`) and are
+  loaded with Jinja2's `PackageLoader` instead of a path walked up from
+  `report.py`. The old location resolved to `<site-packages>/templates`, which
+  does not exist in an installed distribution, so any run that reached the
+  rendering step from a `pip install`-ed copy (as opposed to an editable
+  install) failed. Selecting a report language is unchanged: drop a new
+  `report_<lang>.html.j2` / `.txt.j2` pair in `iftriage/templates/`.
 - Logging analysis is now scoped to the interface under analysis. Device-side
   `| include <name>` matches substrings, so output collected for
   `GigabitEthernet3/0/2` also contained `GigabitEthernet3/0/20`–`/29` events:

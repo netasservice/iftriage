@@ -45,6 +45,27 @@ clean verdict — it becomes `PARSE_ERROR`, never a false `IGNORE`.
 
 ## Install
 
+On an operator machine, install the wheel built and verified by CI for a
+tagged release — it needs no build toolchain and is byte-identical to what the
+pipeline tested:
+
+```bash
+gh release download v0.2.0 --repo netcraftworks/iftriage -p '*.whl'
+```
+
+```bash
+pip install ./iftriage-0.2.0-py3-none-any.whl
+```
+
+Installing straight from the repository works too, and requires only git
+credentials:
+
+```bash
+pip install "git+https://github.com/netcraftworks/iftriage.git@v0.2.0"
+```
+
+From a checkout:
+
 ```bash
 pip install .
 # development
@@ -118,6 +139,29 @@ Work lands via `feat/...` or `fix/...` branches and PRs into the protected
 `main` branch — never direct commits. Any change touching the read-only
 guarantee (see CLAUDE.md security review) must be called out in the PR
 description.
+
+## Releasing
+
+Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`: it re-runs the full
+CI gate, builds the wheel and sdist, smoke-tests the wheel outside the source
+tree, and publishes a GitHub Release with both artifacts attached and the
+matching `CHANGELOG.md` section as its notes. Nothing is published outside this
+repository.
+
+1. In a `chore/release-X.Y.Z` PR: bump `__version__` in `iftriage/__init__.py`
+   (the single source of truth — `pyproject.toml` reads it) and close
+   `## [Unreleased]` in `CHANGELOG.md` as `## [X.Y.Z] - YYYY-MM-DD`.
+2. Merge the PR into `main`.
+3. Tag the merge commit and push the tag:
+
+```bash
+git checkout main && git pull && git tag -a v0.2.0 -m "iftriage 0.2.0" && git push origin v0.2.0
+```
+
+The workflow refuses to publish if the tag is not on `main`, if it disagrees
+with `__version__`, or if the changelog has no section for that version. A bad
+release is fully reversible — `git push --delete origin vX.Y.Z` and
+`gh release delete vX.Y.Z` — then fix and re-tag.
 
 ## Verdict vocabulary
 
