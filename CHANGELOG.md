@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-28
+
 ### Added
 - Continuous delivery: pushing a `vX.Y.Z` tag runs
   `.github/workflows/release.yml`, which re-runs the CI gate (`ci.yml` is now a
