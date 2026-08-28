@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Called by release.yml so a release runs these exact checks, not a copy.
+  workflow_call:
 
 jobs:
   checks:

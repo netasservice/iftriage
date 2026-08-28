@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iftriage"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Read-only interface error triage for Splunk top-N delta reports"
 readme = "README.md"
 license = "MIT"
@@ -28,6 +28,11 @@ dev = [
 
 [project.scripts]
 iftriage = "iftriage.cli:main"
+
+# Single source of truth for the version: the release workflow compares the tag
+# against this same attribute.
+[tool.setuptools.dynamic]
+version = { attr = "iftriage.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["iftriage*"]
