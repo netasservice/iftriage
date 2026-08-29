@@ -501,9 +501,11 @@ clean verdict — it becomes `PARSE_ERROR`, never a false `IGNORE`.
 - **Phase 2 — done (0.2.0).** Sanitized captures from real Catalyst, Nexus and
   Arista hardware became fixtures (live duplex mismatch, vPC port-channel,
   SFP-10G-SR DOM, down/down breakout, empty and wrapped summaries), and the
-  parser fixes they exposed landed with them. 137 tests, zero device access.
-- **Phase 3 — pending.** First live run: `--dry-run`, then one designated
-  device, then the full top-20 flow.
+  parser fixes they exposed landed with them. Zero device access in tests.
+- **Phase 3 — in progress.** Live runs against real devices are underway; what
+  they surface lands as fixes. 0.4.0 came out of that: fail fast when no device
+  could be collected, skip devices under CPU pressure, and judge port-channels
+  through their member interfaces. 183 tests.
 
 ## Out of scope (by design, forever)
 
