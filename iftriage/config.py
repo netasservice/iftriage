@@ -18,7 +18,10 @@ class Thresholds:
 
 @dataclass
 class ConnectionSettings:
-    workers: int = 10
+    """Connection tuning. Concurrency is deliberately absent: the number of
+    devices contacted at once is a command-line decision (`--workers N`,
+    default 1), never a file the operator may not be looking at."""
+
     timeout_seconds: int = 30
     jitter_min: float = 0.5
     jitter_max: float = 2.0

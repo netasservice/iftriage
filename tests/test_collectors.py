@@ -1,9 +1,15 @@
 """Collector-side safety logic that needs no device access."""
 
+import threading
+
+import pytest
+
 from iftriage.collectors import (
+    RunAborted,
     _AaaBreaker,
     _bounded_evidence,
     _collect_device,
+    _run_pass,
     mark_portchannel_duplicates,
 )
 from iftriage.config import Config
@@ -185,3 +191,158 @@ def test_evidence_is_bounded_but_parsing_sees_the_full_output(tmp_path, monkeypa
     assert len(stored.splitlines()) == config.limits.evidence_max_lines + 1
     assert "lines elided" in stored
     assert result.stats.flap_count == 400  # parsed from the full, unbounded text
+
+
+class _ConcurrencyProbe:
+    """Fake session that records how many are ever connected at the same time."""
+
+    def __init__(self, ledger, barrier=None, fail_auth_for=None):
+        self.ledger = ledger
+        self.barrier = barrier
+        self.fail_auth_for = fail_auth_for or set()
+
+    def __call__(self, **kwargs):
+        with self.ledger["lock"]:
+            self.ledger["attempts"].append(kwargs["host"])
+            # The sequential pre-flight device is always the first attempt; it
+            # runs alone by design and must not wait on the fan-out barrier.
+            is_preflight = len(self.ledger["attempts"]) == 1
+        return _ProbeSession(self, kwargs["host"], is_preflight)
+
+
+class _ProbeSession:
+    def __init__(self, probe, host, is_preflight):
+        self._probe = probe
+        self._host = host
+        self._is_preflight = is_preflight
+
+    def connect(self):
+        if self._host in self._probe.fail_auth_for:
+            raise RuntimeError(f"{self._host}: Authentication failed.")
+        ledger = self._probe.ledger
+        with ledger["lock"]:
+            ledger["live"] += 1
+            ledger["peak"] = max(ledger["peak"], ledger["live"])
+        if self._probe.barrier is not None and not self._is_preflight:
+            # Times out (and fails the test) unless the pass really does run
+            # this many devices at once.
+            self._probe.barrier.wait(timeout=5)
+
+    def get(self, command):
+        return ""
+
+    def disconnect(self):
+        ledger = self._probe.ledger
+        with ledger["lock"]:
+            ledger["live"] = max(0, ledger["live"] - 1)
+
+
+def _ledger():
+    return {"live": 0, "peak": 0, "attempts": [], "lock": threading.Lock()}
+
+
+def _four_device_pass(tmp_path):
+    ips = [f"10.0.0.{n}" for n in range(1, 5)]
+    config = Config()
+    config.connection.jitter_min = 0.0
+    config.connection.jitter_max = 0.0
+    config.platform_overrides = {ip: "ios_xe" for ip in ips}
+    results_by_ip = {ip: [CaseResult(case=_case(f"sw-{ip}", "Gi1/0/1"))] for ip in ips}
+    return results_by_ip, config, AuditLog(tmp_path / "audit.log")
+
+
+def test_default_pass_contacts_one_device_at_a_time(tmp_path, monkeypatch):
+    """The default is serial: never more than one live session, so the AAA
+    breaker observes every failure before the next attempt begins."""
+    results_by_ip, config, audit = _four_device_pass(tmp_path)
+    ledger = _ledger()
+    monkeypatch.setattr(
+        "iftriage.collectors.ReadOnlySession", _ConcurrencyProbe(ledger)
+    )
+
+    _run_pass(
+        results_by_ip,
+        config,
+        Credentials(username="ops", password="pw"),
+        audit,
+        None,
+        COMMAND_KEYS,
+        workers=1,
+    )
+
+    assert ledger["peak"] == 1
+    assert len(ledger["attempts"]) == 4
+
+
+def test_explicit_workers_flag_really_fans_out(tmp_path, monkeypatch):
+    """--workers N is a genuine opt-in, not a no-op: after the sequential
+    pre-flight device, the remaining three run concurrently."""
+    results_by_ip, config, audit = _four_device_pass(tmp_path)
+    ledger = _ledger()
+    monkeypatch.setattr(
+        "iftriage.collectors.ReadOnlySession",
+        _ConcurrencyProbe(ledger, barrier=threading.Barrier(3)),
+    )
+
+    _run_pass(
+        results_by_ip,
+        config,
+        Credentials(username="ops", password="pw"),
+        audit,
+        None,
+        COMMAND_KEYS,
+        workers=3,
+    )
+
+    assert ledger["peak"] == 3
+    assert len(ledger["attempts"]) == 4
+
+
+def test_parallel_pass_aborts_on_the_first_auth_failure(tmp_path, monkeypatch):
+    """Wrong credentials must cost exactly one failed login, not `workers` of
+    them: the pre-flight device runs alone and aborts before the fan-out."""
+    results_by_ip, config, audit = _four_device_pass(tmp_path)
+    ledger = _ledger()
+    monkeypatch.setattr(
+        "iftriage.collectors.ReadOnlySession",
+        _ConcurrencyProbe(ledger, fail_auth_for={"10.0.0.1"}),
+    )
+
+    with pytest.raises(RunAborted) as excinfo:
+        _run_pass(
+            results_by_ip,
+            config,
+            Credentials(username="ops", password="wrong"),
+            audit,
+            None,
+            COMMAND_KEYS,
+            workers=3,
+        )
+
+    assert "authentication failed on the first device" in str(excinfo.value)
+    assert ledger["attempts"] == ["10.0.0.1"]  # the other three were never touched
+
+
+def test_serial_pass_stops_at_the_aaa_breaker_limit(tmp_path, monkeypatch):
+    """Serial runs need no pre-flight: the breaker itself caps the damage at
+    `aaa_failure_abort` attempts."""
+    results_by_ip, config, audit = _four_device_pass(tmp_path)
+    ledger = _ledger()
+    monkeypatch.setattr(
+        "iftriage.collectors.ReadOnlySession",
+        _ConcurrencyProbe(ledger, fail_auth_for={f"10.0.0.{n}" for n in range(1, 5)}),
+    )
+
+    with pytest.raises(RunAborted) as excinfo:
+        _run_pass(
+            results_by_ip,
+            config,
+            Credentials(username="ops", password="wrong"),
+            audit,
+            None,
+            COMMAND_KEYS,
+            workers=1,
+        )
+
+    assert "AAA circuit breaker" in str(excinfo.value)
+    assert len(ledger["attempts"]) == config.connection.aaa_failure_abort == 2

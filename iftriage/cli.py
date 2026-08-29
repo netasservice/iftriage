@@ -67,7 +67,12 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--config", default=None, help="Path to config.yaml")
     run.add_argument("--output", default=None, help="Report/audit output directory")
     run.add_argument(
-        "--workers", type=int, default=None, help="Override bounded concurrency"
+        "--workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Contact N devices at the same time (default: 1, one session at a "
+        "time). Raising this weakens the AAA circuit breaker — see README.",
     )
     run.add_argument("--db", default=None, help="Override SQLite history path")
     return parser
@@ -165,8 +170,12 @@ def _cmd_run(args) -> int:
     except Exception as exc:  # malformed YAML must not surface as a traceback
         print(f"error: could not load configuration: {exc}", file=sys.stderr)
         return 2
-    if args.workers:
-        config.connection.workers = args.workers
+    if args.workers < 1:
+        print(
+            f"error: --workers must be at least 1 (got {args.workers})",
+            file=sys.stderr,
+        )
+        return 2
     if args.db:
         config.db_path = args.db
     output_dir = Path(args.output or config.output_dir)
@@ -218,12 +227,14 @@ def _cmd_run(args) -> int:
         print(f"Audit log: {audit.path}")
 
         try:
-            print(
-                f"Collecting from "
-                f"{len({case.mgmt_ip for case in cases if not case.excluded})} "
-                f"device(s), {config.connection.workers} workers max ..."
+            device_count = len({case.mgmt_ip for case in cases if not case.excluded})
+            pace = (
+                "one session at a time"
+                if args.workers == 1
+                else f"up to {args.workers} devices at a time"
             )
-            results = collect(cases, config, credentials, audit, history)
+            print(f"Collecting from {device_count} device(s), {pace} ...")
+            results = collect(cases, config, credentials, audit, history, args.workers)
 
             if repoll_minutes:
                 print(
@@ -232,7 +243,13 @@ def _cmd_run(args) -> int:
                 )
                 time.sleep(repoll_minutes * 60)
                 repoll_pass(
-                    results, config, credentials, audit, history, repoll_minutes
+                    results,
+                    config,
+                    credentials,
+                    audit,
+                    history,
+                    repoll_minutes,
+                    args.workers,
                 )
         except RunAborted as exc:
             print(f"\nRUN ABORTED: {exc}", file=sys.stderr)

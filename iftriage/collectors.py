@@ -1,7 +1,11 @@
 """Per-platform collection orchestration.
 
-Bounded concurrency, per-device timeouts, jitter between connection attempts,
-AAA circuit breaker (2 consecutive auth failures abort the run), and
+One device at a time by default: the AAA circuit breaker can only do what its
+name promises when authentication attempts are sequential, and the operator
+should be able to read a command and know how many devices it touches. Wider
+fan-out is an explicit `--workers N` opt-in and pays for a pre-flight probe.
+
+Also here: per-device timeouts, jitter between connection attempts, and
 per-device try/except so one failed device never kills the run.
 """
 
@@ -120,6 +124,11 @@ class _AaaBreaker:
     def record_success(self) -> None:
         with self._lock:
             self._consecutive = 0
+
+    @property
+    def consecutive_failures(self) -> int:
+        with self._lock:
+            return self._consecutive
 
 
 # Lines kept from the head of an oversized output, so a truncated table still
@@ -288,10 +297,40 @@ def _run_pass(
     audit: AuditLog,
     history: History | None,
     keys: tuple[str, ...],
+    workers: int,
 ) -> None:
     breaker = _AaaBreaker(config.connection.aaa_failure_abort)
     safety_failure: list[Exception] = []
-    with ThreadPoolExecutor(max_workers=config.connection.workers) as pool:
+    remaining = dict(results_by_ip)
+
+    # A parallel pass puts `workers` authentication attempts in flight before
+    # the breaker can observe the first failure, so wrong credentials would cost
+    # `workers` failed logins against centralized AAA. Probing one device
+    # sequentially first caps that at one. Serial runs need no probe: there the
+    # breaker already sees every failure before the next attempt starts.
+    if workers > 1 and remaining:
+        probe_ip = next(iter(remaining))
+        try:
+            _collect_device(
+                probe_ip,
+                remaining.pop(probe_ip),
+                config,
+                credentials,
+                audit,
+                history,
+                breaker,
+                keys,
+            )
+        except SafetyViolation as exc:
+            raise RunAborted(f"SAFETY VIOLATION — run aborted: {exc}") from exc
+        if breaker.consecutive_failures:
+            raise RunAborted(
+                f"authentication failed on the first device ({probe_ip}); "
+                f"aborting before contacting {len(remaining)} more in parallel. "
+                "Verify the credentials and re-run."
+            )
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(
                 _collect_device,
@@ -304,7 +343,7 @@ def _run_pass(
                 breaker,
                 keys,
             ): ip
-            for ip, cases in results_by_ip.items()
+            for ip, cases in remaining.items()
         }
         for future in as_completed(futures):
             ip = futures[future]
@@ -314,7 +353,7 @@ def _run_pass(
                 safety_failure.append(exc)
                 breaker.tripped.set()  # stop remaining devices
             except Exception as exc:  # defensive: never kill the run silently
-                for result in results_by_ip[ip]:
+                for result in remaining[ip]:
                     result.collection_error = (
                         result.collection_error or f"unexpected error: {exc}"
                     )
@@ -336,6 +375,7 @@ def collect(
     credentials: Credentials,
     audit: AuditLog,
     history: History | None,
+    workers: int = 1,
 ) -> list[CaseResult]:
     """First (full) collection pass. Returns one CaseResult per case."""
     results = [CaseResult(case=case) for case in cases]
@@ -344,7 +384,7 @@ def collect(
     for result in live:
         by_ip.setdefault(result.case.mgmt_ip, []).append(result)
     try:
-        _run_pass(by_ip, config, credentials, audit, history, COMMAND_KEYS)
+        _run_pass(by_ip, config, credentials, audit, history, COMMAND_KEYS, workers)
     except RunAborted:
         raise
     return results
@@ -357,6 +397,7 @@ def repoll(
     audit: AuditLog,
     history: History | None,
     minutes: float,
+    workers: int = 1,
 ) -> None:
     """Second sample of the same interface counters (caller waits in between)."""
     eligible = [
@@ -370,7 +411,7 @@ def repoll(
     for result in eligible:
         by_ip.setdefault(result.case.mgmt_ip, []).append(result)
         result.repoll_minutes = minutes
-    _run_pass(by_ip, config, credentials, audit, history, REPOLL_KEYS)
+    _run_pass(by_ip, config, credentials, audit, history, REPOLL_KEYS, workers)
 
 
 def mark_portchannel_duplicates(results: list[CaseResult]) -> None:

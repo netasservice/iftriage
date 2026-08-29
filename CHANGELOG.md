@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **iftriage now contacts one device at a time by default.** Concurrency became
+  an explicit command-line opt-in (`--workers N`, default 1) and the
+  `connection.workers` key was removed from `config.yaml` entirely, so no
+  configuration file can widen the fan-out — a command states how many devices
+  it touches. The previous default opened up to 10 SSH sessions at once, which
+  defeated the AAA circuit breaker: 10 workers put 10 authentication attempts
+  in flight before the breaker could observe the first failure, enough to lock
+  an operator account against a strict lockout policy. A `config.yaml` that
+  still carries `connection.workers` is loaded normally and that key is
+  ignored.
+- A run that does ask for `--workers N` (N > 1) now contacts a single device
+  sequentially before fanning out and aborts if authentication fails there, so
+  wrong credentials cost one failed login instead of N.
+- `--workers 0` and negative values are now a usage error (exit 2) instead of
+  being silently discarded by a falsy check.
+
 ## [0.2.0] - 2026-08-28
 
 ### Added

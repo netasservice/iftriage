@@ -67,8 +67,14 @@ entire project. Diagnostic tool only — it must NEVER modify device state.
 ### Additional operational safety
 - **AAA circuit breaker:** if 2 consecutive devices fail authentication, ABORT the entire run
   (protects against account lockout across the fleet with centralized AAA).
-- Bounded concurrency (default ~10 workers), per-device timeouts (~30s), small random jitter
-  between connection attempts (avoid hammering TACACS).
+- **Serial by default:** one device at a time. Concurrency is an explicit `--workers N` on the
+  command line and is deliberately absent from `config.yaml`, so no file can widen the fan-out.
+  This is what makes the breaker above meaningful: N parallel workers put N authentication
+  attempts in flight before the first failure is observed. A run with `--workers N` (N > 1)
+  contacts one device sequentially first and aborts on an authentication failure there, capping
+  wrong credentials at a single failed login.
+- Per-device timeouts (~30s), small random jitter between connection attempts (avoid hammering
+  TACACS).
 - Command output is bounded client-side (`limits` in `config.yaml`): a hard byte ceiling in
   `session.get()` and a line bound on the evidence copy that reaches SQLite and the report.
   `show logging | include <intf>` can return thousands of lines on a noisy port. The command
@@ -248,7 +254,7 @@ the worst failure mode of this tool. Missing data ⇒ `PARSE_ERROR`/`UNVERIFIED`
 ```
 iftriage/
 ├── pyproject.toml            # installable: pip install ., entry point `iftriage`
-├── config.yaml               # thresholds, timeouts, workers, repoll default,
+├── config.yaml               # thresholds, timeouts, repoll default,
 │                             # platform_overrides, report options
 ├── iftriage/
 │   ├── cli.py                # `iftriage run top20.csv [--repoll 10] [--dry-run] ...`
