@@ -414,9 +414,9 @@ Thresholds live in `config.yaml` (default: ≥1e-4 high, ≥1e-5 warn).
 
 | Platform | OS | Neighbor discovery | Allow-listed commands |
 |---|---|---|---|
-| Cisco Catalyst | IOS-XE | CDP | 7 |
-| Cisco Nexus | NX-OS | LLDP **and** CDP (CDP wins the merge) | 8 |
-| Arista (incl. DCS-7808-CH) | EOS | LLDP | 7 |
+| Cisco Catalyst | IOS-XE | CDP | 8 |
+| Cisco Nexus | NX-OS | LLDP **and** CDP (CDP wins the merge) | 9 |
+| Arista (incl. DCS-7808-CH) | EOS | LLDP | 8 |
 
 NX-OS runs both neighbor protocols because non-Cisco uplinks do not speak CDP.
 The exact command list per platform is in
