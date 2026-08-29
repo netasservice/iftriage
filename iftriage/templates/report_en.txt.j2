@@ -20,6 +20,9 @@ CASES
 {% if r.duplicate_of %}
   Note: member of {{ r.duplicate_of }} (also in this report) — same physical issue counted twice.
 {% endif %}
+{% if r.repoll_skip_reason %}
+  Note: re-poll skipped ({{ r.repoll_skip_reason }}); verdict uses the first sample only, no delta.
+{% endif %}
 {% if r.recurrence > 1 %}
   Recurrence: appeared in {{ r.recurrence }} ingested top-20 lists.
 {% endif %}

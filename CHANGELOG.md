@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **CPU guard before collection.** Right after login, iftriage reads the
+  device's current CPU utilization (`show processes cpu` on IOS-XE,
+  `show system resources` on NX-OS, `show processes top once` on Arista EOS)
+  and skips the device — its cases become UNVERIFIED with the reason in the
+  report — when utilization is above `connection.cpu_skip_threshold_percent`
+  (default 80, configurable in `config.yaml`). The guard fails closed: an
+  unreadable CPU reading also skips the device. During the re-poll pass a busy
+  device keeps its first sample and only gives up the delta, with the skip
+  noted on the case. A run in which every device was CPU-skipped still writes
+  its report (and skips the pointless re-poll wait).
+
 ### Fixed
 - **A run in which every device failed collection no longer waits for the
   re-poll.** With a single device and wrong credentials (one failure — below

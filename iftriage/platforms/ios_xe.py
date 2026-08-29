@@ -9,6 +9,7 @@ from .base import (
     PlatformProfile,
     parse_cdp_neighbor_detail,
     parse_counters_table,
+    parse_cpu_five_seconds,
     parse_flap_count,
     parse_portchannel_summary,
     register,
@@ -101,6 +102,7 @@ class IosXeProfile(PlatformProfile):
     platform = Platform.IOS_XE
     netmiko_device_type = "cisco_xe"
     templates = {
+        "cpu": "show processes cpu | include CPU utilization",
         "version": "show version",
         "interface": "show interfaces {interface}",
         "counters": "show interfaces {interface} counters errors",
@@ -111,6 +113,8 @@ class IosXeProfile(PlatformProfile):
     }
 
     def parse(self, key: str, raw: str, canonical_interface: str) -> dict:
+        if key == "cpu":
+            return parse_cpu_five_seconds(raw)
         if key == "interface":
             return _parse_show_interfaces(raw)
         if key == "counters":

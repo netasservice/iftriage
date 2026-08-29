@@ -14,6 +14,11 @@ connection:
   jitter_min: 0.5        # random delay before each connection (seconds)
   jitter_max: 2.0
   aaa_failure_abort: 2   # consecutive auth failures before aborting the whole run
+  # CPU guard: right after login, iftriage reads the device's current CPU
+  # utilization and skips the device (cases become UNVERIFIED) when it is above
+  # this percentage -- a stressed device should not be given more work. The
+  # guard fails closed: an unreadable CPU reading also skips the device.
+  cpu_skip_threshold_percent: 80
 
 limits:
   # Raw command output is bounded before it reaches the history DB and the HTML

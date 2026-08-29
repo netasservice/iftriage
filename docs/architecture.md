@@ -91,10 +91,12 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
    surfaced and excluded, not analyzed).
 2. Archive the raw CSV to SQLite **before** analysis.
 3. Collection pass: group cases by management IP, resolve platform
-   (override → cache → SSHDetect), open one `ReadOnlySession` per device, run
-   the per-interface command set from the platform profile (device-level
-   commands once per device), parse into `NormalizedInterfaceStats`. The raw
-   output kept as evidence is bounded; the text handed to parsers is not.
+   (override → cache → SSHDetect), open one `ReadOnlySession` per device, check
+   the CPU guard (a device above `cpu_skip_threshold_percent` — or one whose
+   CPU cannot be read — is skipped, fail closed), then run the per-interface
+   command set from the platform profile (device-level commands once per
+   device), parse into `NormalizedInterfaceStats`. The raw output kept as
+   evidence is bounded; the text handed to parsers is not.
 4. Abort gate: if the first pass collected nothing at all (every live case
    failed, none deliberately skipped), the run aborts here — exit code 3, no
    re-poll wait, no report.

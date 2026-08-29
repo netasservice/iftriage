@@ -59,6 +59,10 @@
   <p class="muted">Note: member of {{ r.duplicate_of }}, which is also in this
   report — same physical issue counted twice.</p>
   {% endif %}
+  {% if r.repoll_skip_reason %}
+  <p class="muted">Note: re-poll skipped ({{ r.repoll_skip_reason }}); the
+  verdict uses the first sample only, no delta.</p>
+  {% endif %}
   {% if r.recurrence > 1 %}
   <p class="muted">Recurrence: this interface has appeared in {{ r.recurrence }}
   ingested top-20 lists.</p>
