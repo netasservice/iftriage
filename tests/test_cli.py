@@ -393,3 +393,18 @@ def test_config_file_cannot_turn_on_parallelism(tmp_path):
 
     assert not hasattr(config.connection, "workers")
     assert config.connection.timeout_seconds == 45  # the rest still loads
+
+
+def test_dry_run_notes_member_discovery_for_portchannel_cases(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    csv = tmp_path / "top20.csv"
+    shutil.copy(FIXTURES / "sample_top20.csv", csv)
+
+    rc = main(["run", str(csv), "--dry-run"])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "NOTE: port-channel — members are discovered" in out
+    assert "No devices were contacted." in out

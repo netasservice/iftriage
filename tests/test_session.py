@@ -183,3 +183,36 @@ def test_output_within_the_ceiling_is_returned_verbatim(tmp_path):
     )
     session.connect()
     assert session.get("show version") == "output of show version"
+
+
+def test_member_allow_list_is_scoped_to_member_keys(tmp_path):
+    """A session built for the port-channel member pass allows exactly the
+    per-interface commands for the validated members — nothing device-level,
+    nothing for other interfaces."""
+    from iftriage.models import Platform
+    from iftriage.platforms import get_profile
+    from iftriage.platforms.base import MEMBER_KEYS
+
+    profile = get_profile(Platform.IOS_XE)
+    allowed = profile.allowed_commands(["GigabitEthernet3/0/23"], keys=MEMBER_KEYS)
+
+    fake = FakeConn(["switch#"])
+    audit = AuditLog(tmp_path / "audit.log")
+    session = ReadOnlySession(
+        host="10.0.0.1",
+        device_type="cisco_xe",
+        credentials=CREDS,
+        allowed_commands=allowed,
+        audit=audit,
+        connect_fn=lambda host, dt, creds, timeout: fake,
+    )
+    session.connect()
+
+    session.get("show interfaces GigabitEthernet3/0/23")  # member command: allowed
+    for bad in (
+        "show version",
+        "show etherchannel summary",
+        "show interfaces GigabitEthernet3/0/24",
+    ):
+        with pytest.raises(CommandNotAllowed):
+            session.get(bad)

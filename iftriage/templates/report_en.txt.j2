@@ -23,6 +23,12 @@ CASES
 {% if r.repoll_skip_reason %}
   Note: re-poll skipped ({{ r.repoll_skip_reason }}); verdict uses the first sample only, no delta.
 {% endif %}
+{% if r.verdict and r.verdict.member_findings %}
+  Member interfaces:
+{% for member, finding in r.verdict.member_findings.items() %}
+    - {{ member }}: {{ finding }}
+{% endfor %}
+{% endif %}
 {% if r.recurrence > 1 %}
   Recurrence: appeared in {{ r.recurrence }} ingested top-20 lists.
 {% endif %}

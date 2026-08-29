@@ -93,6 +93,7 @@ def test_render_report_enriched_csv(tmp_path):
         "dq_flags",
         "duplicate_of",
         "recurrence",
+        "member_summary",
     ]
     assert len(rows) == 9
 
@@ -144,4 +145,89 @@ def test_history_roundtrip(tmp_path):
     assert history.get_platform("10.9.9.9") is Platform.EOS
     history.set_platform("10.9.9.9", Platform.NXOS)  # upsert
     assert history.get_platform("10.9.9.9") is Platform.NXOS
+    history.close()
+
+
+def _po_result_with_members():
+    cases, _ = ingest_csv(FIXTURES / "sample_top20.csv")
+    po_case = next(case for case in cases if case.interface == "Po214")
+    result = CaseResult(case=po_case)
+    result.platform = Platform.IOS_XE
+    result.canonical_interface = "Port-channel214"
+    result.stats = NormalizedInterfaceStats(link_status="up")
+    result.member_stats = {
+        "GigabitEthernet3/0/23": NormalizedInterfaceStats(link_status="up")
+    }
+    result.member_repoll_stats = {
+        "GigabitEthernet3/0/23": NormalizedInterfaceStats(link_status="up")
+    }
+    result.member_errors = {"GigabitEthernet3/0/24": "member collection failed: x"}
+    result.verdict = Verdict(
+        VerdictCategory.PHYSICAL_MEDIA,
+        "PHYSICAL_MEDIA — port-channel Po214: fault isolated to member "
+        "GigabitEthernet3/0/23 — test reason.",
+        member_findings={
+            "GigabitEthernet3/0/23": "PHYSICAL_MEDIA — test member reason.",
+            "GigabitEthernet3/0/24": "not evaluated: member collection failed: x",
+        },
+    )
+    return result
+
+
+def test_reports_render_the_member_breakdown(tmp_path):
+    results, findings = _results()
+    results.append(_po_result_with_members())
+    meta = {"csv_file": "x.csv", "repoll_minutes": 10, "audit_log": "a.log"}
+
+    paths = render_report(results, findings, meta, "report_en", tmp_path)
+
+    txt = paths["txt"].read_text()
+    assert "Member interfaces:" in txt
+    assert "GigabitEthernet3/0/23: PHYSICAL_MEDIA — test member reason." in txt
+    html = paths["html"].read_text()
+    assert "GigabitEthernet3/0/23" in html
+
+    with paths["csv"].open(newline="") as handle:
+        header, *rows = list(csv.reader(handle))
+    member_column = header.index("member_summary")
+    po_row = next(
+        row for row in rows if "fault isolated" in row[header.index("reason")]
+    )
+    assert (
+        "GigabitEthernet3/0/23=PHYSICAL_MEDIA — test member reason."
+        in (po_row[member_column])
+    )
+    assert "GigabitEthernet3/0/24=not evaluated" in po_row[member_column]
+    # Non-Po rows keep the cell empty.
+    assert rows[0][member_column] == ""
+
+
+def test_members_json_roundtrips_and_migrates_old_databases(tmp_path):
+    import json
+    import sqlite3
+
+    db = tmp_path / "history.db"
+    # A database created before the members_json column existed:
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE case_results ("
+        "run_id INTEGER NOT NULL, switch TEXT, mgmt_ip TEXT, interface TEXT, "
+        "counter TEXT, platform TEXT, verdict TEXT, reason TEXT, "
+        "stats_json TEXT, repoll_stats_json TEXT, raw_outputs_json TEXT, "
+        "collection_error TEXT, parse_errors_json TEXT)"
+    )
+    conn.commit()
+    conn.close()
+
+    history = History(db)  # migration adds the missing column in place
+    run_id = history.start_run("x.csv", 10)
+    history.save_results(run_id, [_po_result_with_members()])
+
+    row = history._conn.execute(
+        "SELECT members_json FROM case_results WHERE run_id=?", (run_id,)
+    ).fetchone()
+    payload = json.loads(row[0])
+    assert payload["stats"]["GigabitEthernet3/0/23"]["link_status"] == "up"
+    assert payload["repoll_stats"]["GigabitEthernet3/0/23"]["link_status"] == "up"
+    assert payload["errors"] == {"GigabitEthernet3/0/24": "member collection failed: x"}
     history.close()

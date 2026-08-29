@@ -9,8 +9,10 @@ from iftriage.collectors import (
     _AaaBreaker,
     _bounded_evidence,
     _collect_device,
+    _discover_members,
     _run_pass,
     abort_if_nothing_collected,
+    collect_members,
     mark_portchannel_duplicates,
     repoll_eligible,
 )
@@ -20,8 +22,10 @@ from iftriage.models import (
     Credentials,
     InterfaceCase,
     NormalizedInterfaceStats,
+    Platform,
     VerdictCategory,
 )
+from iftriage.platforms import get_profile
 from iftriage.platforms.base import COMMAND_KEYS, REPOLL_KEYS
 from iftriage.rules import evaluate_case
 from iftriage.session import AuditLog, EnableRequired
@@ -515,3 +519,206 @@ def test_repoll_pass_cpu_skip_preserves_the_first_sample(tmp_path, monkeypatch):
     assert result.repoll_stats is None
     assert result.repoll_skip_reason is not None
     assert "CPU utilization 92%" in result.repoll_skip_reason
+
+
+# ---- port-channel member pass ----------------------------------------------
+
+
+def _po_result(platform=Platform.IOS_XE, members=("Gi3/0/23", "Gi3/0/24")):
+    result = CaseResult(case=_case("sw-a", "Po214"))
+    result.platform = platform
+    result.canonical_interface = "Port-channel214"
+    result.stats = NormalizedInterfaceStats(
+        port_channel_members={"Po214": list(members)}
+    )
+    return result
+
+
+def test_discover_members_validates_and_records_rejects():
+    profile = get_profile(Platform.IOS_XE)
+    result = _po_result(members=("Gi3/0/23", "Gi3/0/24", "bogus; reload"))
+
+    members = _discover_members(result, profile)
+
+    assert members == ["GigabitEthernet3/0/23", "GigabitEthernet3/0/24"]
+    assert "rejected" in result.member_errors["bogus; reload"]
+
+
+def test_discover_members_is_empty_for_non_po_cases():
+    profile = get_profile(Platform.IOS_XE)
+    result = CaseResult(case=_case("sw-a", "Gi1/0/1"))
+    result.canonical_interface = "GigabitEthernet1/0/1"
+    result.stats = NormalizedInterfaceStats(
+        port_channel_members={"Po214": ["Gi3/0/23"]}
+    )
+
+    assert _discover_members(result, profile) == []
+
+
+def _member_pass_session(monkeypatch, connect_error=None):
+    commands: list[str] = []
+
+    class FakeSession:
+        def __init__(self, **kwargs):
+            pass
+
+        def connect(self):
+            if connect_error is not None:
+                raise connect_error
+
+        def get(self, command):
+            commands.append(command)
+            return HEALTHY_CPU if "processes cpu" in command else ""
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setattr("iftriage.collectors.ReadOnlySession", FakeSession)
+    return commands
+
+
+def _quiet_config():
+    config = Config()
+    config.connection.jitter_min = 0.0
+    config.connection.jitter_max = 0.0
+    return config
+
+
+def test_collect_members_samples_each_validated_member(tmp_path, monkeypatch):
+    commands = _member_pass_session(monkeypatch)
+    result = _po_result()
+
+    covered = collect_members(
+        [result],
+        _quiet_config(),
+        Credentials(username="ops", password="pw"),
+        AuditLog(tmp_path / "audit.log"),
+        None,
+    )
+
+    assert covered == 1
+    assert set(result.member_stats) == {
+        "GigabitEthernet3/0/23",
+        "GigabitEthernet3/0/24",
+    }
+    assert "show interfaces GigabitEthernet3/0/23" in commands
+    assert "show interfaces GigabitEthernet3/0/23 counters errors" in commands
+    assert "show interfaces GigabitEthernet3/0/23 transceiver detail" in commands
+    # Device-level commands stay out of the member pass.
+    assert "show version" not in commands
+    assert "show etherchannel summary" not in commands
+    # Evidence is keyed per member.
+    assert "GigabitEthernet3/0/23:interface" in result.raw_outputs
+
+
+def test_collect_members_skips_cases_without_member_data(tmp_path, monkeypatch):
+    commands = _member_pass_session(monkeypatch)
+    plain = CaseResult(case=_case("sw-a", "Gi1/0/1"))
+    plain.platform = Platform.IOS_XE
+    plain.canonical_interface = "GigabitEthernet1/0/1"
+    plain.stats = NormalizedInterfaceStats()
+
+    covered = collect_members(
+        [plain],
+        _quiet_config(),
+        Credentials(username="ops", password="pw"),
+        AuditLog(tmp_path / "audit.log"),
+        None,
+    )
+
+    assert covered == 0
+    assert commands == []  # no second connection at all
+
+
+def test_member_pass_connection_failure_fails_all_members_closed(tmp_path, monkeypatch):
+    _member_pass_session(monkeypatch, connect_error=RuntimeError("timed out"))
+    result = _po_result()
+
+    collect_members(
+        [result],
+        _quiet_config(),
+        Credentials(username="ops", password="pw"),
+        AuditLog(tmp_path / "audit.log"),
+        None,
+    )
+
+    assert result.member_stats == {}
+    for member in ("GigabitEthernet3/0/23", "GigabitEthernet3/0/24"):
+        assert result.member_errors[member].startswith("member collection failed:")
+    assert result.collection_error is None  # the pass-1 sample is untouched
+
+
+def test_member_pass_cpu_skip_fails_members_closed(tmp_path, monkeypatch):
+    commands: list[str] = []
+
+    class BusySession:
+        def __init__(self, **kwargs):
+            pass
+
+        def connect(self):
+            pass
+
+        def get(self, command):
+            commands.append(command)
+            return BUSY_CPU
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setattr("iftriage.collectors.ReadOnlySession", BusySession)
+    result = _po_result()
+
+    collect_members(
+        [result],
+        _quiet_config(),
+        Credentials(username="ops", password="pw"),
+        AuditLog(tmp_path / "audit.log"),
+        None,
+    )
+
+    assert result.member_stats == {}
+    assert len(commands) == 1  # only the CPU reading was sent
+    assert "CPU utilization" in result.member_errors["GigabitEthernet3/0/23"]
+
+
+def test_repoll_pass_samples_members_with_a_first_sample(tmp_path, monkeypatch):
+    commands: list[str] = []
+
+    class FakeSession:
+        def __init__(self, **kwargs):
+            pass
+
+        def connect(self):
+            pass
+
+        def get(self, command):
+            commands.append(command)
+            return HEALTHY_CPU if "processes cpu" in command else ""
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setattr("iftriage.collectors.ReadOnlySession", FakeSession)
+
+    config = _quiet_config()
+    config.platform_overrides = {"10.0.0.1": "ios_xe"}
+    result = CaseResult(case=_case("sw-a", "Po214"))
+    result.stats = NormalizedInterfaceStats()
+    result.member_stats = {"GigabitEthernet3/0/23": NormalizedInterfaceStats()}
+
+    _collect_device(
+        mgmt_ip="10.0.0.1",
+        device_cases=[result],
+        config=config,
+        credentials=Credentials(username="ops", password="pw"),
+        audit=AuditLog(tmp_path / "audit.log"),
+        history=None,
+        breaker=_AaaBreaker(limit=2),
+        keys=REPOLL_KEYS,
+    )
+
+    assert "GigabitEthernet3/0/23" in result.member_repoll_stats
+    assert "show interfaces GigabitEthernet3/0/23" in commands
+    assert "show interfaces GigabitEthernet3/0/23 counters errors" in commands
+    # Re-poll keys only — no transceiver/neighbors/logging for the member.
+    assert "show interfaces GigabitEthernet3/0/23 transceiver detail" not in commands

@@ -307,7 +307,7 @@ history database:
 |---|---|---|
 | HTML report | `reports/iftriage_report_<stamp>.html` | Email-ready: summary, data quality, one box per case with raw evidence |
 | Text report | `reports/iftriage_report_<stamp>.txt` | Same content, plain text |
-| Enriched CSV | `reports/iftriage_report_<stamp>.csv` | The input CSV, original columns and row order, with the verdict and the analysis evidence appended as extra columns |
+| Enriched CSV | `reports/iftriage_report_<stamp>.csv` | The input CSV, original columns and row order, with the verdict and the analysis evidence appended as extra columns (the last one, `member_summary`, holds the per-member findings of a port-channel case) |
 | Audit log | `reports/iftriage_audit_<stamp>.log` | `<timestamp> \| <ip> \| <exact command>`, plus `<connected>`, `<enable elevation>`, `<disconnected>` |
 | History DB | `iftriage_history.db` | Every ingested CSV archived verbatim, run results, per-case evidence, and the IP→platform cache |
 
@@ -409,6 +409,17 @@ Cases are reported most-actionable-first: `PHYSICAL_MEDIA` → `CONFIG_ISSUE` �
 Rates are normalized: `error_delta / packet_delta` over the re-poll window, or
 lifetime errors/packets as fallback — a raw 24h delta on its own means nothing.
 Thresholds live in `config.yaml` (default: ≥1e-4 high, ≥1e-5 warn).
+
+**Port-channels are judged member by member.** When a case is a Po, iftriage
+reconnects to the device and runs the per-interface command set on every member
+discovered in the `etherchannel`/`port-channel summary` output (member names
+are validated before ever reaching a command). Bundle counters are sums across
+members — one bad member's rate is diluted by its healthy peers — so the
+verdict names the culprit (`fault isolated to member Gi3/0/23`), a member that
+could not be collected fails the bundle closed to `PARSE_ERROR`, and bundle
+errors with clean members degrade to "not attributable to any current member".
+The member breakdown appears in all three reports. Cost: one extra SSH
+connection per device holding a Po case.
 
 ## Supported platforms
 

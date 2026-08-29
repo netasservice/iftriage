@@ -12,6 +12,7 @@ from enum import Enum
 
 from .config import Thresholds
 from .models import (
+    VERDICT_ORDER,
     InterfaceCase,
     NormalizedInterfaceStats,
     Verdict,
@@ -127,8 +128,15 @@ def evaluate_case(
     thresholds: Thresholds,
     collection_error: str | None = None,
     parse_errors: Sequence[str] = (),
+    member_stats: dict[str, NormalizedInterfaceStats] | None = None,
+    member_repoll_stats: dict[str, NormalizedInterfaceStats] | None = None,
+    member_errors: dict[str, str] | None = None,
 ) -> Verdict:
-    """Produce the verdict for one case. Pure function."""
+    """Produce the verdict for one case. Pure function.
+
+    A case with member data (a port-channel whose members were sampled) is
+    judged member by member; every other case takes the single-interface path.
+    """
 
     if collection_error:
         return Verdict(
@@ -145,12 +153,48 @@ def evaluate_case(
             details=list(parse_errors),
         )
 
-    cls = classify_counter(case.counter)
+    if (member_stats or member_errors) and classify_counter(
+        case.counter
+    ) is not CounterClass.TOTAL_TRAFFIC:
+        return _portchannel_verdict(
+            case,
+            stats,
+            repoll_stats,
+            repoll_minutes,
+            thresholds,
+            list(parse_errors),
+            member_stats or {},
+            member_repoll_stats or {},
+            member_errors or {},
+        )
+
+    return _evaluate_stats(
+        case.counter,
+        stats,
+        repoll_stats,
+        repoll_minutes,
+        thresholds,
+        list(parse_errors),
+    )
+
+
+def _evaluate_stats(
+    counter_name: str,
+    stats: NormalizedInterfaceStats,
+    repoll_stats: NormalizedInterfaceStats | None,
+    repoll_minutes: float | None,
+    thresholds: Thresholds,
+    base_details: list[str],
+) -> Verdict:
+    """Single-interface verdict logic, shared by plain cases, the bundle-level
+    view of a port-channel, and each of its members."""
+
+    cls = classify_counter(counter_name)
 
     if cls is CounterClass.TOTAL_TRAFFIC:
         return Verdict(
             VerdictCategory.IGNORE,
-            f"IGNORE — '{case.counter}' is a total traffic counter, not an "
+            f"IGNORE — '{counter_name}' is a total traffic counter, not an "
             "error counter; a 24h increase is normal operation. No action.",
         )
 
@@ -164,10 +208,10 @@ def evaluate_case(
             VerdictCategory.PARSE_ERROR,
             f"PARSE_ERROR — critical field(s) {', '.join(missing)} could not "
             "be parsed from device output. Refusing to guess (fail closed).",
-            details=list(parse_errors),
+            details=list(base_details),
         )
 
-    details: list[str] = list(parse_errors)
+    details: list[str] = list(base_details)
     repoll_note = ""
     value_field = _VALUE_FIELD[cls]
     delta = _repoll_delta(stats, repoll_stats, value_field)
@@ -353,7 +397,116 @@ def evaluate_case(
     # Unreachable, but keep fail-closed semantics.
     return Verdict(
         VerdictCategory.PARSE_ERROR,
-        f"PARSE_ERROR — counter {case.counter!r} could not be classified. "
+        f"PARSE_ERROR — counter {counter_name!r} could not be classified. "
         "Refusing to guess (fail closed).",
         details=details,
     )
+
+
+# Verdicts that demand action; a member showing one is the bundle's culprit.
+_ACTIONABLE = (
+    VerdictCategory.PHYSICAL_MEDIA,
+    VerdictCategory.CONFIG_ISSUE,
+    VerdictCategory.CAPACITY,
+)
+
+
+def _portchannel_verdict(
+    case: InterfaceCase,
+    stats: NormalizedInterfaceStats,
+    repoll_stats: NormalizedInterfaceStats | None,
+    repoll_minutes: float | None,
+    thresholds: Thresholds,
+    parse_errors: list[str],
+    member_stats: dict[str, NormalizedInterfaceStats],
+    member_repoll_stats: dict[str, NormalizedInterfaceStats],
+    member_errors: dict[str, str],
+) -> Verdict:
+    """Judge a port-channel through its members.
+
+    Bundle counters are sums across members, so a single bad member's rate is
+    diluted by its healthy peers — and cable/transceiver language is
+    meaningless for a logical bundle. Each member is evaluated with the
+    single-interface logic; the verdict names the culpable member, and any
+    member that could not be evaluated fails the bundle closed.
+    """
+    member_verdicts = {
+        name: _evaluate_stats(
+            case.counter,
+            m_stats,
+            member_repoll_stats.get(name),
+            repoll_minutes,
+            thresholds,
+            [],
+        )
+        for name, m_stats in member_stats.items()
+    }
+    findings = {name: verdict.reason for name, verdict in member_verdicts.items()}
+    for name, error in member_errors.items():
+        findings[name] = f"not evaluated: {error}"
+
+    bundle = _evaluate_stats(
+        case.counter,
+        stats,
+        repoll_stats,
+        repoll_minutes,
+        thresholds,
+        list(parse_errors),
+    )
+
+    culpable = {
+        name: verdict
+        for name, verdict in member_verdicts.items()
+        if verdict.category in _ACTIONABLE
+    }
+    if culpable:
+        primary_name, primary = min(
+            culpable.items(), key=lambda item: VERDICT_ORDER.index(item[1].category)
+        )
+        details = list(parse_errors)
+        others = [name for name in culpable if name != primary_name]
+        if others:
+            details.append("other affected members: " + ", ".join(others))
+        details.append(f"bundle-level analysis: {bundle.reason}")
+        return Verdict(
+            primary.category,
+            f"{primary.category.value} — port-channel {case.interface}: fault "
+            f"isolated to member {primary_name} — {primary.reason}",
+            details=details,
+            member_findings=findings,
+        )
+
+    unevaluable = dict(member_errors)
+    unevaluable.update(
+        {
+            name: verdict.reason
+            for name, verdict in member_verdicts.items()
+            if verdict.category is VerdictCategory.PARSE_ERROR
+        }
+    )
+    if unevaluable:
+        names = ", ".join(sorted(unevaluable))
+        return Verdict(
+            VerdictCategory.PARSE_ERROR,
+            f"PARSE_ERROR — port-channel {case.interface}: member(s) {names} "
+            "could not be collected/parsed; a clean verdict for the bundle "
+            "would be a guess (fail closed).",
+            details=[f"bundle-level analysis: {bundle.reason}", *parse_errors],
+            member_findings=findings,
+        )
+
+    if bundle.category in _ACTIONABLE:
+        return Verdict(
+            bundle.category,
+            f"{bundle.category.value} — port-channel {case.interface}: bundle "
+            "counters show the reported errors but no current member does "
+            "(possibly historical, or from a since-removed member). "
+            f"Bundle-level analysis: {bundle.reason}",
+            details=bundle.details,
+            member_findings=findings,
+        )
+
+    # No culpable member, every member evaluable: the bundle-level verdict
+    # stands (IGNORE when clean; PARSE_ERROR keeps failing closed).
+    bundle.member_findings = findings
+    return bundle

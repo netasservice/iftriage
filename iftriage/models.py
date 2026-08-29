@@ -112,6 +112,8 @@ class Verdict:
     category: VerdictCategory
     reason: str  # one-line justification in decision language
     details: list[str] = field(default_factory=list)
+    # Port-channel cases only: one-line finding per member interface.
+    member_findings: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -135,6 +137,13 @@ class CaseResult:
     # the first sample stays valid, only the delta answer is missing.
     repoll_skip_reason: str | None = None
     parse_errors: list[str] = field(default_factory=list)
+    # Port-channel cases: per-member samples keyed by canonical member name,
+    # and the reason any discovered member has no sample (fail closed).
+    member_stats: dict[str, NormalizedInterfaceStats] = field(default_factory=dict)
+    member_repoll_stats: dict[str, NormalizedInterfaceStats] = field(
+        default_factory=dict
+    )
+    member_errors: dict[str, str] = field(default_factory=dict)
     verdict: Verdict | None = None
     duplicate_of: str | None = None  # set when this is a member of a Po also in the CSV
     recurrence: int = 0  # prior runs in which this switch+interface appeared

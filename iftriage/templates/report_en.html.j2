@@ -63,6 +63,14 @@
   <p class="muted">Note: re-poll skipped ({{ r.repoll_skip_reason }}); the
   verdict uses the first sample only, no delta.</p>
   {% endif %}
+  {% if r.verdict and r.verdict.member_findings %}
+  <p class="muted">Member interfaces:</p>
+  <ul class="muted">
+    {% for member, finding in r.verdict.member_findings.items() %}
+    <li><strong>{{ member }}</strong>: {{ finding }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
   {% if r.recurrence > 1 %}
   <p class="muted">Recurrence: this interface has appeared in {{ r.recurrence }}
   ingested top-20 lists.</p>

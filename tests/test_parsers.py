@@ -263,3 +263,33 @@ def test_cpu_command_is_in_every_device_allow_list():
         allowed = profile.allowed_commands([interface])
         rendered = profile.templates["cpu"]
         assert rendered in allowed  # no {interface} placeholder: rendered as-is
+
+
+# ---- port-channel member discovery (summary -> validated canonical names) --
+
+
+def test_summary_members_expand_to_canonical_names_per_platform():
+    for profile, fixture, po_canonical, expected in (
+        (
+            IOS,
+            ("ios_xe", "etherchannel_summary.txt"),
+            "Port-channel214",
+            ["GigabitEthernet3/0/23", "GigabitEthernet3/0/24"],
+        ),
+        (
+            NX,
+            ("nxos", "port_channel_summary.txt"),
+            "port-channel214",
+            ["Ethernet4/16", "Ethernet4/17"],
+        ),
+        (
+            EOS,
+            ("eos", "port_channel_summary.txt"),
+            "Port-Channel214",
+            ["Ethernet4/16", "Ethernet4/17"],
+        ),
+    ):
+        parsed = profile.parse("portchannel", load_fixture(*fixture), po_canonical)
+        members = parsed["port_channel_members"]["Po214"]
+        canonicals = [profile.canonical_interface(token) for token in members]
+        assert canonicals == expected
