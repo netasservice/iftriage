@@ -1,0 +1,121 @@
+Ingested 8 cases from docs/examples/input.csv; 2 data-quality finding(s).
+  [dq:negative_delta] sw-acc-02 Gi3/0/20 Late-Col: negative delta (-154073) — counter reset or device reload during the window. Delta is not meaningful; live verification decides.
+  [dq:time_misalignment] Poll timestamps span 2026-08-28T02:10:00 .. 2026-08-28T05:20:00: the 24h windows are NOT aligned across rows. Deltas are not directly comparable between rows.
+DRY RUN — connecting to nothing. Targets and exact commands:
+
+== sw-acc-01 (192.0.2.11) — platform: UNKNOWN (will autodetect on connect)
+   -- Gi3/0/20 [Rcv-Err]
+      ios_xe: show version
+      ios_xe: show interfaces GigabitEthernet3/0/20
+      ios_xe: show interfaces GigabitEthernet3/0/20 counters errors
+      ios_xe: show interfaces GigabitEthernet3/0/20 transceiver detail
+      ios_xe: show cdp neighbors GigabitEthernet3/0/20 detail
+      ios_xe: show etherchannel summary
+      ios_xe: show logging | include GigabitEthernet3/0/20
+      nxos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform nxos in 'Gi3/0/20'
+      eos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform eos in 'Gi3/0/20'
+   -- Gi1/0/47 [Rcv-Err]
+      ios_xe: show version
+      ios_xe: show interfaces GigabitEthernet1/0/47
+      ios_xe: show interfaces GigabitEthernet1/0/47 counters errors
+      ios_xe: show interfaces GigabitEthernet1/0/47 transceiver detail
+      ios_xe: show cdp neighbors GigabitEthernet1/0/47 detail
+      ios_xe: show etherchannel summary
+      ios_xe: show logging | include GigabitEthernet1/0/47
+      nxos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform nxos in 'Gi1/0/47'
+      eos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform eos in 'Gi1/0/47'
+
+== sw-acc-02 (192.0.2.12) — platform: UNKNOWN (will autodetect on connect)
+   -- Gi3/0/20 [Late-Col]
+      ios_xe: show version
+      ios_xe: show interfaces GigabitEthernet3/0/20
+      ios_xe: show interfaces GigabitEthernet3/0/20 counters errors
+      ios_xe: show interfaces GigabitEthernet3/0/20 transceiver detail
+      ios_xe: show cdp neighbors GigabitEthernet3/0/20 detail
+      ios_xe: show etherchannel summary
+      ios_xe: show logging | include GigabitEthernet3/0/20
+      nxos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform nxos in 'Gi3/0/20'
+      eos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform eos in 'Gi3/0/20'
+
+== sw-acc-03 (192.0.2.13) — platform: UNKNOWN (will autodetect on connect)
+   -- Gi2/0/1 [Rx]
+      ios_xe: show version
+      ios_xe: show interfaces GigabitEthernet2/0/1
+      ios_xe: show interfaces GigabitEthernet2/0/1 counters errors
+      ios_xe: show interfaces GigabitEthernet2/0/1 transceiver detail
+      ios_xe: show cdp neighbors GigabitEthernet2/0/1 detail
+      ios_xe: show etherchannel summary
+      ios_xe: show logging | include GigabitEthernet2/0/1
+      nxos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform nxos in 'Gi2/0/1'
+      eos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform eos in 'Gi2/0/1'
+
+== sw-acc-04 (192.0.2.14) — platform: UNKNOWN (will autodetect on connect)
+   -- Gi1/0/9 [Rcv-Err]
+      ios_xe: show version
+      ios_xe: show interfaces GigabitEthernet1/0/9
+      ios_xe: show interfaces GigabitEthernet1/0/9 counters errors
+      ios_xe: show interfaces GigabitEthernet1/0/9 transceiver detail
+      ios_xe: show cdp neighbors GigabitEthernet1/0/9 detail
+      ios_xe: show etherchannel summary
+      ios_xe: show logging | include GigabitEthernet1/0/9
+      nxos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform nxos in 'Gi1/0/9'
+      eos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform eos in 'Gi1/0/9'
+
+== sw-dist-01 (192.0.2.21) — platform: UNKNOWN (will autodetect on connect)
+   -- Et4/15 [Rcv-Err]
+      ios_xe: INTERFACE NAME ERROR: unknown interface prefix 'Et' for platform ios_xe in 'Et4/15'
+      nxos: show version
+      nxos: show interface Ethernet4/15
+      nxos: show interface Ethernet4/15 counters errors
+      nxos: show interface Ethernet4/15 transceiver details
+      nxos: show lldp neighbors interface Ethernet4/15 detail
+      nxos: show cdp neighbors interface Ethernet4/15 detail
+      nxos: show port-channel summary
+      nxos: show logging logfile | include Ethernet4/15
+      eos: show version
+      eos: show interfaces Ethernet4/15
+      eos: show interfaces Ethernet4/15 counters errors
+      eos: show interfaces Ethernet4/15 transceiver
+      eos: show lldp neighbors Ethernet4/15 detail
+      eos: show port-channel summary
+      eos: show logging | include Ethernet4/15
+
+== sw-core-01 (192.0.2.31) — platform: UNKNOWN (will autodetect on connect)
+   -- Eth4/15 [InDiscards]
+      ios_xe: INTERFACE NAME ERROR: unknown interface prefix 'Eth' for platform ios_xe in 'Eth4/15'
+      nxos: show version
+      nxos: show interface Ethernet4/15
+      nxos: show interface Ethernet4/15 counters errors
+      nxos: show interface Ethernet4/15 transceiver details
+      nxos: show lldp neighbors interface Ethernet4/15 detail
+      nxos: show cdp neighbors interface Ethernet4/15 detail
+      nxos: show port-channel summary
+      nxos: show logging logfile | include Ethernet4/15
+      eos: show version
+      eos: show interfaces Ethernet4/15
+      eos: show interfaces Ethernet4/15 counters errors
+      eos: show interfaces Ethernet4/15 transceiver
+      eos: show lldp neighbors Ethernet4/15 detail
+      eos: show port-channel summary
+      eos: show logging | include Ethernet4/15
+
+== sw-core-02 (192.0.2.32) — platform: UNKNOWN (will autodetect on connect)
+   -- Eth4/15 [Rcv-Err]
+      ios_xe: INTERFACE NAME ERROR: unknown interface prefix 'Eth' for platform ios_xe in 'Eth4/15'
+      nxos: show version
+      nxos: show interface Ethernet4/15
+      nxos: show interface Ethernet4/15 counters errors
+      nxos: show interface Ethernet4/15 transceiver details
+      nxos: show lldp neighbors interface Ethernet4/15 detail
+      nxos: show cdp neighbors interface Ethernet4/15 detail
+      nxos: show port-channel summary
+      nxos: show logging logfile | include Ethernet4/15
+      eos: show version
+      eos: show interfaces Ethernet4/15
+      eos: show interfaces Ethernet4/15 counters errors
+      eos: show interfaces Ethernet4/15 transceiver
+      eos: show lldp neighbors Ethernet4/15 detail
+      eos: show port-channel summary
+      eos: show logging | include Ethernet4/15
+
+No devices were contacted.
