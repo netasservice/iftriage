@@ -8,7 +8,8 @@ thresholds:
   dom_rx_high_dbm: 2.0   # DOM receive power above this -> out of range
 
 connection:
-  workers: 10            # bounded concurrency
+  # Concurrency is NOT configured here. iftriage contacts one device at a time
+  # unless the operator asks for more with `--workers N` on the command line.
   timeout_seconds: 30    # per-command read timeout
   jitter_min: 0.5        # random delay before each connection (seconds)
   jitter_max: 2.0

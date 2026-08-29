@@ -5,7 +5,13 @@ import shutil
 import pytest
 from conftest import FIXTURES
 
-from iftriage.cli import CredentialError, _resolve_credentials, main
+from iftriage.cli import (
+    CredentialError,
+    _build_parser,
+    _resolve_credentials,
+    main,
+)
+from iftriage.config import load_config
 
 
 def _never_prompt(label):
@@ -172,3 +178,33 @@ def test_dry_run_never_asks_for_credentials(tmp_path, monkeypatch):
     shutil.copy(FIXTURES / "sample_top20.csv", csv)
 
     assert main(["run", str(csv), "--dry-run", "--user", "jperez"]) == 0
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_non_positive_workers_is_a_usage_error(tmp_path, capsys, value):
+    """`--workers 0` used to be silently discarded by a falsy check and
+    `--workers -1` would have reached ThreadPoolExecutor."""
+    csv = tmp_path / "top20.csv"
+    shutil.copy(FIXTURES / "sample_top20.csv", csv)
+
+    rc = main(["run", str(csv), "--workers", value])
+
+    assert rc == 2
+    assert "--workers must be at least 1" in capsys.readouterr().err
+
+
+def test_workers_defaults_to_one_session_at_a_time():
+    args = _build_parser().parse_args(["run", "top20.csv"])
+    assert args.workers == 1
+
+
+def test_config_file_cannot_turn_on_parallelism(tmp_path):
+    """Concurrency is a command-line decision only: a leftover `workers` key in
+    config.yaml is ignored rather than silently widening the fan-out."""
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("connection:\n  workers: 10\n  timeout_seconds: 45\n")
+
+    config = load_config(config_path)
+
+    assert not hasattr(config.connection, "workers")
+    assert config.connection.timeout_seconds == 45  # the rest still loads

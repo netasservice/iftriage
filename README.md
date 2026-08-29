@@ -26,11 +26,22 @@ change structurally impossible:
 4. **Audit trail** — every exact command sent to every IP is logged with a
    timestamp. Credentials/enable secret never appear (`<enable elevation>`).
 
-Additional operational safety: AAA circuit breaker (2 consecutive auth
-failures abort the run), bounded concurrency (default 10), per-device
+Additional operational safety: **one device at a time by default**, AAA
+circuit breaker (2 consecutive auth failures abort the run), per-device
 timeouts, jitter between connections, per-device try/except (a failed device
 becomes `UNVERIFIED`). No `clear counters`, no `debug`, no `show tech`, no
 config mode, ever.
+
+**Concurrency is opt-in, and only from the command line.** `iftriage run`
+contacts one device at a time unless you pass `--workers N`; there is no
+setting in `config.yaml` that can widen the fan-out, so a command always tells
+you how many devices it touches. The default is serial because the AAA circuit
+breaker can only cap the damage when authentication attempts are sequential: N
+parallel workers put N attempts in flight before the breaker sees the first
+failure, which is enough to lock an operator account against a strict AAA
+policy. When you do ask for `--workers N`, the run first contacts a single
+device sequentially and aborts on an authentication failure there, so wrong
+credentials cost one failed login instead of N.
 
 **Bounded output:** `show logging | include <intf>` can return thousands of
 lines on a noisy port. Two limits under `limits` in `config.yaml` keep that
@@ -82,7 +93,10 @@ iftriage run top20.csv --user youruser --repoll 10
 # See targets and the exact commands, connecting to nothing (no prompts):
 iftriage run top20.csv --dry-run
 
-iftriage run top20.csv --user youruser --no-repoll --output reports/ --workers 5
+iftriage run top20.csv --user youruser --no-repoll --output reports/
+
+# Opt in to contacting several devices at once (see the safety model above):
+iftriage run top20.csv --user youruser --workers 5
 ```
 
 Credentials are resolved per value, first match wins:
@@ -121,7 +135,7 @@ ingested CSV, run results, and the IP→platform cache.
 | `--no-repoll` | Skip the re-poll pass |
 | `--config PATH` | Alternate `config.yaml` |
 | `--output DIR` | Report/audit output directory (default: `reports/`) |
-| `--workers N` | Override bounded concurrency |
+| `--workers N` | Contact N devices at the same time (default: 1). Explicit opt-in; weakens the AAA circuit breaker |
 | `--db PATH` | Override SQLite history path |
 | `--version` | Print version |
 
