@@ -42,6 +42,37 @@ def test_ingest_sample_csv():
     assert normal.count == 4271
     assert normal.change == 3271
 
+    # The raw row is retained verbatim for the enriched CSV report.
+    assert len(normal.raw_row) == 11
+    assert normal.raw_row["switch"] == "sw-a"
+    assert normal.raw_row["change"] == "3271"
+
+
+def test_ingest_raw_row_keeps_extra_columns(tmp_path):
+    extended = tmp_path / "extended.csv"
+    extended.write_text(
+        "_time,switch,mgmt_ip,interface,description,status,protocol,"
+        "counter,prev_count,count,change,site_code\n"
+        "2026-08-24T03:12:00,sw-a,10.0.0.1,Gi1/0/1,desc,up,up,Rcv-Err,1,2,1,MTY\n"
+    )
+    cases, _ = ingest_csv(extended)
+    (case,) = cases
+    assert list(case.raw_row) == [
+        "_time",
+        "switch",
+        "mgmt_ip",
+        "interface",
+        "description",
+        "status",
+        "protocol",
+        "counter",
+        "prev_count",
+        "count",
+        "change",
+        "site_code",
+    ]
+    assert case.raw_row["site_code"] == "MTY"
+
 
 def test_ingest_rejects_wrong_columns(tmp_path):
     bad = tmp_path / "bad.csv"

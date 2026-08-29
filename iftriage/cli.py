@@ -287,6 +287,7 @@ def _cmd_run(args) -> int:
     print(f"\n{summary['line']}")
     print(f"Report (HTML): {paths['html']}")
     print(f"Report (text): {paths['txt']}")
+    print(f"Report (CSV):  {paths['csv']}")
     return 0
 
 

@@ -12,7 +12,7 @@ polls the full fleet — only the devices in the CSV.
 | | |
 |---|---|
 | **Input** | one CSV export, 11 columns ([format](#input-the-splunk-csv)) |
-| **Output** | HTML + text report, session audit log, SQLite history ([example](#what-you-get)) |
+| **Output** | HTML + text + enriched CSV report, session audit log, SQLite history ([example](#what-you-get)) |
 | **Verdicts** | `PHYSICAL_MEDIA` · `CONFIG_ISSUE` · `CAPACITY` · `IGNORE` · `UNVERIFIED` · `PARSE_ERROR` |
 | **Platforms** | Cisco IOS-XE, Cisco NX-OS, Arista EOS |
 | **Writes to devices** | none, ever — [read-only by design](#safety-model-non-negotiable) |
@@ -86,6 +86,7 @@ Waiting 10 min before re-poll (answers: is it still incrementing NOW?) ...
 8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
 Report (HTML): reports/iftriage_report_20260829_202921.html
 Report (text): reports/iftriage_report_20260829_202921.txt
+Report (CSV):  reports/iftriage_report_20260829_202921.csv
 ```
 
 **3. The report** — one verdict per case, in decision language, with the
@@ -93,7 +94,9 @@ evidence that produced it. Excerpt from
 [`docs/examples/report.txt`](docs/examples/report.txt); the
 [HTML version](docs/examples/report.html) is the same content with colour-coded
 verdicts and a collapsible block of raw command output per case, ready to paste
-into an email:
+into an email. The [CSV version](docs/examples/report.csv) is the input table
+itself — original columns and row order — with the verdict and the analysis
+evidence appended as extra columns, ready for Excel:
 
 ```
 INTERFACE ERROR TRIAGE — TOP-8 VERIFICATION
@@ -302,6 +305,7 @@ history database:
 |---|---|---|
 | HTML report | `reports/iftriage_report_<stamp>.html` | Email-ready: summary, data quality, one box per case with raw evidence |
 | Text report | `reports/iftriage_report_<stamp>.txt` | Same content, plain text |
+| Enriched CSV | `reports/iftriage_report_<stamp>.csv` | The input CSV, original columns and row order, with the verdict and the analysis evidence appended as extra columns |
 | Audit log | `reports/iftriage_audit_<stamp>.log` | `<timestamp> \| <ip> \| <exact command>`, plus `<connected>`, `<enable elevation>`, `<disconnected>` |
 | History DB | `iftriage_history.db` | Every ingested CSV archived verbatim, run results, per-case evidence, and the IP→platform cache |
 
@@ -505,7 +509,7 @@ engine:
 | `iftriage/normalize.py` | Interface-name validation and expansion |
 | `iftriage/models.py` | The canonical `NormalizedInterfaceStats` model and the shared dataclasses |
 | `iftriage/rules.py` | The verdict engine: pure functions over the canonical model, no platform knowledge |
-| `iftriage/report.py` + `templates/` | Jinja2 HTML and text reports |
+| `iftriage/report.py` + `templates/` | Jinja2 HTML and text reports, plus the enriched CSV writer |
 | `iftriage/history.py` | SQLite archive, run results, platform cache, recurrence |
 
 Adding a platform means a new profile plus its fixtures — and no change to

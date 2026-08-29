@@ -66,6 +66,9 @@ class InterfaceCase:
     row_index: int
     dq_flags: list[str] = field(default_factory=list)
     excluded: bool = False  # excluded from live analysis (data-quality artifact)
+    # Verbatim echo of the input row for the enriched CSV report, keyed in the
+    # original header order — including columns this model does not parse.
+    raw_row: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
