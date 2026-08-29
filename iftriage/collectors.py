@@ -14,6 +14,7 @@ from __future__ import annotations
 import random
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
@@ -26,11 +27,16 @@ from .models import (
     NormalizedInterfaceStats,
     Platform,
 )
-from .normalize import InterfaceNameError
+from .normalize import (
+    InterfaceNameError,
+    interface_matches_token,
+    is_portchannel_name,
+)
 from .platforms import get_profile
 from .platforms.base import (
     COMMAND_KEYS,
     DEVICE_LEVEL_KEYS,
+    MEMBER_KEYS,
     REPOLL_KEYS,
     PlatformProfile,
 )
@@ -172,6 +178,52 @@ def _merge_stats(parsed_by_key: dict[str, dict]) -> NormalizedInterfaceStats:
     return stats
 
 
+def _collect_one_interface(
+    session: ReadOnlySession,
+    profile: PlatformProfile,
+    canonical: str,
+    keys: tuple[str, ...],
+    config: Config,
+    raw_outputs: dict[str, str],
+    raw_key_prefix: str,
+    parse_errors_sink: Callable[[str], None],
+    device_level_raw: dict[str, str],
+) -> NormalizedInterfaceStats:
+    """Run `keys` commands for one canonical interface and merge the parses.
+
+    Shared by case interfaces (empty raw_key_prefix) and port-channel members
+    ("<member>:" prefix on evidence and error notes). SafetyViolation always
+    propagates; command/parse failures go through the sink and never kill the
+    device pass.
+    """
+    parsed_by_key: dict[str, dict] = {}
+    commands = profile.render_commands(canonical)
+    for key in keys:
+        if key not in commands:
+            continue
+        command = commands[key]
+        try:
+            if key in DEVICE_LEVEL_KEYS and command in device_level_raw:
+                raw = device_level_raw[command]
+            else:
+                raw = session.get(command)
+                if key in DEVICE_LEVEL_KEYS:
+                    device_level_raw[command] = raw
+            raw_outputs[f"{raw_key_prefix}{key}"] = _bounded_evidence(
+                raw, config.limits.evidence_max_lines
+            )
+        except SafetyViolation:
+            raise
+        except Exception as exc:
+            parse_errors_sink(f"{raw_key_prefix}{key}: command failed: {exc}")
+            continue
+        try:
+            parsed_by_key[key] = profile.parse(key, raw, canonical)
+        except Exception as exc:
+            parse_errors_sink(f"{raw_key_prefix}{key}: parse failed: {exc}")
+    return _merge_stats(parsed_by_key)
+
+
 def _check_cpu(
     session: ReadOnlySession, profile: PlatformProfile, config: Config
 ) -> tuple[str | None, str]:
@@ -263,6 +315,11 @@ def _collect_device(
         result.canonical_interface for result in targets if result.canonical_interface
     ]
     allowed = profile.allowed_commands(canonicals)
+    if keys == REPOLL_KEYS:
+        # Port-channel members sampled in the member pass get their delta too.
+        member_names = sorted({m for result in targets for m in result.member_stats})
+        if member_names:
+            allowed |= profile.allowed_commands(member_names, keys=REPOLL_KEYS)
     session = ReadOnlySession(
         host=mgmt_ip,
         device_type=profile.netmiko_device_type,
@@ -309,34 +366,32 @@ def _collect_device(
             canonical = result.canonical_interface
             if canonical is None:  # unreachable: targets require it
                 continue
-            parsed_by_key: dict[str, dict] = {}
-            commands = profile.render_commands(canonical)
-            for key in keys:
-                if key not in commands:
-                    continue
-                command = commands[key]
-                try:
-                    if key in DEVICE_LEVEL_KEYS and command in device_level_raw:
-                        raw = device_level_raw[command]
-                    else:
-                        raw = session.get(command)
-                        if key in DEVICE_LEVEL_KEYS:
-                            device_level_raw[command] = raw
-                    result.raw_outputs[key] = _bounded_evidence(
-                        raw, config.limits.evidence_max_lines
-                    )
-                except SafetyViolation:
-                    raise
-                except Exception as exc:
-                    result.parse_errors.append(f"{key}: command failed: {exc}")
-                    continue
-                try:
-                    parsed_by_key[key] = profile.parse(key, raw, canonical)
-                except Exception as exc:
-                    result.parse_errors.append(f"{key}: parse failed: {exc}")
-            stats = _merge_stats(parsed_by_key)
+            stats = _collect_one_interface(
+                session,
+                profile,
+                canonical,
+                keys,
+                config,
+                result.raw_outputs,
+                "",
+                result.parse_errors.append,
+                device_level_raw,
+            )
             if keys == REPOLL_KEYS:
                 result.repoll_stats = stats
+                # Members without a first sample are not re-polled.
+                for member in result.member_stats:
+                    result.member_repoll_stats[member] = _collect_one_interface(
+                        session,
+                        profile,
+                        member,
+                        REPOLL_KEYS,
+                        config,
+                        result.raw_outputs,
+                        f"{member}:",
+                        result.parse_errors.append,
+                        device_level_raw,
+                    )
             else:
                 result.stats = stats
     finally:
@@ -351,7 +406,10 @@ def _run_pass(
     history: History | None,
     keys: tuple[str, ...],
     workers: int,
+    device_fn: Callable[..., None] | None = None,
 ) -> None:
+    if device_fn is None:
+        device_fn = _collect_device
     breaker = _AaaBreaker(config.connection.aaa_failure_abort)
     safety_failure: list[Exception] = []
     remaining = dict(results_by_ip)
@@ -364,7 +422,7 @@ def _run_pass(
     if workers > 1 and remaining:
         probe_ip = next(iter(remaining))
         try:
-            _collect_device(
+            device_fn(
                 probe_ip,
                 remaining.pop(probe_ip),
                 config,
@@ -386,7 +444,7 @@ def _run_pass(
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(
-                _collect_device,
+                device_fn,
                 ip,
                 cases,
                 config,
@@ -441,6 +499,169 @@ def collect(
     except RunAborted:
         raise
     return results
+
+
+def _discover_members(result: CaseResult, profile: PlatformProfile) -> list[str]:
+    """Validated canonical member names for a port-channel case.
+
+    Member tokens come from device output (the pass-1 summary). Each must pass
+    canonical-name validation before it may ever be substituted into a command
+    template; rejected tokens are recorded in member_errors, never sent.
+    """
+    canonical = result.canonical_interface
+    stats = result.stats
+    if (
+        canonical is None
+        or stats is None
+        or not stats.port_channel_members
+        or not is_portchannel_name(canonical)
+    ):
+        return []
+    member_tokens: list[str] = []
+    for name, tokens in stats.port_channel_members.items():
+        if interface_matches_token(name, canonical):
+            member_tokens = tokens
+            break
+    validated: list[str] = []
+    for token in member_tokens:
+        try:
+            member = profile.canonical_interface(token)
+        except InterfaceNameError as exc:
+            result.member_errors.setdefault(token, f"member name rejected: {exc}")
+            continue
+        if member not in validated:
+            validated.append(member)
+    return validated
+
+
+def _collect_device_members(
+    mgmt_ip: str,
+    device_cases: list[CaseResult],
+    config: Config,
+    credentials: Credentials,
+    audit: AuditLog,
+    history: History | None,
+    breaker: _AaaBreaker,
+    keys: tuple[str, ...],
+) -> None:
+    """Second connection to one device: run the per-interface command set for
+    every validated member of its port-channel cases. Mutates results.
+
+    Member data is additive evidence; failures here never touch the pass-1
+    sample, they land in member_errors and rules.py fails closed on them.
+    """
+    targets: list[tuple[CaseResult, list[str]]] = []
+    profile: PlatformProfile | None = None
+    for result in device_cases:
+        if result.platform is None:
+            continue
+        result_profile = get_profile(result.platform)  # one platform per device
+        members = _discover_members(result, result_profile)
+        if members:
+            targets.append((result, members))
+            profile = result_profile
+    if not targets or profile is None:
+        return
+
+    def fail_all(reason: str) -> None:
+        for result, members in targets:
+            for member in members:
+                result.member_errors[member] = reason
+
+    if breaker.tripped.is_set():
+        fail_all("member collection aborted by AAA circuit breaker")
+        return
+
+    time.sleep(
+        random.uniform(config.connection.jitter_min, config.connection.jitter_max)
+    )
+
+    all_members = sorted({member for _, members in targets for member in members})
+    allowed = set(profile.allowed_commands(all_members, keys=keys))
+    cpu_template = profile.templates.get("cpu")
+    if cpu_template:
+        allowed.add(cpu_template)  # the CPU guard runs on this session too
+    session = ReadOnlySession(
+        host=mgmt_ip,
+        device_type=profile.netmiko_device_type,
+        credentials=credentials,
+        allowed_commands=frozenset(allowed),
+        audit=audit,
+        read_timeout=config.connection.timeout_seconds,
+        max_output_bytes=config.limits.max_output_bytes,
+    )
+    try:
+        session.connect()
+    except SafetyViolation:
+        raise
+    except EnableRequired as exc:
+        fail_all(f"member collection skipped: {exc}")
+        return
+    except Exception as exc:
+        if _is_auth_error(exc):
+            breaker.record_failure()
+        fail_all(f"member collection failed: {exc}")
+        return
+    breaker.record_success()
+
+    device_level_raw: dict[str, str] = {}
+    try:
+        cpu_skip_reason, _cpu_raw = _check_cpu(session, profile, config)
+        if cpu_skip_reason is not None:
+            fail_all(f"member collection skipped: {cpu_skip_reason}")
+            return
+        for result, members in targets:
+            for member in members:
+                result.member_stats[member] = _collect_one_interface(
+                    session,
+                    profile,
+                    member,
+                    keys,
+                    config,
+                    result.raw_outputs,
+                    f"{member}:",
+                    result.parse_errors.append,
+                    device_level_raw,
+                )
+    finally:
+        session.disconnect()
+
+
+def collect_members(
+    results: list[CaseResult],
+    config: Config,
+    credentials: Credentials,
+    audit: AuditLog,
+    history: History | None,
+    workers: int = 1,
+) -> int:
+    """Member pass for port-channel cases: reconnect to each device holding one
+    and sample every member interface. Returns the number of cases covered."""
+    eligible = [
+        result
+        for result in repoll_eligible(results)
+        if result.platform is not None
+        and result.canonical_interface is not None
+        and result.stats is not None
+        and result.stats.port_channel_members
+        and is_portchannel_name(result.canonical_interface)
+    ]
+    if not eligible:
+        return 0
+    by_ip: dict[str, list[CaseResult]] = {}
+    for result in eligible:
+        by_ip.setdefault(result.case.mgmt_ip, []).append(result)
+    _run_pass(
+        by_ip,
+        config,
+        credentials,
+        audit,
+        history,
+        MEMBER_KEYS,
+        workers,
+        device_fn=_collect_device_members,
+    )
+    return len(eligible)
 
 
 def repoll_eligible(results: list[CaseResult]) -> list[CaseResult]:
@@ -507,8 +728,6 @@ def repoll(
 def mark_portchannel_duplicates(results: list[CaseResult]) -> None:
     """If the CSV lists a Po and one of its members on the same device,
     mark the member as a duplicate — same physical issue counted twice."""
-    from .normalize import interface_matches_token
-
     by_switch: dict[str, list[CaseResult]] = {}
     for result in results:
         by_switch.setdefault(result.case.switch, []).append(result)
@@ -518,7 +737,7 @@ def mark_portchannel_duplicates(results: list[CaseResult]) -> None:
             stats, canonical = po_result.stats, po_result.canonical_interface
             if stats is None or not stats.port_channel_members or canonical is None:
                 continue
-            if not canonical.lower().startswith(("po", "port-channel")):
+            if not is_portchannel_name(canonical):
                 continue
             members: list[str] = []
             for name, member_list in stats.port_channel_members.items():

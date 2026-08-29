@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS case_results (
     switch TEXT, mgmt_ip TEXT, interface TEXT, counter TEXT,
     platform TEXT, verdict TEXT, reason TEXT,
     stats_json TEXT, repoll_stats_json TEXT, raw_outputs_json TEXT,
-    collection_error TEXT, parse_errors_json TEXT
+    collection_error TEXT, parse_errors_json TEXT, members_json TEXT
 );
 CREATE TABLE IF NOT EXISTS platform_cache (
     mgmt_ip TEXT PRIMARY KEY,
@@ -55,10 +55,31 @@ def _now() -> str:
 def _stats_json(stats) -> str | None:
     if stats is None:
         return None
+    return json.dumps(_stats_dict(stats))
+
+
+def _stats_dict(stats) -> dict:
     data = asdict(stats)
     if data.get("collected_at"):
         data["collected_at"] = data["collected_at"].isoformat()
-    return json.dumps(data)
+    return data
+
+
+def _members_json(result: CaseResult) -> str | None:
+    if not (result.member_stats or result.member_errors):
+        return None
+    return json.dumps(
+        {
+            "stats": {
+                name: _stats_dict(stats) for name, stats in result.member_stats.items()
+            },
+            "repoll_stats": {
+                name: _stats_dict(stats)
+                for name, stats in result.member_repoll_stats.items()
+            },
+            "errors": result.member_errors,
+        }
+    )
 
 
 class History:
@@ -67,6 +88,13 @@ class History:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.executescript(_SCHEMA)
+        # The schema is CREATE TABLE IF NOT EXISTS, so databases created before
+        # a column existed keep their old shape; add what is missing in place.
+        existing = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(case_results)")
+        }
+        if "members_json" not in existing:
+            self._conn.execute("ALTER TABLE case_results ADD COLUMN members_json TEXT")
         self._conn.commit()
 
     def close(self) -> None:
@@ -126,7 +154,7 @@ class History:
     def save_results(self, run_id: int, results: list[CaseResult]) -> None:
         with self._lock:
             self._conn.executemany(
-                "INSERT INTO case_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO case_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         run_id,
@@ -142,6 +170,7 @@ class History:
                         json.dumps(result.raw_outputs),
                         result.collection_error,
                         json.dumps(result.parse_errors),
+                        _members_json(result),
                     )
                     for result in results
                 ],

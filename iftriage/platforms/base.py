@@ -40,6 +40,10 @@ REPOLL_KEYS = ("interface", "counters")
 # Per-device commands (not per-interface): run once per device.
 DEVICE_LEVEL_KEYS = ("version", "portchannel")
 
+# Commands run for each discovered port-channel member: the full per-interface
+# set. Device-level keys are excluded — already collected once per device.
+MEMBER_KEYS = tuple(key for key in COMMAND_KEYS if key not in DEVICE_LEVEL_KEYS)
+
 _REGISTRY: dict[Platform, PlatformProfile] = {}
 
 
@@ -68,11 +72,21 @@ class PlatformProfile(ABC):
             for key, template in self.templates.items()
         }
 
-    def allowed_commands(self, canonical_interfaces: list[str]) -> frozenset[str]:
-        """The closed allow-list for a device, given its target interfaces."""
+    def allowed_commands(
+        self,
+        canonical_interfaces: list[str],
+        keys: tuple[str, ...] | None = None,
+    ) -> frozenset[str]:
+        """The closed allow-list for a device, given its target interfaces.
+
+        With `keys`, only those template keys are rendered, so a session built
+        for a narrower pass allows exactly the commands it will send.
+        """
         allowed: set[str] = set()
         for intf in canonical_interfaces:
-            allowed.update(self.render_commands(intf).values())
+            for key, command in self.render_commands(intf).items():
+                if keys is None or key in keys:
+                    allowed.add(command)
         return frozenset(allowed)
 
     @abstractmethod

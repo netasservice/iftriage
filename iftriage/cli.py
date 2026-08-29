@@ -15,6 +15,7 @@ from .collectors import (
     RunAborted,
     abort_if_nothing_collected,
     collect,
+    collect_members,
     mark_portchannel_duplicates,
     repoll_eligible,
     resolve_platform,
@@ -26,6 +27,7 @@ from .config import load_config
 from .history import History
 from .ingest import IngestError, ingest_csv
 from .models import Credentials, Platform
+from .normalize import is_portchannel_name
 from .platforms import get_profile
 from .report import build_summary, render_report
 from .rules import evaluate_case
@@ -161,6 +163,12 @@ def _dry_run(cases, config, history) -> int:
                 prefix = f"      {plat.value}: " if len(platforms) > 1 else "      "
                 for command in profile.render_commands(canonical).values():
                     print(f"{prefix}{command}")
+            if is_portchannel_name(case.interface):
+                print(
+                    "      NOTE: port-channel — members are discovered "
+                    "on-device from the summary and each member is then "
+                    "polled with the per-interface command set."
+                )
         print()
     print("No devices were contacted.")
     return 0
@@ -239,6 +247,15 @@ def _cmd_run(args) -> int:
             results = collect(cases, config, credentials, audit, history, args.workers)
             abort_if_nothing_collected(results)
 
+            member_cases = collect_members(
+                results, config, credentials, audit, history, args.workers
+            )
+            if member_cases:
+                print(
+                    f"Collected member interfaces for {member_cases} "
+                    "port-channel case(s)."
+                )
+
             if repoll_minutes and not repoll_eligible(results):
                 # Every device was deliberately skipped (the abort gate above
                 # already handled outright failures): nothing to re-sample.
@@ -273,6 +290,9 @@ def _cmd_run(args) -> int:
                 thresholds=config.thresholds,
                 collection_error=result.collection_error,
                 parse_errors=result.parse_errors,
+                member_stats=result.member_stats,
+                member_repoll_stats=result.member_repoll_stats,
+                member_errors=result.member_errors,
             )
             result.recurrence = history.recurrence_count(
                 result.case.switch, result.case.interface

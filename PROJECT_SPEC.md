@@ -177,6 +177,14 @@ device's current CPU utilization is read and the device is skipped entirely
 During the re-poll pass a busy device keeps its first sample; only the delta is
 given up.
 
+For a port-channel case, the per-interface commands (everything except
+`show version` and the summary itself) are additionally rendered for each
+member discovered in the summary and run over a second connection to the same
+device. Member names are device-derived text: each must pass `normalize.py`
+validation before substitution, so this widens the *interface* set of the
+allow-list, never the command set. This remains targeted — only members of the
+reported port-channel, never full-chassis.
+
 ## 6. Analysis pipeline
 
 1. **Ingest (`ingest.py`)**: parse CSV, validate fixed columns, run data-quality checks:
@@ -210,6 +218,14 @@ given up.
 - `Rx`: total receive count, not an error at all. Should not drive any problem verdict.
 - Port-channels: map Po → members via `etherchannel/port-channel summary`. If the CSV lists a Po
   and one of its members on the same device, deduplicate — same physical issue counted twice.
+  When the CSV case IS a port-channel, collect the per-interface command set for every member
+  discovered in the summary (a second connection to the device; member names are validated by
+  `normalize.py` before any template substitution — this widens the interface set, never the
+  command set). Members are re-polled too. The verdict is then member-driven: a member with an
+  actionable finding names the culprit (`fault isolated to member X`); a member that could not
+  be collected fails the bundle closed to PARSE_ERROR; bundle-only errors with clean members
+  degrade to "not attributable to any current member". Bundle counters alone are misleading —
+  they are sums across members, so one bad member's rate is diluted by its healthy peers.
 - **Normalization is the core insight: raw delta means nothing. Rate = error_delta /
   packet_delta (or error/packets lifetime as fallback). Thresholds (tunable in config.yaml):**
   - rate ≥ 1e-4 (100/M packets) → high

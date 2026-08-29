@@ -38,6 +38,7 @@ _CSV_ANALYSIS_COLUMNS = (
     "dq_flags",
     "duplicate_of",
     "recurrence",
+    "member_summary",  # port-channel cases: one finding per member
 )
 
 
@@ -75,6 +76,10 @@ def _analysis_cells(result: CaseResult) -> list[str]:
     cells.append(";".join(result.case.dq_flags))
     cells.append(result.duplicate_of or "")
     cells.append(str(result.recurrence))
+    findings = dict(verdict.member_findings) if verdict else {}
+    for member, error in result.member_errors.items():
+        findings.setdefault(member, f"not evaluated: {error}")
+    cells.append("; ".join(f"{name}={text}" for name, text in findings.items()))
     return cells
 
 

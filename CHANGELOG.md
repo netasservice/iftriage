@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Port-channel member triage.** When a CSV case is a port-channel, iftriage
+  now reconnects to the device and runs the full per-interface command set
+  (interface, counters, transceiver, neighbors, logging) on every member
+  discovered in the `etherchannel`/`port-channel summary` output, re-polls the
+  members alongside the bundle, and judges the case member by member: the
+  verdict names the culpable member (`fault isolated to member Gi3/0/23 — ...`)
+  instead of applying cable/transceiver language to a logical bundle whose
+  summed counters dilute a single bad member below the noise threshold. A
+  member that cannot be collected or parsed fails the bundle closed to
+  PARSE_ERROR; bundle errors with clean members degrade to "not attributable
+  to any current member". Member names are device-derived text and pass
+  `normalize.py` validation before any command substitution; the member session
+  gets a key-scoped allow-list and `session.py` is unchanged. The member
+  breakdown is rendered in the HTML/text reports, a new `member_summary` CSV
+  column, and a new `members_json` column in the history database (added in
+  place to existing databases).
 - **CPU guard before collection.** Right after login, iftriage reads the
   device's current CPU utilization (`show processes cpu` on IOS-XE,
   `show system resources` on NX-OS, `show processes top once` on Arista EOS)

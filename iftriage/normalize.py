@@ -132,6 +132,16 @@ def expand_interface(platform: Platform, name: str) -> str:
     )
 
 
+def is_portchannel_name(name: str) -> bool:
+    """True for Po/Port-channel-shaped interface names on any platform
+    (Po1, Port-channel10, port-channel10, Port-Channel10)."""
+    match = _NAME_RE.match((name or "").strip())
+    if not match:
+        return False
+    prefix = match.group(1).replace("-", "").lower()
+    return prefix in {"po", "portchannel"}
+
+
 def interface_matches_token(token: str, canonical: str) -> bool:
     """True when a table-row token (e.g. 'Gi3/0/20', 'Eth4/15') refers to
     the canonical interface name (e.g. 'GigabitEthernet3/0/20')."""

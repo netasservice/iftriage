@@ -5,6 +5,7 @@ from iftriage.normalize import (
     InterfaceNameError,
     expand_interface,
     interface_matches_token,
+    is_portchannel_name,
     line_references_interface,
 )
 
@@ -106,3 +107,27 @@ def test_interface_matches_token(token, canonical, expected):
 )
 def test_line_references_interface(line, canonical, expected):
     assert line_references_interface(line, canonical) is expected
+
+
+def test_is_portchannel_name_matches_every_platform_spelling():
+    for name in ("Po1", "Po214", "Port-channel10", "port-channel10", "Port-Channel214"):
+        assert is_portchannel_name(name)
+
+
+def test_is_portchannel_name_rejects_everything_else():
+    # "Pos1" matters: packet-over-SONET must not be mistaken for a bundle.
+    for name in ("Gi3/0/23", "Ethernet4/15", "Vlan10", "Pos1", "", "po", "garbage"):
+        assert not is_portchannel_name(name)
+
+
+def test_malicious_member_tokens_never_reach_a_command_template():
+    """Port-channel member names come from device output; anything not
+    interface-shaped must be rejected before command substitution."""
+    for token in (
+        "foo; reload",
+        "Gi3/0/23 && clear counters",
+        "Gi3/0/23\nreload",
+        "Unknown99",
+    ):
+        with pytest.raises(InterfaceNameError):
+            expand_interface(Platform.IOS_XE, token)
