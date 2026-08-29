@@ -10,7 +10,9 @@ from iftriage.collectors import (
     _bounded_evidence,
     _collect_device,
     _run_pass,
+    abort_if_nothing_collected,
     mark_portchannel_duplicates,
+    repoll_eligible,
 )
 from iftriage.config import Config
 from iftriage.models import (
@@ -51,6 +53,62 @@ def _case(switch, interface):
         change=1,
         row_index=0,
     )
+
+
+def test_repoll_eligible_filters_excluded_failed_and_uncollected():
+    collected = CaseResult(case=_case("sw-a", "Gi1/0/1"))
+    collected.stats = NormalizedInterfaceStats()
+    failed = CaseResult(case=_case("sw-a", "Gi1/0/2"))
+    failed.collection_error = "connection failed: timed out"
+    uncollected = CaseResult(case=_case("sw-a", "Gi1/0/3"))  # stats never arrived
+    excluded = CaseResult(case=_case("sw-a", "Gi1/0/4"))
+    excluded.case.excluded = True
+    excluded.stats = NormalizedInterfaceStats()
+
+    eligible = repoll_eligible([collected, failed, uncollected, excluded])
+
+    assert eligible == [collected]
+
+
+def test_all_failed_first_pass_aborts_with_the_first_error():
+    first = CaseResult(case=_case("sw-a", "Gi1/0/1"))
+    first.collection_error = "connection failed: 10.0.0.1: Authentication failed."
+    second = CaseResult(case=_case("sw-b", "Gi1/0/2"))
+    second.collection_error = "connection failed: timed out"
+
+    with pytest.raises(RunAborted) as excinfo:
+        abort_if_nothing_collected([first, second])
+
+    message = str(excinfo.value)
+    assert "no device could be collected" in message
+    assert "Authentication failed." in message
+
+
+def test_abort_gate_is_silent_when_any_device_was_collected():
+    collected = CaseResult(case=_case("sw-a", "Gi1/0/1"))
+    collected.stats = NormalizedInterfaceStats()
+    failed = CaseResult(case=_case("sw-b", "Gi1/0/2"))
+    failed.collection_error = "connection failed: timed out"
+
+    abort_if_nothing_collected([collected, failed])  # must not raise
+
+
+def test_abort_gate_is_silent_when_all_cases_are_data_quality_excluded():
+    excluded = CaseResult(case=_case("sw-a", "Gi1/0/1"))
+    excluded.case.excluded = True
+
+    abort_if_nothing_collected([excluded])  # a DQ-only run still gets its report
+
+
+def test_deliberate_device_skips_do_not_abort_the_run():
+    """A "device skipped:" outcome means the device was reached and purposely
+    left alone (missing enable secret today); that belongs in the report."""
+    skipped = CaseResult(case=_case("sw-a", "Gi1/0/1"))
+    skipped.collection_error = (
+        "device skipped: device requires enable but no enable secret was provided"
+    )
+
+    abort_if_nothing_collected([skipped])  # must not raise
 
 
 def test_po_member_listed_alongside_po_is_marked_duplicate():
