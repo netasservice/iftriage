@@ -1,0 +1,41 @@
+INTERFACE ERROR TRIAGE — TOP-8 VERIFICATION
+Generated 2026-08-29 20:29 UTC | source: docs/examples/input.csv
+Re-poll window: 10.0 min
+EXECUTIVE SUMMARY
+  8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
+
+DATA QUALITY (surfaced, not analyzed)
+  * [negative_delta] (rows 2): sw-acc-02 Gi3/0/20 Late-Col: negative delta (-154073) — counter reset or device reload during the window. Delta is not meaningful; live verification decides.
+  * [time_misalignment]: Poll timestamps span 2026-08-28T02:10:00 .. 2026-08-28T05:20:00: the 24h windows are NOT aligned across rows. Deltas are not directly comparable between rows.
+
+CASES
+--------------------------------------------------------------------------------
+[PHYSICAL_MEDIA] sw-acc-01 Gi3/0/20 (Rcv-Err, delta24h=2123)
+  PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over live re-poll window: real receive errors at meaningful rate. CRC/FCS accounts for 3,271 of 3,271 input errors. Inspect cable/transceiver/path. Counter still incrementing (+412 in 10 min).
+  Recurrence: appeared in 2 ingested top-20 lists.
+--------------------------------------------------------------------------------
+[PHYSICAL_MEDIA] sw-dist-01 Et4/15 (Rcv-Err, delta24h=9459)
+  PHYSICAL_MEDIA — DOM receive power -15.2 dBm is out of range (-14..2 dBm): degraded optical path (fiber, connector, or transceiver). Inspect the optical path. Counter flat across 10-min re-poll.
+  Recurrence: appeared in 2 ingested top-20 lists.
+--------------------------------------------------------------------------------
+[CONFIG_ISSUE] sw-acc-02 Gi3/0/20 (Late-Col, delta24h=-154073)
+  CONFIG_ISSUE — 38,445,927 late collisions on a half-duplex link while neighbor SEP001122AABB99 reports full duplex: duplex mismatch confirmed. Fix via CLI (align both ends), not by touching media. Counter still incrementing (+3,096 in 10 min).
+  Data-quality flags: negative_delta
+--------------------------------------------------------------------------------
+[CAPACITY] sw-core-01 Eth4/15 (InDiscards, delta24h=286)
+  CAPACITY — 388 input discards at 0.6889% (6,889 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+1,240 in 10 min).
+--------------------------------------------------------------------------------
+[PARSE_ERROR] sw-acc-01 Gi1/0/47 (Rcv-Err, delta24h=918)
+  PARSE_ERROR — critical field(s) input_errors, crc_errors, input_packets, link_status could not be parsed from device output. Refusing to guess (fail closed).
+--------------------------------------------------------------------------------
+[UNVERIFIED] sw-acc-04 Gi1/0/9 (Rcv-Err, delta24h=5785)
+  UNVERIFIED — device could not be checked (connection failed: TCP connection to device failed: timed out). CSV data only; treat as unconfirmed.
+--------------------------------------------------------------------------------
+[IGNORE] sw-acc-03 Gi2/0/1 (Rx, delta24h=1133561112)
+  IGNORE — 'Rx' is a total traffic counter, not an error counter; a 24h increase is normal operation. No action.
+--------------------------------------------------------------------------------
+[IGNORE] sw-core-02 Eth4/15 (Rcv-Err, delta24h=28)
+  IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters is below the noise threshold, counter flat across 10-min re-poll. DOM rx power -3.5 dBm within range. No action.
+--------------------------------------------------------------------------------
+iftriage is a read-only diagnostic tool. Raw evidence for each case is embedded
+in the HTML report; every command sent is recorded in the session audit log.

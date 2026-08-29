@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Interface Error Triage — 2026-08-29 20:29 UTC</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; margin: 2em auto;
+         max-width: 900px; color: #1a1a1a; line-height: 1.45; }
+  h1 { font-size: 1.4em; } h2 { font-size: 1.15em; margin-top: 1.6em; }
+  .summary { background: #f4f6f8; border: 1px solid #d6dbe0; border-radius: 6px;
+             padding: 0.9em 1.2em; font-size: 1.05em; }
+  .dq { background: #fff8e6; border: 1px solid #e6d9a8; border-radius: 6px;
+        padding: 0.7em 1.1em; margin: 0.5em 0; }
+  .case { border: 1px solid #d6dbe0; border-radius: 6px; padding: 0.8em 1.2em;
+          margin: 0.8em 0; }
+  .verdict { font-weight: 700; padding: 0.1em 0.5em; border-radius: 4px;
+             display: inline-block; }
+  .v-PHYSICAL_MEDIA { background: #fde3e3; color: #8f1d1d; }
+  .v-CONFIG_ISSUE  { background: #fdefd8; color: #8a5a00; }
+  .v-CAPACITY      { background: #e3ecfd; color: #1d3f8f; }
+  .v-IGNORE        { background: #e5f5e6; color: #1e6b2a; }
+  .v-UNVERIFIED    { background: #ececec; color: #555; }
+  .v-PARSE_ERROR   { background: #f3e3fd; color: #5d1d8f; }
+  details { margin-top: 0.6em; }
+  pre { background: #0f1720; color: #d8e1ea; padding: 0.8em; border-radius: 6px;
+        overflow-x: auto; font-size: 0.8em; }
+  .muted { color: #667; font-size: 0.9em; }
+  table.kv td { padding: 0.05em 0.9em 0.05em 0; }
+</style>
+</head>
+<body>
+<h1>Interface Error Triage — Top-8 verification</h1>
+<p class="muted">Generated 2026-08-29 20:29 UTC · source: docs/examples/input.csv
+ · re-poll window: 10.0 min</p>
+
+<div class="summary"><strong>Executive summary:</strong> 8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE</div>
+
+<h2>Data quality (surfaced, not analyzed)</h2>
+<div class="dq"><strong>negative delta</strong>
+ (rows 2)<br>
+sw-acc-02 Gi3/0/20 Late-Col: negative delta (-154073) — counter reset or device reload during the window. Delta is not meaningful; live verification decides.</div>
+<div class="dq"><strong>time misalignment</strong>
+<br>
+Poll timestamps span 2026-08-28T02:10:00 .. 2026-08-28T05:20:00: the 24h windows are NOT aligned across rows. Deltas are not directly comparable between rows.</div>
+
+<h2>Cases</h2>
+<div class="case">
+  <div>
+    <span class="verdict v-PHYSICAL_MEDIA">
+      PHYSICAL_MEDIA</span>
+    &nbsp;<strong>sw-acc-01</strong> — Gi3/0/20
+    (Rcv-Err, Δ24h=2123)
+  </div>
+<div class="muted">ACCESS-FLOOR3-PRINTER</div>  <p>PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over live re-poll window: real receive errors at meaningful rate. CRC/FCS accounts for 3,271 of 3,271 input errors. Inspect cable/transceiver/path. Counter still incrementing (+412 in 10 min).</p>
+  <p class="muted">Recurrence: this interface has appeared in 2
+  ingested top-20 lists.</p>
+  <details><summary>Raw evidence (7 commands)</summary>
+    <p class="muted">version</p>
+    <pre>Cisco IOS XE Software, Version 17.06.05
+Cisco IOS Software [Bengaluru], Catalyst L3 Switch Software (CAT9K_IOSXE), Version 17.6.5, RELEASE SOFTWARE (fc2)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2022 by Cisco Systems, Inc.
+
+ROM: IOS-XE ROMMON
+BOOTLDR: System Bootstrap, Version 17.6.1r
+
+switch1 uptime is 41 weeks, 3 days, 2 hours, 11 minutes
+Uptime for this control processor is 41 weeks, 3 days, 2 hours, 13 minutes
+
+cisco C9300-48P (X86) processor with 1338934K/6147K bytes of memory.
+Processor board ID FCW0000TEST4
+
+Model Number                       : C9300-48P
+System Serial Number               : FCW0000TEST4
+</pre>
+    <p class="muted">interface</p>
+    <pre>GigabitEthernet3/0/20 is up, line protocol is up (connected)
+  Hardware is Gigabit Ethernet, address is 70b3.17aa.0114 (bia 70b3.17aa.0114)
+  Description: ACCESS-FLOOR3-PRINTER
+  MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+     reliability 255/255, txload 1/255, rxload 1/255
+  Encapsulation ARPA, loopback not set
+  Keepalive set (10 sec)
+  Full-duplex, 1000Mb/s, media type is 10/100/1000BaseTX
+  input flow-control is on, output flow-control is unsupported
+  ARP type: ARPA, ARP Timeout 04:00:00
+  Last input 00:00:01, output 00:00:00, output hang never
+  Last clearing of "show interface" counters never
+  Input queue: 0/2000/17/0 (size/max/drops/flushes); Total output drops: 42
+  Queueing strategy: fifo
+  Output queue: 0/40 (size/max)
+  5 minute input rate 2033000 bits/sec, 267 packets/sec
+  5 minute output rate 3123000 bits/sec, 341 packets/sec
+     110825410 packets input, 2394664329 bytes, 0 no buffer
+     Received 434399 broadcasts (312 multicasts)
+     0 runts, 0 giants, 0 throttles
+     3683 input errors, 3683 CRC, 0 frame, 0 overrun, 0 ignored
+     0 watchdog, 312 multicast, 0 pause input
+     0 input packets with dribble condition detected
+     98210331 packets output, 8873201991 bytes, 0 underruns
+     0 output errors, 0 collisions, 2 interface resets
+     0 unknown protocol drops
+     0 babbles, 0 late collision, 0 deferred
+     0 lost carrier, 0 no carrier, 0 pause output
+     0 output buffer failures, 0 output buffers swapped out
+</pre>
+    <p class="muted">counters</p>
+    <pre>Port          Align-Err     FCS-Err    Xmit-Err     Rcv-Err  UnderSize  OutDiscards
+Gi3/0/20              0        3683           0        3683          0           42
+
+Port        Single-Col  Multi-Col   Late-Col  Excess-Col  Carri-Sen      Runts     Giants
+Gi3/0/20             0          0          0           0          0          0          0
+</pre>
+    <p class="muted">transceiver</p>
+    <pre>switch_catalyst#show int gi3/0/20 transceiver detail
+Diagnostic Monitoring is not implemented.
+</pre>
+    <p class="muted">neighbors</p>
+    <pre>-------------------------
+Device ID: dist-sw-01.example.net
+Entry address(es):
+  IP address: 10.0.0.1
+Platform: cisco C9500-32C,  Capabilities: Router Switch IGMP
+Interface: GigabitEthernet3/0/20,  Port ID (outgoing port): TenGigabitEthernet1/0/5
+Holdtime : 133 sec
+
+Version :
+Cisco IOS XE Software, Version 17.06.05
+
+advertisement version: 2
+VTP Management Domain: ''
+Native VLAN: 1
+Duplex: full
+Management address(es):
+  IP address: 10.0.0.1
+
+Total cdp entries displayed : 1
+</pre>
+    <p class="muted">portchannel</p>
+    <pre>Flags:  D - down        P - bundled in port-channel
+        I - stand-alone s - suspended
+        H - Hot-standby (LACP only)
+        R - Layer3      S - Layer2
+        U - in use      f - failed to allocate aggregator
+
+Number of channel-groups in use: 1
+Number of aggregators:           1
+
+Group  Port-channel  Protocol    Ports
+------+-------------+-----------+-----------------------------------------------
+214    Po214(SU)         LACP      Gi3/0/23(P)     Gi3/0/24(P)
+</pre>
+    <p class="muted">logging</p>
+    <pre>Aug 24 02:11:41.520: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to down
+Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to up
+</pre>
+  </details>
+</div>
+<div class="case">
+  <div>
+    <span class="verdict v-PHYSICAL_MEDIA">
+      PHYSICAL_MEDIA</span>
+    &nbsp;<strong>sw-dist-01</strong> — Et4/15
+    (Rcv-Err, Δ24h=9459)
+  </div>
+<div class="muted">UPLINK-SPINE1</div>  <p>PHYSICAL_MEDIA — DOM receive power -15.2 dBm is out of range (-14..2 dBm): degraded optical path (fiber, connector, or transceiver). Inspect the optical path. Counter flat across 10-min re-poll.</p>
+  <p class="muted">Recurrence: this interface has appeared in 2
+  ingested top-20 lists.</p>
+  <details><summary>Raw evidence (7 commands)</summary>
+    <p class="muted">version</p>
+    <pre>Arista DCS-7808-CH
+Hardware version: 12.00
+Serial number: JPE12345678
+Hardware MAC address: 985d.82aa.0001
+System MAC address: 985d.82aa.0001
+
+Software image version: 4.28.3M
+Architecture: x86_64
+Internal build version: 4.28.3M-28837868.4283M
+Internal build ID: 4f8d5cb1-6c1e-4b3e-91d2-3a2b7e6c4a55
+
+Uptime: 41 weeks, 3 days, 2 hours and 11 minutes
+Total memory: 32818372 kB
+Free memory: 24123456 kB
+</pre>
+    <p class="muted">interface</p>
+    <pre>Ethernet4/15 is up, line protocol is up (connected)
+  Hardware is Ethernet, address is 985d.82aa.1b2c (bia 985d.82aa.1b2c)
+  Description: UPLINK-SPINE1
+  Ethernet MTU 9214 bytes, BW 10000000 kbit
+  Full-duplex, 10Gb/s, auto negotiation: off, uni-link: n/a
+  Up 41 days, 6 hours, 22 minutes
+  Loopback Mode : None
+  4 link status changes since last clear
+  Last clearing of "show interface" counters never
+  5 minutes input rate 1.02 Mbps (0.0% with framing overhead), 891 packets/sec
+  5 minutes output rate 3.14 Mbps (0.0% with framing overhead), 1021 packets/sec
+     215883911 packets input, 198765432109 bytes
+     Received 43821 broadcasts, 872341 multicast
+     0 runts, 0 giants
+     21503 input errors, 21503 CRC, 0 alignment, 0 symbol, 0 input discards
+     0 PAUSE input
+     198234567 packets output, 176543210987 bytes
+     Sent 9123 broadcasts, 452312 multicast
+     0 output errors, 0 collisions
+     0 late collision, 0 deferred, 0 output discards
+     0 PAUSE output
+</pre>
+    <p class="muted">counters</p>
+    <pre>Port          FCS    Align  Symbol       Rx  Runts  Giants       Tx
+Et4/15      21503        0       0    21503      0       0        0
+</pre>
+    <p class="muted">transceiver</p>
+    <pre>                                                                        Last
+                     Temp     Voltage  Bias     Optical   Optical      Update
+Port                 (C)      (V)      (mA)     Tx (dBm)  Rx (dBm)     Time
+------------------- -------- -------- -------- --------- ------------ ------------
+Et4/15               31.42    3.28     7.06     -2.63     -15.21       0:00:03 ago
+</pre>
+    <p class="muted">neighbors</p>
+    <pre>Interface Ethernet4/15 detected 1 LLDP neighbors:
+
+  Neighbor 985d.82bb.0001/"Ethernet21", age 12 seconds
+  Discovered 41 days, 6 hours ago; Last changed 41 days, 6 hours ago
+  - Chassis ID type: MAC address (4)
+    Chassis ID     : 985d.82bb.0001
+  - Port ID type: Interface name (5)
+    Port ID     : "Ethernet21"
+  - Time To Live: 120 seconds
+  - Port Description: "downlink leaf3"
+  - System Name: "spine1.example.net"
+  - System Description: "Arista Networks EOS version 4.28.3M running on an Arista Networks DCS-7508"
+  - System Capabilities : Bridge, Router
+    Enabled Capabilities: Bridge, Router
+  - Management Address Subtype: IPv4
+    Management Address        : 10.0.1.1
+</pre>
+    <p class="muted">portchannel</p>
+    <pre>Port Channel Po214:
+  Active Ports: Ethernet4/16 Ethernet4/17
+</pre>
+    <p class="muted">logging</p>
+    <pre></pre>
+  </details>
+</div>
+<div class="case">
+  <div>
+    <span class="verdict v-CONFIG_ISSUE">
+      CONFIG_ISSUE</span>
+    &nbsp;<strong>sw-acc-02</strong> — Gi3/0/20
+    (Late-Col, Δ24h=-154073)
+  </div>
+<div class="muted">ACCESS-PHONE-RACK01-RU01</div>  <p>CONFIG_ISSUE — 38,445,927 late collisions on a half-duplex link while neighbor SEP001122AABB99 reports full duplex: duplex mismatch confirmed. Fix via CLI (align both ends), not by touching media. Counter still incrementing (+3,096 in 10 min).</p>
+  <p class="muted">Data-quality flags: negative_delta</p>
+  <details><summary>Raw evidence (7 commands)</summary>
+    <p class="muted">version</p>
+    <pre>switch_catalyst#show version
+Cisco IOS XE Software, Version 17.06.05
+Cisco IOS Software [Bengaluru], Catalyst L3 Switch Software (CAT9K_IOSXE), Version 17.6.5, RELEASE SOFTWARE (fc2)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2023 by Cisco Systems, Inc.
+Compiled Wed 25-Jan-23 16:15 by mcpre
+
+
+Cisco IOS-XE software, Copyright (c) 2005-2023 by cisco Systems, Inc.
+All rights reserved.  Certain components of Cisco IOS-XE software are
+licensed under the GNU General Public License ("GPL") Version 2.0.  The
+software code licensed under GPL Version 2.0 is free software that comes
+with ABSOLUTELY NO WARRANTY.  You can redistribute and/or modify such
+GPL code under the terms of GPL Version 2.0.  For more details, see the
+documentation or "License Notice" file accompanying the IOS-XE software,
+or the applicable URL provided on the flyer accompanying the IOS-XE
+software.
+
+
+ROM: IOS-XE ROMMONBOOTLDR: System Bootstrap, Version 17.6.1r[FC2], RELEASE SOFTWARE (P)
+
+switch_catalyst uptime is 2 years, 49 weeks, 2 days, 26 minutes
+Uptime for this control processor is 2 years, 24 weeks, 23 hours, 9 minutes
+System returned to ROM by SSO Switchover at 12:13:00 EDT Tue Apr 4 2023
+System restarted at 21:24:34 EDT Sun Mar 10 2024
+System image file is "bootflash:packages.conf"
+Last reload reason: PowerOn
+
+
+
+This product contains cryptographic features and is subject to United
+States and local country laws governing import, export, transfer and
+use. Delivery of Cisco cryptographic products does not imply
+third-party authority to import, export, distribute or use encryption.
+Importers, exporters, distributors and users are responsible for
+compliance with U.S. and local country laws. By using this product you
+agree to comply with applicable laws and regulations. If you are unable
+to comply with U.S. and local laws, return this product immediately.
+
+A summary of U.S. laws governing Cisco cryptographic products may be found at:
+http://www.cisco.com/wwl/export/crypto/tool/stqrg.html
+
+If you require further assistance please contact us by sending email to
+export@cisco.com.
+
+
+Technology Package License Information:
+
+------------------------------------------------------------------------------
+Technology-package                                     Technology-package
+Current                         Type                   Next reboot
+------------------------------------------------------------------------------
+network-advantage       Smart License                    network-advantage
+dna-advantage           Subscription Smart License       dna-advantage
+AIR License Level: AIR DNA Advantage
+Next reload AIR license Level: AIR DNA Advantage
+
+Smart Licensing Status: Registration Not Applicable/Not Applicable
+
+cisco C9410R (X86) processor (revision V01) with 1841308K/6147K bytes of memory.
+Processor board ID FXS0000TEST1
+6 Virtual Ethernet interfaces
+192 Gigabit Ethernet interfaces
+208 Ten Gigabit Ethernet interfaces
+4 TwentyFive Gigabit Ethernet interfaces
+4 Forty Gigabit Ethernet interfaces
+32768K bytes of non-volatile configuration memory.
+15995680K bytes of physical memory.
+11161600K bytes of Bootflash at bootflash:.
+16384000K bytes of Crash Files at crashinfo:.
+234430023K bytes of SATA hard disk at disk0:.
+
+Base Ethernet MAC Address          : 00:11:22:aa:bb:c0
+Motherboard Assembly Number        : 18BFB
+Motherboard Serial Number          : FOC0000TEST3
+Model Revision Number              : V02
+Motherboard Revision Number        : 5
+Model Number                       : C9410R
+System Serial Number               : FXS0000TEST2
+</pre>
+    <p class="muted">interface</p>
+    <pre>switch_catalyst#show int gi3/0/20
+GigabitEthernet3/0/20 is up, line protocol is up (connected)
+  Hardware is Gigabit Ethernet, address is 0011.22aa.bb01 (bia 0011.22aa.bb01)
+  Description: ACCESS-PHONE-RACK01-RU01
+  MTU 9160 bytes, BW 100000 Kbit/sec, DLY 100 usec,
+     reliability 255/255, txload 1/255, rxload 1/255
+  Encapsulation ARPA, loopback not set
+  Keepalive set (10 sec)
+  Half-duplex, 100Mb/s, media type is 10/100/1000BaseTX
+  input flow-control is off, output flow-control is unsupported
+  Auto-MDIX on (operational: on)
+  ARP type: ARPA, ARP Timeout 04:00:00
+  Last input 00:00:08, output 00:00:00, output hang never
+  Last clearing of "show interface" counters 2w5d
+  Input queue: 0/375/0/0 (size/max/drops/flushes); Total output drops: 223462
+  Queueing strategy: Class-based queueing
+  Output queue: 0/40 (size/max)
+  30 second input rate 27000 bits/sec, 9 packets/sec
+  30 second output rate 52000 bits/sec, 16 packets/sec
+     92971720 packets input, 13935173874 bytes, 0 no buffer
+     Received 176683 broadcasts (171017 multicasts)
+     0 runts, 0 giants, 0 throttles
+     0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+     0 watchdog, 171017 multicast, 0 pause input
+     0 input packets with dribble condition detected
+     13870983 packets output, 18832791594 bytes, 0 underruns
+     Output 1030318 broadcasts (3421639 multicasts)
+     936685 output errors, 2686094 collisions, 0 interface resets
+     0 unknown protocol drops
+     0 babbles, 38449012 late collision, 0 deferred
+     0 lost carrier, 0 no carrier, 0 pause output
+     0 output buffer failures, 0 output buffers swapped out
+</pre>
+    <p class="muted">counters</p>
+    <pre>switch_catalyst#show int gi3/0/20 counters errors
+Port        Align-Err     FCS-Err    Xmit-Err     Rcv-Err  UnderSize  OutDiscards
+Gi3/0/20            0           0      936686           0          0       223462
+
+Port      Single-Col  Multi-Col   Late-Col  Excess-Col  Carri-Sen      Runts
+Gi3/0/20     2221984     463596   38449023         516          0          0
+</pre>
+    <p class="muted">transceiver</p>
+    <pre>switch_catalyst#show int gi3/0/20 transceiver detail
+Diagnostic Monitoring is not implemented.
+</pre>
+    <p class="muted">neighbors</p>
+    <pre>switch_catalyst#show cdp neighbors gi3/0/20 detail
+-------------------------
+Device ID: SEP001122AABB99
+Entry address(es):
+  IP address: 192.0.2.98
+Platform: Cisco IP Phone 8841,  Capabilities: Host Phone Two-port Mac Relay
+Interface: GigabitEthernet3/0/20,  Port ID (outgoing port): Port 1
+Holdtime : 143 sec
+Second Port Status: Up
+
+Version :
+sip88xx.14-4-1-0001-36.loads
+
+advertisement version: 2
+Duplex: full (Mismatch)
+Power drawn: 6.086 Watts
+Power request id: 4822, Power management id: 4
+Power request levels are:6086 0 0 0 0
+
+
+Total cdp entries displayed : 1
+</pre>
+    <p class="muted">portchannel</p>
+    <pre>switch_catalyst#show etherchannel summary
+Flags:  D - down        P - bundled in port-channel
+        I - stand-alone s - suspended
+        H - Hot-standby (LACP only)
+        R - Layer3      S - Layer2
+        U - in use      f - failed to allocate aggregator
+
+        M - not in use, minimum links not met
+        u - unsuitable for bundling
+        w - waiting to be aggregated
+        d - default port
+
+        A - formed by Auto LAG
+
+
+Number of channel-groups in use: 0
+Number of aggregators:           0
+
+Group  Port-channel  Protocol    Ports
+------+-------------+-----------+-----------------------------------------------
+</pre>
+    <p class="muted">logging</p>
+    <pre>switch_catalyst#show logging | include GigabitEthernet3/0/20
+Aug 26 2026 18:30:29.655 EDT: %CDP-4-DUPLEX_MISMATCH: duplex mismatch discovered on GigabitEthernet3/0/20 (not full duplex), with SEP001122AABB99 Port 1 (full duplex).
+Aug 26 2026 18:31:29.668 EDT: %CDP-4-DUPLEX_MISMATCH: duplex mismatch discovered on GigabitEthernet3/0/20 (not full duplex), with SEP001122AABB99 Port 1 (full duplex).
+</pre>
+  </details>
+</div>
+<div class="case">
+  <div>
+    <span class="verdict v-CAPACITY">
+      CAPACITY</span>
+    &nbsp;<strong>sw-core-01</strong> — Eth4/15
+    (InDiscards, Δ24h=286)
+  </div>
+<div class="muted">UPLINK-TO-CORE</div>  <p>CAPACITY — 388 input discards at 0.6889% (6,889 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+1,240 in 10 min).</p>
+  <details><summary>Raw evidence (8 commands)</summary>
+    <p class="muted">version</p>
+    <pre>Cisco Nexus Operating System (NX-OS) Software
+TAC support: http://www.cisco.com/tac
+Copyright (C) 2002-2022, Cisco and/or its affiliates.
+
+Software
+  BIOS: version 05.47
+  NXOS: version 9.3(10)
+  BIOS compile time:  04/28/2022
+  NXOS image file is: bootflash:///nxos.9.3.10.bin
+  NXOS compile time:  8/12/2022 12:00:00 [08/12/2022 20:04:12]
+
+Hardware
+  cisco Nexus9000 C9336C-FX2 Chassis
+  Intel(R) Xeon(R) CPU D-1526 @ 1.80GHz with 24632072 kB of memory.
+  Processor Board ID FDO12345678
+
+  Device name: core-sw-01
+  bootflash:  115805708 kB
+Kernel uptime is 291 day(s), 4 hour(s), 22 minute(s), 1 second(s)
+</pre>
+    <p class="muted">interface</p>
+    <pre>Ethernet4/15 is up
+admin state is up, Dedicated Interface
+  Hardware: 10000 Ethernet, address: 003a.9c1a.4d2e (bia 003a.9c1a.4d2e)
+  Description: UPLINK-TO-CORE
+  MTU 1500 bytes, BW 10000000 Kbit, DLY 10 usec
+  reliability 255/255, txload 1/255, rxload 1/255
+  Encapsulation ARPA, medium is broadcast
+  Port mode is trunk
+  full-duplex, 10 Gb/s, media type is 10G
+  Beacon is turned off
+  Auto-Negotiation is turned on
+  Input flow-control is off, output flow-control is off
+  Auto-mdix is turned off
+  Rate mode is dedicated
+  Switchport monitor is off
+  EtherType is 0x8100
+  EEE (efficient-ethernet) : n/a
+  Last link flapped 4week(s) 2day(s)
+  Last clearing of "show interface" counters never
+  1 interface resets
+  30 seconds input rate 903812 bits/sec, 512 packets/sec
+  30 seconds output rate 476182 bits/sec, 401 packets/sec
+  Load-Interval #2: 5 minute (300 seconds)
+    input rate 812.11 Kbps, 498 pps; output rate 402.91 Kbps, 388 pps
+  RX
+    88213456 unicast packets  1203456 multicast packets  8123 broadcast packets
+    89605035 input packets  71234567890 bytes
+    0 jumbo packets  0 storm suppression packets
+    0 runts  0 giants  912 CRC  0 no buffer
+    912 input error  0 short frame  0 overrun   0 underrun  0 ignored
+    0 watchdog  0 bad etype drop  0 bad proto drop  0 if down drop
+    0 input with dribble  1628 input discard
+    0 Rx pause
+  TX
+    91234567 unicast packets  234567 multicast packets  4567 broadcast packets
+    91473701 output packets  81234567890 bytes
+    0 jumbo packets
+    0 output error  0 collision  0 deferred  0 late collision
+    0 lost carrier  0 no carrier  0 babble  57 output discard
+    0 Tx pause
+</pre>
+    <p class="muted">counters</p>
+    <pre>--------------------------------------------------------------------------------
+Port          Align-Err    FCS-Err   Xmit-Err    Rcv-Err  UnderSize OutDiscards
+--------------------------------------------------------------------------------
+Eth4/15               0        912          0        912          0          57
+</pre>
+    <p class="muted">transceiver</p>
+    <pre>Ethernet4/15
+    transceiver is present
+    type is 10Gbase-SR
+    name is CISCO-FINISAR
+    part number is FTLX8571D3BCL-C2
+    revision is A
+    serial number is FNS0000TEST5
+    nominal bitrate is 10300 MBit/sec
+    Link length supported for 50/125um OM2 fiber is 82 m
+    cisco id is --
+    cisco extended id number is 4
+
+           SFP Detail Diagnostics Information (internal calibration)
+  ----------------------------------------------------------------------------
+                Current              Alarms                  Warnings
+                Measurement     High        Low         High          Low
+  ----------------------------------------------------------------------------
+  Temperature   30.51 C        75.00 C     -5.00 C     70.00 C        0.00 C
+  Voltage        3.28 V         3.63 V      2.97 V      3.46 V        3.13 V
+  Current        7.15 mA       11.80 mA     4.00 mA    10.80 mA       5.00 mA
+  Tx Power       -2.25 dBm      1.69 dBm  -11.30 dBm   -1.30 dBm     -7.30 dBm
+  Rx Power       -3.55 dBm      1.99 dBm  -13.90 dBm   -1.00 dBm     -9.90 dBm
+  Transmit Fault Count = 0
+  ----------------------------------------------------------------------------
+  Note: ++  high-alarm; +  high-warning; --  low-alarm; -  low-warning
+</pre>
+    <p class="muted">neighbors_lldp</p>
+    <pre>switch_nexus# show lldp neighbors interface eth4/15 detail
+Capability codes:
+  (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+  (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+Device ID            Local Intf      Hold-time  Capability  Port ID
+
+Chassis id: 0011.22aa.bb05
+Port id: Ethernet45
+Local Port id: Eth4/15
+Port Description: UPLINK-ARISTA E4/15
+System Name: arista switch
+System Description: Arista Networks EOS version 4.32.5.1M running on an Arista Networks DCS-7280SR-48C6
+Time remaining: 106 seconds
+System Capabilities: B, R
+Enabled Capabilities: B, R
+Management Address: 192.0.2.24
+Vlan ID: 1
+
+Total entries displayed: 1
+</pre>
+    <p class="muted">neighbors</p>
+    <pre>switch_nexus# show cdp neighbors interface eth4/15 detail
+Note: CDP Neighbor entry not found
+</pre>
+    <p class="muted">portchannel</p>
+    <pre>Flags:  D - Down        P - Up in port-channel (members)
+        I - Individual  H - Hot-standby (LACP only)
+        s - Suspended   r - Module-removed
+        b - BFD Session Wait
+        S - Switched    R - Routed
+        U - Up (port-channel)
+        p - Up in delay-lacp mode (member)
+        M - Not in use. Min-links not met
+--------------------------------------------------------------------------------
+Group Port-       Type     Protocol  Member Ports
+      Channel
+--------------------------------------------------------------------------------
+214   Po214(SU)   Eth      LACP      Eth4/16(P)   Eth4/17(P)
+</pre>
+    <p class="muted">logging</p>
+    <pre>switch_nexus# show logging logfile | include Ethernet4/15
+</pre>
+  </details>
+</div>
+<div class="case">
+  <div>
+    <span class="verdict v-PARSE_ERROR">
+      PARSE_ERROR</span>
+    &nbsp;<strong>sw-acc-01</strong> — Gi1/0/47
+    (Rcv-Err, Δ24h=918)
+  </div>
+<div class="muted">DECOMMISSIONED</div>  <p>PARSE_ERROR — critical field(s) input_errors, crc_errors, input_packets, link_status could not be parsed from device output. Refusing to guess (fail closed).</p>
+  <details><summary>Raw evidence (7 commands)</summary>
+    <p class="muted">version</p>
+    <pre>Cisco IOS XE Software, Version 17.06.05
+Cisco IOS Software [Bengaluru], Catalyst L3 Switch Software (CAT9K_IOSXE), Version 17.6.5, RELEASE SOFTWARE (fc2)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2022 by Cisco Systems, Inc.
+
+ROM: IOS-XE ROMMON
+BOOTLDR: System Bootstrap, Version 17.6.1r
+
+switch1 uptime is 41 weeks, 3 days, 2 hours, 11 minutes
+Uptime for this control processor is 41 weeks, 3 days, 2 hours, 13 minutes
+
+cisco C9300-48P (X86) processor with 1338934K/6147K bytes of memory.
+Processor board ID FCW0000TEST4
+
+Model Number                       : C9300-48P
+System Serial Number               : FCW0000TEST4
+</pre>
+    <p class="muted">interface</p>
+    <pre>                              ^
+% Invalid input detected at '^' marker.
+</pre>
+    <p class="muted">counters</p>
+    <pre>                              ^
+% Invalid input detected at '^' marker.
+</pre>
+    <p class="muted">transceiver</p>
+    <pre>                              ^
+% Invalid input detected at '^' marker.
+</pre>
+    <p class="muted">neighbors</p>
+    <pre>                              ^
+% Invalid input detected at '^' marker.
+</pre>
+    <p class="muted">portchannel</p>
+    <pre>Flags:  D - down        P - bundled in port-channel
+        I - stand-alone s - suspended
+        H - Hot-standby (LACP only)
+        R - Layer3      S - Layer2
+        U - in use      f - failed to allocate aggregator
+
+Number of channel-groups in use: 1
+Number of aggregators:           1
+
+Group  Port-channel  Protocol    Ports
+------+-------------+-----------+-----------------------------------------------
+214    Po214(SU)         LACP      Gi3/0/23(P)     Gi3/0/24(P)
+</pre>
+    <p class="muted">logging</p>
+    <pre></pre>
+  </details>
+</div>
+<div class="case">
+  <div>
+    <span class="verdict v-UNVERIFIED">
+      UNVERIFIED</span>
+    &nbsp;<strong>sw-acc-04</strong> — Gi1/0/9
+    (Rcv-Err, Δ24h=5785)
+  </div>
+<div class="muted">ACCESS-FLOOR1-CAMERA</div>  <p>UNVERIFIED — device could not be checked (connection failed: TCP connection to device failed: timed out). CSV data only; treat as unconfirmed.</p>
+</div>
+<div class="case">
+  <div>
+    <span class="verdict v-IGNORE">
+      IGNORE</span>
+    &nbsp;<strong>sw-acc-03</strong> — Gi2/0/1
+    (Rx, Δ24h=1133561112)
+  </div>
+<div class="muted">ACCESS-FLOOR2-AP</div>  <p>IGNORE — 'Rx' is a total traffic counter, not an error counter; a 24h increase is normal operation. No action.</p>
+  <details><summary>Raw evidence (7 commands)</summary>
+    <p class="muted">version</p>
+    <pre>Cisco IOS XE Software, Version 17.06.05
+Cisco IOS Software [Bengaluru], Catalyst L3 Switch Software (CAT9K_IOSXE), Version 17.6.5, RELEASE SOFTWARE (fc2)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2022 by Cisco Systems, Inc.
+
+ROM: IOS-XE ROMMON
+BOOTLDR: System Bootstrap, Version 17.6.1r
+
+switch1 uptime is 41 weeks, 3 days, 2 hours, 11 minutes
+Uptime for this control processor is 41 weeks, 3 days, 2 hours, 13 minutes
+
+cisco C9300-48P (X86) processor with 1338934K/6147K bytes of memory.
+Processor board ID FCW0000TEST4
+
+Model Number                       : C9300-48P
+System Serial Number               : FCW0000TEST4
+</pre>
+    <p class="muted">interface</p>
+    <pre>GigabitEthernet2/0/1 is up, line protocol is up (connected)
+  Hardware is Gigabit Ethernet, address is 70b3.17aa.0114 (bia 70b3.17aa.0114)
+  Description: ACCESS-FLOOR3-PRINTER
+  MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+     reliability 255/255, txload 1/255, rxload 1/255
+  Encapsulation ARPA, loopback not set
+  Keepalive set (10 sec)
+  Full-duplex, 1000Mb/s, media type is 10/100/1000BaseTX
+  input flow-control is on, output flow-control is unsupported
+  ARP type: ARPA, ARP Timeout 04:00:00
+  Last input 00:00:01, output 00:00:00, output hang never
+  Last clearing of "show interface" counters never
+  Input queue: 0/2000/17/0 (size/max/drops/flushes); Total output drops: 42
+  Queueing strategy: fifo
+  Output queue: 0/40 (size/max)
+  5 minute input rate 2033000 bits/sec, 267 packets/sec
+  5 minute output rate 3123000 bits/sec, 341 packets/sec
+     109443210 packets input, 2394664329 bytes, 0 no buffer
+     Received 434399 broadcasts (312 multicasts)
+     0 runts, 0 giants, 0 throttles
+     3271 input errors, 3271 CRC, 0 frame, 0 overrun, 0 ignored
+     0 watchdog, 312 multicast, 0 pause input
+     0 input packets with dribble condition detected
+     98210331 packets output, 8873201991 bytes, 0 underruns
+     0 output errors, 0 collisions, 2 interface resets
+     0 unknown protocol drops
+     0 babbles, 0 late collision, 0 deferred
+     0 lost carrier, 0 no carrier, 0 pause output
+     0 output buffer failures, 0 output buffers swapped out
+</pre>
+    <p class="muted">counters</p>
+    <pre>Port          Align-Err     FCS-Err    Xmit-Err     Rcv-Err  UnderSize  OutDiscards
+Gi2/0/1              0        3271           0        3271          0           42
+
+Port        Single-Col  Multi-Col   Late-Col  Excess-Col  Carri-Sen      Runts     Giants
+Gi2/0/1             0          0          0           0          0          0          0
+</pre>
+    <p class="muted">transceiver</p>
+    <pre>switch_catalyst#show int gi3/0/20 transceiver detail
+Diagnostic Monitoring is not implemented.
+</pre>
+    <p class="muted">neighbors</p>
+    <pre>-------------------------
+Device ID: dist-sw-01.example.net
+Entry address(es):
+  IP address: 10.0.0.1
+Platform: cisco C9500-32C,  Capabilities: Router Switch IGMP
+Interface: GigabitEthernet2/0/1,  Port ID (outgoing port): TenGigabitEthernet1/0/5
+Holdtime : 133 sec
+
+Version :
+Cisco IOS XE Software, Version 17.06.05
+
+advertisement version: 2
+VTP Management Domain: ''
+Native VLAN: 1
+Duplex: full
+Management address(es):
+  IP address: 10.0.0.1
+
+Total cdp entries displayed : 1
+</pre>
+    <p class="muted">portchannel</p>
+    <pre>Flags:  D - down        P - bundled in port-channel
+        I - stand-alone s - suspended
+        H - Hot-standby (LACP only)
+        R - Layer3      S - Layer2
+        U - in use      f - failed to allocate aggregator
+
+Number of channel-groups in use: 1
+Number of aggregators:           1
+
+Group  Port-channel  Protocol    Ports
+------+-------------+-----------+-----------------------------------------------
+214    Po214(SU)         LACP      Gi3/0/23(P)     Gi3/0/24(P)
+</pre>
+    <p class="muted">logging</p>
+    <pre>Aug 24 02:11:41.520: %LINK-3-UPDOWN: Interface GigabitEthernet2/0/1, changed state to down
+Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet2/0/1, changed state to up
+</pre>
+  </details>
+</div>
+<div class="case">
+  <div>
+    <span class="verdict v-IGNORE">
+      IGNORE</span>
+    &nbsp;<strong>sw-core-02</strong> — Eth4/15
+    (Rcv-Err, Δ24h=28)
+  </div>
+<div class="muted">UPLINK-TO-CORE-B</div>  <p>IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters is below the noise threshold, counter flat across 10-min re-poll. DOM rx power -3.5 dBm within range. No action.</p>
+  <details><summary>Raw evidence (8 commands)</summary>
+    <p class="muted">version</p>
+    <pre>Cisco Nexus Operating System (NX-OS) Software
+TAC support: http://www.cisco.com/tac
+Copyright (C) 2002-2022, Cisco and/or its affiliates.
+
+Software
+  BIOS: version 05.47
+  NXOS: version 9.3(10)
+  BIOS compile time:  04/28/2022
+  NXOS image file is: bootflash:///nxos.9.3.10.bin
+  NXOS compile time:  8/12/2022 12:00:00 [08/12/2022 20:04:12]
+
+Hardware
+  cisco Nexus9000 C9336C-FX2 Chassis
+  Intel(R) Xeon(R) CPU D-1526 @ 1.80GHz with 24632072 kB of memory.
+  Processor Board ID FDO12345678
+
+  Device name: core-sw-01
+  bootflash:  115805708 kB
+Kernel uptime is 291 day(s), 4 hour(s), 22 minute(s), 1 second(s)
+</pre>
+    <p class="muted">interface</p>
+    <pre>Ethernet4/15 is up
+admin state is up, Dedicated Interface
+  Hardware: 10000 Ethernet, address: 003a.9c1a.4d2e (bia 003a.9c1a.4d2e)
+  Description: UPLINK-TO-CORE
+  MTU 1500 bytes, BW 10000000 Kbit, DLY 10 usec
+  reliability 255/255, txload 1/255, rxload 1/255
+  Encapsulation ARPA, medium is broadcast
+  Port mode is trunk
+  full-duplex, 10 Gb/s, media type is 10G
+  Beacon is turned off
+  Auto-Negotiation is turned on
+  Input flow-control is off, output flow-control is off
+  Auto-mdix is turned off
+  Rate mode is dedicated
+  Switchport monitor is off
+  EtherType is 0x8100
+  EEE (efficient-ethernet) : n/a
+  Last link flapped 4week(s) 2day(s)
+  Last clearing of "show interface" counters never
+  1 interface resets
+  30 seconds input rate 903812 bits/sec, 512 packets/sec
+  30 seconds output rate 476182 bits/sec, 401 packets/sec
+  Load-Interval #2: 5 minute (300 seconds)
+    input rate 812.11 Kbps, 498 pps; output rate 402.91 Kbps, 388 pps
+  RX
+    88213456 unicast packets  1203456 multicast packets  8123 broadcast packets
+    89425035 input packets  71234567890 bytes
+    0 jumbo packets  0 storm suppression packets
+    0 runts  0 giants  912 CRC  0 no buffer
+    912 input error  0 short frame  0 overrun   0 underrun  0 ignored
+    0 watchdog  0 bad etype drop  0 bad proto drop  0 if down drop
+    0 input with dribble  388 input discard
+    0 Rx pause
+  TX
+    91234567 unicast packets  234567 multicast packets  4567 broadcast packets
+    91473701 output packets  81234567890 bytes
+    0 jumbo packets
+    0 output error  0 collision  0 deferred  0 late collision
+    0 lost carrier  0 no carrier  0 babble  57 output discard
+    0 Tx pause
+</pre>
+    <p class="muted">counters</p>
+    <pre>--------------------------------------------------------------------------------
+Port          Align-Err    FCS-Err   Xmit-Err    Rcv-Err  UnderSize OutDiscards
+--------------------------------------------------------------------------------
+Eth4/15               0        912          0        912          0          57
+</pre>
+    <p class="muted">transceiver</p>
+    <pre>Ethernet4/15
+    transceiver is present
+    type is 10Gbase-SR
+    name is CISCO-FINISAR
+    part number is FTLX8571D3BCL-C2
+    revision is A
+    serial number is FNS0000TEST5
+    nominal bitrate is 10300 MBit/sec
+    Link length supported for 50/125um OM2 fiber is 82 m
+    cisco id is --
+    cisco extended id number is 4
+
+           SFP Detail Diagnostics Information (internal calibration)
+  ----------------------------------------------------------------------------
+                Current              Alarms                  Warnings
+                Measurement     High        Low         High          Low
+  ----------------------------------------------------------------------------
+  Temperature   30.51 C        75.00 C     -5.00 C     70.00 C        0.00 C
+  Voltage        3.28 V         3.63 V      2.97 V      3.46 V        3.13 V
+  Current        7.15 mA       11.80 mA     4.00 mA    10.80 mA       5.00 mA
+  Tx Power       -2.25 dBm      1.69 dBm  -11.30 dBm   -1.30 dBm     -7.30 dBm
+  Rx Power       -3.55 dBm      1.99 dBm  -13.90 dBm   -1.00 dBm     -9.90 dBm
+  Transmit Fault Count = 0
+  ----------------------------------------------------------------------------
+  Note: ++  high-alarm; +  high-warning; --  low-alarm; -  low-warning
+</pre>
+    <p class="muted">neighbors_lldp</p>
+    <pre>switch_nexus# show lldp neighbors interface eth4/15 detail
+Capability codes:
+  (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+  (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+Device ID            Local Intf      Hold-time  Capability  Port ID
+
+Chassis id: 0011.22aa.bb05
+Port id: Ethernet45
+Local Port id: Eth4/15
+Port Description: UPLINK-ARISTA E4/15
+System Name: arista switch
+System Description: Arista Networks EOS version 4.32.5.1M running on an Arista Networks DCS-7280SR-48C6
+Time remaining: 106 seconds
+System Capabilities: B, R
+Enabled Capabilities: B, R
+Management Address: 192.0.2.24
+Vlan ID: 1
+
+Total entries displayed: 1
+</pre>
+    <p class="muted">neighbors</p>
+    <pre>switch_nexus# show cdp neighbors interface eth4/15 detail
+Note: CDP Neighbor entry not found
+</pre>
+    <p class="muted">portchannel</p>
+    <pre>Flags:  D - Down        P - Up in port-channel (members)
+        I - Individual  H - Hot-standby (LACP only)
+        s - Suspended   r - Module-removed
+        b - BFD Session Wait
+        S - Switched    R - Routed
+        U - Up (port-channel)
+        p - Up in delay-lacp mode (member)
+        M - Not in use. Min-links not met
+--------------------------------------------------------------------------------
+Group Port-       Type     Protocol  Member Ports
+      Channel
+--------------------------------------------------------------------------------
+214   Po214(SU)   Eth      LACP      Eth4/16(P)   Eth4/17(P)
+</pre>
+    <p class="muted">logging</p>
+    <pre>switch_nexus# show logging logfile | include Ethernet4/15
+</pre>
+  </details>
+</div>
+
+<p class="muted">iftriage is a read-only diagnostic tool. Every command sent is
+recorded in the session audit log (/private/tmp/claude-501/-Users-israelfernandez-Documents-automation---AI-iftriage/ec69bc67-c3a9-4ed7-a93d-8b8fe96cf111/scratchpad/work/reports/iftriage_audit_20260829_202921.log).</p>
+</body>
+</html>
