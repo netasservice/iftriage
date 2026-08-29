@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-29
+
 ### Added
 - **Enriched CSV report.** Every run now writes
   `reports/iftriage_report_<stamp>.csv` next to the HTML and text reports: the
