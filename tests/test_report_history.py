@@ -1,5 +1,6 @@
 """Smoke tests: report rendering and SQLite history round-trip."""
 
+import csv
 from importlib.resources import files
 
 from conftest import FIXTURES
@@ -55,6 +56,64 @@ def test_render_report_html_and_txt(tmp_path):
     assert "Executive summary" in html
     assert "PHYSICAL_MEDIA" in html
     assert "Data quality" in html
+
+
+def test_render_report_enriched_csv(tmp_path):
+    results, findings = _results()
+    meta = {
+        "csv_file": "sample_top20.csv",
+        "repoll_minutes": 10,
+        "audit_log": "audit.log",
+    }
+    paths = render_report(results, findings, meta, "report_en", tmp_path)
+
+    with paths["csv"].open(newline="") as handle:
+        header, *rows = list(csv.reader(handle))
+
+    original_columns = list(results[0].case.raw_row.keys())
+    assert header[:11] == original_columns
+    assert header[11:] == [
+        "verdict",
+        "reason",
+        "platform",
+        "link_status",
+        "protocol_status",
+        "duplex",
+        "speed",
+        "input_errors",
+        "crc_errors",
+        "late_collisions",
+        "discards_in",
+        "discards_out",
+        "dom_rx_power_dbm",
+        "dom_tx_power_dbm",
+        "neighbor_name",
+        "neighbor_port",
+        "flap_count",
+        "dq_flags",
+        "duplicate_of",
+        "recurrence",
+    ]
+    assert len(rows) == 9
+
+    column = {name: index for index, name in enumerate(header)}
+    # Rows keep the original CSV order, not the HTML's verdict order.
+    assert [row[column["switch"]] for row in rows[:3]] == ["sw-a", "sw-b", "sw-c"]
+    # Original cells are echoed verbatim alongside the verdict.
+    assert rows[0][column["change"]] == "3271"
+    assert rows[0][column["verdict"]] == "UNVERIFIED"
+    # A collected case carries its stats and platform.
+    assert rows[1][column["verdict"]] == "PHYSICAL_MEDIA"
+    assert rows[1][column["link_status"]] == "up"
+    assert rows[1][column["platform"]] == "ios_xe"
+    # Unknown stats stay empty (fail-closed) — never rendered as 0.
+    assert rows[1][column["crc_errors"]] == ""
+    # The excluded data-quality artifact keeps its flags and empty stats cells.
+    excluded_row = rows[3]
+    assert excluded_row[column["switch"]] == "sw-d"
+    assert "cross_device_identical" in excluded_row[column["dq_flags"]]
+    assert excluded_row[column["verdict"]] == "IGNORE"
+    assert excluded_row[column["link_status"]] == ""
 
 
 def test_templates_ship_inside_the_package():

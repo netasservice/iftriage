@@ -70,6 +70,7 @@ def ingest_csv(
                 count=_to_int(row["count"]),
                 change=_to_int(row["change"]),
                 row_index=int(idx),
+                raw_row={column: str(row[column]) for column in df.columns},
             )
         )
 

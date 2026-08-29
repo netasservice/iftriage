@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Enriched CSV report.** Every run now writes
+  `reports/iftriage_report_<stamp>.csv` next to the HTML and text reports: the
+  input CSV echoed verbatim (original columns — including ones iftriage does
+  not parse — and original row order) with the analysis appended as extra
+  columns (verdict, reason, platform, the stats fields the rules consult,
+  dq_flags, duplicate_of, recurrence). Unknown values stay empty cells, never
+  zero, keeping the fail-closed convention visible in the spreadsheet.
+
 ### Changed
 - **iftriage now contacts one device at a time by default.** Concurrency became
   an explicit command-line opt-in (`--workers N`, default 1) and the

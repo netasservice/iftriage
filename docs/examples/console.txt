@@ -8,3 +8,4 @@ Waiting 10 min before re-poll (answers: is it still incrementing NOW?) ...
 8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
 Report (HTML): reports/iftriage_report_20260829_202921.html
 Report (text): reports/iftriage_report_20260829_202921.txt
+Report (CSV):  reports/iftriage_report_20260829_202921.csv

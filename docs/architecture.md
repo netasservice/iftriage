@@ -21,7 +21,8 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
               │     base.py ───┘                     │
               │     ios_xe.py / nxos.py / eos.py     v
               │        │                          report.py ──> iftriage/templates/
-              │        v
+              │        │                          (HTML + text; enriched CSV written
+              │        v                           directly with the stdlib csv module)
               ├──> normalize.py (interface-name expansion, validation)
               │
               ├──> session.py (ReadOnlySession — the ONLY device egress)
@@ -42,7 +43,7 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 | `platforms/` | `PlatformProfile` ABC + registry; command templates and parsers | no |
 | `rules.py` | Verdict engine — pure functions over the canonical model | no |
 | `history.py` | SQLite persistence (archive, runs, platform cache, recurrence) | no |
-| `report.py` | Jinja2 HTML/text rendering | no |
+| `report.py` | Jinja2 HTML/text rendering + enriched CSV writer (input rows echoed with analysis columns appended) | no |
 
 ## Key invariants
 
@@ -99,5 +100,6 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 5. `rules.py` produces one `Verdict` per case; port-channel members listed
    alongside their Po are marked duplicates; recurrence counts come from
    history.
-6. Results persist to SQLite; Jinja2 renders the HTML + text report; the audit
-   log holds every command sent.
+6. Results persist to SQLite; Jinja2 renders the HTML + text report and the
+   enriched CSV echoes the input table with the analysis columns appended (in
+   the original row order); the audit log holds every command sent.

@@ -227,6 +227,11 @@ the worst failure mode of this tool. Missing data ⇒ `PARSE_ERROR`/`UNVERIFIED`
 - Output: HTML (primary) + plain text, rendered via Jinja2 templates. Template defines the
   language of the deliverable (start in English; a Spanish template can be added by editing a
   text file, zero code changes).
+- Enriched CSV alongside the HTML/text: the input table echoed verbatim (original columns —
+  including ones iftriage does not parse — and original row order) with a curated set of
+  analysis columns appended: verdict, reason, platform, the stats fields the rules consult,
+  dq_flags, duplicate_of, recurrence. Written with the stdlib csv module; unknown values stay
+  empty cells (fail closed), never zero.
 - Structure:
   - Executive summary: "20 cases: 3 PHYSICAL_MEDIA, 2 CONFIG_ISSUE, 1 CAPACITY, 13 IGNORE,
     1 UNVERIFIED".
