@@ -21,7 +21,8 @@ from ..normalize import (
 # Canonical command keys, in collection order. Profiles may omit keys.
 # "neighbors_lldp" comes before "neighbors" so that when a platform runs both
 # (NX-OS: LLDP fallback for non-Cisco neighbors), CDP data wins the merge
-# whenever it found an entry.
+# whenever it found an entry. The "cpu" key is deliberately absent: it feeds
+# the pre-collection CPU guard, not the per-interface stats.
 COMMAND_KEYS = (
     "version",
     "interface",
@@ -164,6 +165,32 @@ def parse_portchannel_summary(raw: str) -> dict:
     if not members:
         return {}
     return {"port_channel_members": members}
+
+
+_CPU_FIVE_SECONDS_RE = re.compile(
+    r"CPU utilization for five seconds:\s*(\d+(?:\.\d+)?)%"
+)
+_CPU_IDLE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%?\s*id(?:le)?\b")
+
+
+def parse_cpu_five_seconds(raw: str) -> dict:
+    """IOS-style current CPU: 'CPU utilization for five seconds: 12%/4%; ...'.
+
+    Returns {} when the line is absent — the CPU guard fails closed on that.
+    """
+    match = _CPU_FIVE_SECONDS_RE.search(raw)
+    if match:
+        return {"cpu_percent": float(match.group(1))}
+    return {}
+
+
+def parse_cpu_from_idle(raw: str) -> dict:
+    """Idle-based current CPU (NX-OS 'CPU states: ... 94.2% idle', EOS
+    top-style '%Cpu(s): ... 92.1 id'): utilization is 100 minus idle."""
+    match = _CPU_IDLE_RE.search(raw)
+    if match:
+        return {"cpu_percent": round(100.0 - float(match.group(1)), 1)}
+    return {}
 
 
 def parse_cdp_neighbor_detail(raw: str) -> dict:

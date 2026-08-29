@@ -129,6 +129,7 @@ entire project. Diagnostic tool only — it must NEVER modify device state.
 
 **IOS-XE (Catalyst):**
 ```
+show processes cpu | include CPU utilization
 show version
 show interfaces <intf>
 show interfaces <intf> counters errors
@@ -140,6 +141,7 @@ show logging | include <intf-pattern>
 
 **NX-OS (Nexus):**
 ```
+show system resources
 show version
 show interface <intf>
 show interface <intf> counters errors
@@ -156,6 +158,7 @@ entry. Confirmed against real fleet output in Phase 2.)
 
 **EOS (Arista):**
 ```
+show processes top once | include Cpu
 show version
 show interfaces <intf>
 show interfaces <intf> counters errors
@@ -166,6 +169,13 @@ show logging | include <intf-pattern>
 ```
 
 `show version` is used for platform confirmation + recording model/OS in the audit trail.
+
+The first command on each platform is the CPU guard: right after login, the
+device's current CPU utilization is read and the device is skipped entirely
+(cases become UNVERIFIED) when it exceeds `connection.cpu_skip_threshold_percent`
+(default 80). The guard fails closed — an unreadable CPU reading also skips.
+During the re-poll pass a busy device keeps its first sample; only the delta is
+given up.
 
 ## 6. Analysis pipeline
 

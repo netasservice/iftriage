@@ -26,6 +26,10 @@ class ConnectionSettings:
     jitter_min: float = 0.5
     jitter_max: float = 2.0
     aaa_failure_abort: int = 2
+    # Devices whose current CPU utilization exceeds this are skipped (their
+    # cases become UNVERIFIED) rather than loaded with more work. An unreadable
+    # CPU reading also skips: the guard fails closed.
+    cpu_skip_threshold_percent: float = 80.0
 
 
 @dataclass

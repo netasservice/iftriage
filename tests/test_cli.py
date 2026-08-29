@@ -240,6 +240,11 @@ def _fake_sessions(monkeypatch, fail_auth=(), fail_timeout=()):
                 raise RuntimeError(f"{self.host}: connection timed out")
 
         def get(self, command):
+            if "processes cpu" in command:  # keep the fail-closed CPU guard happy
+                return (
+                    "CPU utilization for five seconds: 5%/0%; "
+                    "one minute: 5%; five minutes: 5%"
+                )
             return ""
 
         def disconnect(self):
@@ -324,6 +329,53 @@ def test_partial_failure_still_waits_and_repolls_only_survivors(
     assert attempts == ["10.0.0.1", "10.0.0.2", "10.0.0.2"]
     report_txt = next((tmp_path / "out").glob("iftriage_report_*.txt")).read_text()
     assert "UNVERIFIED" in report_txt
+
+
+def test_all_devices_cpu_skipped_still_reports_instead_of_aborting(
+    tmp_path, capsys, monkeypatch
+):
+    """A CPU skip is a deliberate outcome the report must show: no abort, and
+    no pointless re-poll wait either (nothing was collected to re-sample)."""
+    csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1"])
+
+    class BusySession:
+        def __init__(self, **kwargs):
+            pass
+
+        def connect(self):
+            pass
+
+        def get(self, command):
+            return (
+                "CPU utilization for five seconds: 92%/45%; "
+                "one minute: 90%; five minutes: 88%"
+            )
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setattr("iftriage.collectors.ReadOnlySession", BusySession)
+    sleeps = _record_sleeps(monkeypatch)
+
+    rc = main(["run", str(csv), "--repoll", "10", "--output", str(tmp_path / "out")])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert sleeps == []
+    assert "Skipping re-poll wait" in out
+    report_txt = next((tmp_path / "out").glob("iftriage_report_*.txt")).read_text()
+    assert "UNVERIFIED" in report_txt
+    assert "device skipped: CPU utilization 92% above 80% threshold" in report_txt
+
+
+def test_cpu_threshold_is_configurable_with_a_default_of_eighty(tmp_path):
+    without_key = tmp_path / "without_key.yaml"
+    without_key.write_text("connection:\n  timeout_seconds: 30\n")
+    assert load_config(without_key).connection.cpu_skip_threshold_percent == 80.0
+
+    with_key = tmp_path / "with_key.yaml"
+    with_key.write_text("connection:\n  cpu_skip_threshold_percent: 65\n")
+    assert load_config(with_key).connection.cpu_skip_threshold_percent == 65.0
 
 
 def test_workers_defaults_to_one_session_at_a_time():

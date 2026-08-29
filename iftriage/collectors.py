@@ -28,7 +28,12 @@ from .models import (
 )
 from .normalize import InterfaceNameError
 from .platforms import get_profile
-from .platforms.base import COMMAND_KEYS, DEVICE_LEVEL_KEYS, REPOLL_KEYS
+from .platforms.base import (
+    COMMAND_KEYS,
+    DEVICE_LEVEL_KEYS,
+    REPOLL_KEYS,
+    PlatformProfile,
+)
 from .session import AuditLog, EnableRequired, ReadOnlySession, SafetyViolation
 
 
@@ -167,6 +172,41 @@ def _merge_stats(parsed_by_key: dict[str, dict]) -> NormalizedInterfaceStats:
     return stats
 
 
+def _check_cpu(
+    session: ReadOnlySession, profile: PlatformProfile, config: Config
+) -> tuple[str | None, str]:
+    """CPU guard: returns (skip_reason, raw_output).
+
+    skip_reason is None when the device is safe to poll. The guard fails
+    closed: a CPU reading that cannot be obtained or parsed is a skip, the
+    same as one above the threshold.
+    """
+    template = profile.templates.get("cpu")
+    if template is None:  # profile without a cpu command: no guard
+        return None, ""
+    command = template.format(interface="")  # cpu templates take no interface
+    try:
+        raw = session.get(command)
+    except SafetyViolation:
+        raise
+    except Exception as exc:
+        return f"could not determine CPU utilization (command failed: {exc})", ""
+    try:
+        parsed = profile.parse("cpu", raw, "")
+    except Exception as exc:
+        return f"could not determine CPU utilization (parse failed: {exc})", raw
+    cpu_percent = parsed.get("cpu_percent")
+    if cpu_percent is None:
+        return "could not determine CPU utilization (unrecognized output)", raw
+    threshold = config.connection.cpu_skip_threshold_percent
+    if cpu_percent > threshold:
+        return (
+            f"CPU utilization {cpu_percent:.0f}% above {threshold:.0f}% threshold",
+            raw,
+        )
+    return None, raw
+
+
 def _collect_device(
     mgmt_ip: str,
     device_cases: list[CaseResult],
@@ -252,6 +292,19 @@ def _collect_device(
 
     device_level_raw: dict[str, str] = {}
     try:
+        cpu_skip_reason, cpu_raw = _check_cpu(session, profile, config)
+        if keys != REPOLL_KEYS and cpu_raw:
+            bounded_cpu = _bounded_evidence(cpu_raw, config.limits.evidence_max_lines)
+            for result in targets:
+                result.raw_outputs["cpu"] = bounded_cpu
+        if cpu_skip_reason is not None:
+            for result in targets:
+                if keys == REPOLL_KEYS:
+                    # The first sample is already good; only the delta is lost.
+                    result.repoll_skip_reason = cpu_skip_reason
+                else:
+                    result.collection_error = f"device skipped: {cpu_skip_reason}"
+            return
         for result in targets:
             canonical = result.canonical_interface
             if canonical is None:  # unreachable: targets require it

@@ -10,6 +10,7 @@ from .base import (
     PlatformProfile,
     parse_cdp_neighbor_detail,
     parse_counters_table,
+    parse_cpu_from_idle,
     parse_flap_count,
     parse_portchannel_summary,
     register,
@@ -104,6 +105,7 @@ class EosProfile(PlatformProfile):
     platform = Platform.EOS
     netmiko_device_type = "arista_eos"
     templates = {
+        "cpu": "show processes top once | include Cpu",
         "version": "show version",
         "interface": "show interfaces {interface}",
         "counters": "show interfaces {interface} counters errors",
@@ -114,6 +116,8 @@ class EosProfile(PlatformProfile):
     }
 
     def parse(self, key: str, raw: str, canonical_interface: str) -> dict:
+        if key == "cpu":
+            return parse_cpu_from_idle(raw)
         if key == "interface":
             return _parse_show_interfaces(raw)
         if key == "counters":

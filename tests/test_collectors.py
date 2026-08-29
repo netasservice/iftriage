@@ -22,9 +22,15 @@ from iftriage.models import (
     NormalizedInterfaceStats,
     VerdictCategory,
 )
-from iftriage.platforms.base import COMMAND_KEYS
+from iftriage.platforms.base import COMMAND_KEYS, REPOLL_KEYS
 from iftriage.rules import evaluate_case
 from iftriage.session import AuditLog, EnableRequired
+
+# Healthy answer to the IOS-XE cpu guard command; fakes must provide one or the
+# fail-closed guard would skip every device.
+HEALTHY_CPU = (
+    "CPU utilization for five seconds: 5%/0%; one minute: 5%; five minutes: 5%"
+)
 
 
 def test_aaa_breaker_trips_on_consecutive_failures_only():
@@ -221,6 +227,8 @@ def test_evidence_is_bounded_but_parsing_sees_the_full_output(tmp_path, monkeypa
             pass
 
         def get(self, command):
+            if "processes cpu" in command:
+                return HEALTHY_CPU
             return flaps if "logging" in command else ""
 
         def disconnect(self):
@@ -287,7 +295,7 @@ class _ProbeSession:
             self._probe.barrier.wait(timeout=5)
 
     def get(self, command):
-        return ""
+        return HEALTHY_CPU if "processes cpu" in command else ""
 
     def disconnect(self):
         ledger = self._probe.ledger
@@ -404,3 +412,106 @@ def test_serial_pass_stops_at_the_aaa_breaker_limit(tmp_path, monkeypatch):
 
     assert "AAA circuit breaker" in str(excinfo.value)
     assert len(ledger["attempts"]) == config.connection.aaa_failure_abort == 2
+
+
+# ---- CPU guard -------------------------------------------------------------
+
+BUSY_CPU = (
+    "CPU utilization for five seconds: 92%/45%; one minute: 90%; five minutes: 88%"
+)
+
+
+def _cpu_gated_device(tmp_path, monkeypatch, cpu_response, keys=COMMAND_KEYS):
+    """Run _collect_device against a fake whose cpu command answers
+    `cpu_response`; returns (result, commands sent, breaker)."""
+    commands: list[str] = []
+
+    class CpuSession:
+        def __init__(self, **kwargs):
+            pass
+
+        def connect(self):
+            pass
+
+        def get(self, command):
+            commands.append(command)
+            if "processes cpu" in command:
+                if isinstance(cpu_response, Exception):
+                    raise cpu_response
+                return cpu_response
+            return ""
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setattr("iftriage.collectors.ReadOnlySession", CpuSession)
+
+    config = Config()
+    config.connection.jitter_min = 0.0
+    config.connection.jitter_max = 0.0
+    config.platform_overrides = {"10.0.0.1": "ios_xe"}
+    breaker = _AaaBreaker(limit=2)
+    result = CaseResult(case=_case("sw-a", "Gi1/0/1"))
+
+    _collect_device(
+        mgmt_ip="10.0.0.1",
+        device_cases=[result],
+        config=config,
+        credentials=Credentials(username="ops", password="pw"),
+        audit=AuditLog(tmp_path / "audit.log"),
+        history=None,
+        breaker=breaker,
+        keys=keys,
+    )
+    return result, commands, breaker
+
+
+def test_high_cpu_device_is_skipped_with_the_reading_in_evidence(tmp_path, monkeypatch):
+    result, commands, breaker = _cpu_gated_device(tmp_path, monkeypatch, BUSY_CPU)
+
+    assert result.collection_error == (
+        "device skipped: CPU utilization 92% above 80% threshold"
+    )
+    assert len(commands) == 1  # the cpu reading itself; no interface command ran
+    assert result.raw_outputs["cpu"] == BUSY_CPU
+    assert not breaker.tripped.is_set()
+    assert breaker.consecutive_failures == 0  # a busy device is not an AAA failure
+
+
+def test_low_cpu_device_is_collected_normally(tmp_path, monkeypatch):
+    result, commands, _breaker = _cpu_gated_device(tmp_path, monkeypatch, HEALTHY_CPU)
+
+    assert result.collection_error is None
+    assert result.stats is not None
+    assert len(commands) > 1  # the interface command set ran after the guard
+
+
+def test_unreadable_cpu_output_skips_the_device_fail_closed(tmp_path, monkeypatch):
+    result, commands, _breaker = _cpu_gated_device(
+        tmp_path, monkeypatch, "% Invalid input detected"
+    )
+
+    assert result.collection_error is not None
+    assert "could not determine CPU utilization" in result.collection_error
+    assert len(commands) == 1
+
+
+def test_failing_cpu_command_skips_the_device_fail_closed(tmp_path, monkeypatch):
+    result, _commands, breaker = _cpu_gated_device(
+        tmp_path, monkeypatch, RuntimeError("read timeout")
+    )
+
+    assert result.collection_error is not None
+    assert "could not determine CPU utilization" in result.collection_error
+    assert breaker.consecutive_failures == 0
+
+
+def test_repoll_pass_cpu_skip_preserves_the_first_sample(tmp_path, monkeypatch):
+    result, _commands, _breaker = _cpu_gated_device(
+        tmp_path, monkeypatch, BUSY_CPU, keys=REPOLL_KEYS
+    )
+
+    assert result.collection_error is None  # the first sample stays valid
+    assert result.repoll_stats is None
+    assert result.repoll_skip_reason is not None
+    assert "CPU utilization 92%" in result.repoll_skip_reason

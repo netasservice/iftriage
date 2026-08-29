@@ -9,6 +9,7 @@ from .base import (
     PlatformProfile,
     parse_cdp_neighbor_detail,
     parse_counters_table,
+    parse_cpu_from_idle,
     parse_flap_count,
     parse_portchannel_summary,
     register,
@@ -87,6 +88,7 @@ class NxosProfile(PlatformProfile):
     platform = Platform.NXOS
     netmiko_device_type = "cisco_nxos"
     templates = {
+        "cpu": "show system resources",
         "version": "show version",
         "interface": "show interface {interface}",
         "counters": "show interface {interface} counters errors",
@@ -100,6 +102,8 @@ class NxosProfile(PlatformProfile):
     }
 
     def parse(self, key: str, raw: str, canonical_interface: str) -> dict:
+        if key == "cpu":
+            return parse_cpu_from_idle(raw)
         if key == "interface":
             return _parse_show_interface(raw)
         if key == "counters":

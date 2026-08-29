@@ -131,6 +131,9 @@ class CaseResult:
     repoll_minutes: float | None = None
     raw_outputs: dict[str, str] = field(default_factory=dict)
     collection_error: str | None = None  # unreachable / auth failed / timeout / aborted
+    # Set when the re-poll pass deliberately left the device alone (CPU guard);
+    # the first sample stays valid, only the delta answer is missing.
+    repoll_skip_reason: str | None = None
     parse_errors: list[str] = field(default_factory=list)
     verdict: Verdict | None = None
     duplicate_of: str | None = None  # set when this is a member of a Po also in the CSV

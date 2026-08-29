@@ -16,6 +16,7 @@ from .collectors import (
     abort_if_nothing_collected,
     collect,
     mark_portchannel_duplicates,
+    repoll_eligible,
     resolve_platform,
 )
 from .collectors import (
@@ -238,6 +239,11 @@ def _cmd_run(args) -> int:
             results = collect(cases, config, credentials, audit, history, args.workers)
             abort_if_nothing_collected(results)
 
+            if repoll_minutes and not repoll_eligible(results):
+                # Every device was deliberately skipped (the abort gate above
+                # already handled outright failures): nothing to re-sample.
+                print("Skipping re-poll wait: no collected interfaces to re-sample.")
+                repoll_minutes = None
             if repoll_minutes:
                 print(
                     f"Waiting {repoll_minutes:g} min before re-poll "

@@ -367,6 +367,9 @@ connection:
   jitter_min: 0.5        # random delay before each connection (seconds)
   jitter_max: 2.0
   aaa_failure_abort: 2   # consecutive auth failures before aborting the whole run
+  # Devices whose current CPU is above this are skipped (cases UNVERIFIED)
+  # instead of being given more work; unreadable CPU also skips (fail closed).
+  cpu_skip_threshold_percent: 80
 
 limits:
   max_output_bytes: 1000000  # hard ceiling per command; keeps the tail
@@ -451,7 +454,11 @@ change structurally impossible:
 Additional operational safety: **one device at a time by default**, AAA
 circuit breaker (2 consecutive auth failures abort the run), per-device
 timeouts, jitter between connections, per-device try/except (a failed device
-becomes `UNVERIFIED`). No `clear counters`, no `debug`, no `show tech`, no
+becomes `UNVERIFIED`), and a **CPU guard** — right after login the device's
+current CPU utilization is read, and a device above
+`connection.cpu_skip_threshold_percent` (default 80) is skipped with the reason
+in the report rather than loaded with more work; an unreadable CPU reading also
+skips (fail closed). No `clear counters`, no `debug`, no `show tech`, no
 config mode, ever.
 
 **Concurrency is opt-in, and only from the command line.** `iftriage run`

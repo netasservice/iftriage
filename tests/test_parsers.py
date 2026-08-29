@@ -228,3 +228,38 @@ def test_transceiver_absent_yields_no_dom_fields():
     ):
         parsed = profile.parse("transceiver", raw, "Ethernet1/1")
         assert "dom_rx_power_dbm" not in parsed  # stays None -> fail closed
+
+
+# ---- CPU guard readings ----------------------------------------------------
+
+
+def test_ios_xe_cpu_five_seconds():
+    parsed = IOS.parse("cpu", load_fixture("ios_xe", "processes_cpu.txt"), "")
+    assert parsed["cpu_percent"] == 12.0
+
+
+def test_nxos_cpu_from_system_resources_idle():
+    parsed = NX.parse("cpu", load_fixture("nxos", "system_resources.txt"), "")
+    assert parsed["cpu_percent"] == 5.8  # 100 - 94.20% idle
+
+
+def test_eos_cpu_from_top_idle():
+    parsed = EOS.parse("cpu", load_fixture("eos", "processes_top_cpu.txt"), "")
+    assert parsed["cpu_percent"] == 7.9  # 100 - 92.1 id
+
+
+def test_unrecognized_cpu_output_parses_to_nothing():
+    for profile in (IOS, NX, EOS):
+        assert profile.parse("cpu", "% Invalid input detected", "") == {}
+        assert profile.parse("cpu", "", "") == {}
+
+
+def test_cpu_command_is_in_every_device_allow_list():
+    for profile, interface in (
+        (IOS, "GigabitEthernet3/0/20"),
+        (NX, "Ethernet4/15"),
+        (EOS, "Ethernet4/15"),
+    ):
+        allowed = profile.allowed_commands([interface])
+        rendered = profile.templates["cpu"]
+        assert rendered in allowed  # no {interface} placeholder: rendered as-is
