@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-29
+
 ### Added
 - **Port-channel member triage.** When a CSV case is a port-channel, iftriage
   now reconnects to the device and runs the full per-interface command set
