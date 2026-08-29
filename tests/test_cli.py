@@ -193,6 +193,139 @@ def test_non_positive_workers_is_a_usage_error(tmp_path, capsys, value):
     assert "--workers must be at least 1" in capsys.readouterr().err
 
 
+_CSV_HEADER = (
+    "_time,switch,mgmt_ip,interface,description,status,protocol,"
+    "counter,prev_count,count,change\n"
+)
+
+
+def _live_run_setup(tmp_path, monkeypatch, ips):
+    """CSV + config + env credentials for an end-to-end main() run that will
+    only ever touch a monkeypatched fake session."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("IFTRIAGE_USER", "ops")
+    monkeypatch.setenv("IFTRIAGE_PASS", "pw")
+    monkeypatch.setenv("IFTRIAGE_ENABLE", "")
+    monkeypatch.setattr("builtins.input", _never_prompt)
+
+    rows = [
+        f"2026-08-24T03:{index:02d}:00,sw-{index},{ip},Gi1/0/{index + 1},"
+        f"desc,up,up,Rcv-Err,0,{100 + index * 7},{100 + index * 7}"
+        for index, ip in enumerate(ips)
+    ]
+    csv = tmp_path / "top20.csv"
+    csv.write_text(_CSV_HEADER + "\n".join(rows) + "\n")
+
+    overrides = "\n".join(f'  "{ip}": ios_xe' for ip in ips)
+    (tmp_path / "config.yaml").write_text(
+        "connection:\n  jitter_min: 0\n  jitter_max: 0\n"
+        f"platform_overrides:\n{overrides}\n"
+    )
+    return csv
+
+
+def _fake_sessions(monkeypatch, fail_auth=(), fail_timeout=()):
+    """Replace ReadOnlySession with a fake; returns the list of connect attempts."""
+    attempts = []
+
+    class FakeSession:
+        def __init__(self, **kwargs):
+            self.host = kwargs["host"]
+
+        def connect(self):
+            attempts.append(self.host)
+            if self.host in fail_auth:
+                raise RuntimeError(f"{self.host}: Authentication failed.")
+            if self.host in fail_timeout:
+                raise RuntimeError(f"{self.host}: connection timed out")
+
+        def get(self, command):
+            return ""
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setattr("iftriage.collectors.ReadOnlySession", FakeSession)
+    return attempts
+
+
+def _record_sleeps(monkeypatch):
+    """Record repoll waits. The patch lands on the shared `time` module, so the
+    collectors' zero-second jitter sleeps are seen too; only the repoll wait is
+    a second or longer, and only it is recorded."""
+    calls = []
+    monkeypatch.setattr(
+        "iftriage.cli.time.sleep",
+        lambda seconds: calls.append(seconds) if seconds >= 1 else None,
+    )
+    return calls
+
+
+def test_single_device_bad_credentials_aborts_without_waiting(
+    tmp_path, capsys, monkeypatch
+):
+    """One auth failure is below the AAA breaker limit (2), but with nothing
+    collected there is nothing to repoll: abort now, not ten minutes from now."""
+    csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1"])
+    attempts = _fake_sessions(monkeypatch, fail_auth={"10.0.0.1"})
+    sleeps = _record_sleeps(monkeypatch)
+
+    rc = main(["run", str(csv), "--repoll", "10", "--output", str(tmp_path / "out")])
+
+    err = capsys.readouterr().err
+    assert rc == 3
+    assert "RUN ABORTED" in err
+    assert "no device could be collected" in err
+    assert sleeps == []
+    assert attempts == ["10.0.0.1"]
+    assert not list((tmp_path / "out").glob("iftriage_report_*"))
+
+
+def test_all_devices_failing_aborts_before_the_repoll_wait(
+    tmp_path, capsys, monkeypatch
+):
+    """Non-auth failures never trip the AAA breaker, but an all-failed pass
+    still has nothing to repoll and must not sit out the interval."""
+    csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1", "10.0.0.2"])
+    _fake_sessions(monkeypatch, fail_timeout={"10.0.0.1", "10.0.0.2"})
+    sleeps = _record_sleeps(monkeypatch)
+
+    rc = main(["run", str(csv), "--repoll", "10", "--output", str(tmp_path / "out")])
+
+    err = capsys.readouterr().err
+    assert rc == 3
+    assert "all 2 device(s) failed" in err
+    assert sleeps == []
+
+
+def test_no_repoll_run_with_all_failures_still_aborts(tmp_path, capsys, monkeypatch):
+    csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1"])
+    _fake_sessions(monkeypatch, fail_auth={"10.0.0.1"})
+
+    rc = main(["run", str(csv), "--no-repoll", "--output", str(tmp_path / "out")])
+
+    assert rc == 3
+    assert "no device could be collected" in capsys.readouterr().err
+    assert not list((tmp_path / "out").glob("iftriage_report_*"))
+
+
+def test_partial_failure_still_waits_and_repolls_only_survivors(
+    tmp_path, capsys, monkeypatch
+):
+    csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1", "10.0.0.2"])
+    attempts = _fake_sessions(monkeypatch, fail_timeout={"10.0.0.1"})
+    sleeps = _record_sleeps(monkeypatch)
+
+    rc = main(["run", str(csv), "--repoll", "0.1", "--output", str(tmp_path / "out")])
+
+    assert rc == 0
+    assert sleeps == [pytest.approx(6.0)]  # 0.1 min, spent once
+    # Pass 1 tried both devices; the repoll pass reconnected only to the survivor.
+    assert attempts == ["10.0.0.1", "10.0.0.2", "10.0.0.2"]
+    report_txt = next((tmp_path / "out").glob("iftriage_report_*.txt")).read_text()
+    assert "UNVERIFIED" in report_txt
+
+
 def test_workers_defaults_to_one_session_at_a_time():
     args = _build_parser().parse_args(["run", "top20.csv"])
     assert args.workers == 1

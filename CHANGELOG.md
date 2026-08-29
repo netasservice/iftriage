@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **A run in which every device failed collection no longer waits for the
+  re-poll.** With a single device and wrong credentials (one failure — below
+  the AAA breaker's limit of 2 consecutive), the tool used to sit out the full
+  re-poll interval and then emit an all-UNVERIFIED report. The first pass now
+  aborts immediately (`RUN ABORTED`, exit code 3, no report) when nothing at
+  all was collected. Deliberate skips (`device skipped: ...`, e.g. a device
+  that requires an enable secret the run does not have) still produce the
+  report — those are outcomes worth reading, not collection failures.
+
 ## [0.3.0] - 2026-08-29
 
 ### Added

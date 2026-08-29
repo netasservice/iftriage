@@ -95,11 +95,14 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
    the per-interface command set from the platform profile (device-level
    commands once per device), parse into `NormalizedInterfaceStats`. The raw
    output kept as evidence is bounded; the text handed to parsers is not.
-4. Optional re-poll pass after N minutes re-runs the counter commands to
+4. Abort gate: if the first pass collected nothing at all (every live case
+   failed, none deliberately skipped), the run aborts here — exit code 3, no
+   re-poll wait, no report.
+5. Optional re-poll pass after N minutes re-runs the counter commands to
    answer: still incrementing NOW, or historical?
-5. `rules.py` produces one `Verdict` per case; port-channel members listed
+6. `rules.py` produces one `Verdict` per case; port-channel members listed
    alongside their Po are marked duplicates; recurrence counts come from
    history.
-6. Results persist to SQLite; Jinja2 renders the HTML + text report and the
+7. Results persist to SQLite; Jinja2 renders the HTML + text report and the
    enriched CSV echoes the input table with the analysis columns appended (in
    the original row order); the audit log holds every command sent.

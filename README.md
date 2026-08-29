@@ -217,7 +217,9 @@ iftriage run top20.csv --user youruser
 
 The second command prompts for the password (and optionally an enable secret),
 contacts each device once, waits 10 minutes, re-polls the counters, and writes
-the report and audit log into `reports/`.
+the report and audit log into `reports/`. If the first pass collects nothing at
+all (every device failed — wrong credentials, unreachable network), the run
+aborts immediately with exit code 3 instead of sitting out the re-poll wait.
 
 ## Usage
 
@@ -322,7 +324,7 @@ nothing collected from a device is meant to be committed.
 |---|---|
 | `0` | Run completed (or a dry run finished). Verdicts are in the report, not in the exit code |
 | `2` | Usage or input error: bad flags, unreadable/malformed `config.yaml`, missing CSV or missing columns, credentials that could not be resolved |
-| `3` | `RUN ABORTED` — a safety violation (config-mode prompt) or the AAA circuit breaker. Whatever caused it is on stderr |
+| `3` | `RUN ABORTED` — a safety violation (config-mode prompt), the AAA circuit breaker, or a first pass in which no device at all could be collected (e.g. wrong credentials on a single-device run). Whatever caused it is on stderr |
 
 ## Command reference
 

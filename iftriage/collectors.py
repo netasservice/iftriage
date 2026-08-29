@@ -390,6 +390,49 @@ def collect(
     return results
 
 
+def repoll_eligible(results: list[CaseResult]) -> list[CaseResult]:
+    """Results whose interface was actually collected in the first pass."""
+    return [
+        result
+        for result in results
+        if not result.case.excluded
+        and result.collection_error is None
+        and result.stats is not None
+    ]
+
+
+def abort_if_nothing_collected(results: list[CaseResult]) -> None:
+    """Fail fast when the first pass collected nothing at all.
+
+    Wrong credentials on a run too small to trip the AAA breaker (a single
+    device) would otherwise sit out the full repoll interval for a report
+    that is already decided. Deliberate skips ("device skipped: ...") mean
+    the device was reached and intentionally left alone — that outcome
+    belongs in the report, so it never triggers the abort.
+    """
+    live = [result for result in results if not result.case.excluded]
+    if not live or repoll_eligible(results):
+        return
+    if any(
+        result.collection_error is not None
+        and result.collection_error.startswith("device skipped:")
+        for result in live
+    ):
+        return
+    devices = {result.case.mgmt_ip for result in live}
+    first_error = next(
+        (result.collection_error for result in live if result.collection_error),
+        None,
+    ) or next(
+        (result.parse_errors[0] for result in live if result.parse_errors),
+        "no error recorded",
+    )
+    raise RunAborted(
+        f"no device could be collected: all {len(devices)} device(s) failed "
+        f"(first error: {first_error}). Verify credentials/reachability and re-run."
+    )
+
+
 def repoll(
     results: list[CaseResult],
     config: Config,
@@ -400,13 +443,7 @@ def repoll(
     workers: int = 1,
 ) -> None:
     """Second sample of the same interface counters (caller waits in between)."""
-    eligible = [
-        result
-        for result in results
-        if not result.case.excluded
-        and result.collection_error is None
-        and result.stats is not None
-    ]
+    eligible = repoll_eligible(results)
     by_ip: dict[str, list[CaseResult]] = {}
     for result in eligible:
         by_ip.setdefault(result.case.mgmt_ip, []).append(result)

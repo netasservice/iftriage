@@ -13,6 +13,7 @@ from pathlib import Path
 from . import __version__
 from .collectors import (
     RunAborted,
+    abort_if_nothing_collected,
     collect,
     mark_portchannel_duplicates,
     resolve_platform,
@@ -235,6 +236,7 @@ def _cmd_run(args) -> int:
             )
             print(f"Collecting from {device_count} device(s), {pace} ...")
             results = collect(cases, config, credentials, audit, history, args.workers)
+            abort_if_nothing_collected(results)
 
             if repoll_minutes:
                 print(
