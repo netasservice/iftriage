@@ -133,13 +133,18 @@ class CaseResult:
     platform: Platform | None = None
     canonical_interface: str | None = None
     stats: NormalizedInterfaceStats | None = None
-    repoll_stats: NormalizedInterfaceStats | None = None
-    repoll_minutes: float | None = None
+    # The EARLIER sample, taken by a previous run and read back from history.
+    # The delta runs baseline_stats -> stats, never the other way around.
+    baseline_stats: NormalizedInterfaceStats | None = None
+    baseline_minutes: float | None = None  # elapsed between the two samples
+    baseline_taken_at: datetime | None = None
+    baseline_run_id: int | None = None
     raw_outputs: dict[str, str] = field(default_factory=dict)
     collection_error: str | None = None  # unreachable / auth failed / timeout / aborted
-    # Set when the re-poll pass deliberately left the device alone (CPU guard);
-    # the first sample stays valid, only the delta answer is missing.
-    repoll_skip_reason: str | None = None
+    # Why this case has no delta: nothing stored, too recent, too old, or the
+    # stored sample was discarded. Reported per case so an un-compared
+    # interface can never be mistaken for a compared one.
+    baseline_note: str | None = None
     parse_errors: list[str] = field(default_factory=list)
     # Set when the case interface is itself a member of a port-channel; then
     # member_stats holds its sibling members as context, not the case's own
@@ -148,7 +153,7 @@ class CaseResult:
     # Port-channel cases: per-member samples keyed by canonical member name,
     # and the reason any discovered member has no sample (fail closed).
     member_stats: dict[str, NormalizedInterfaceStats] = field(default_factory=dict)
-    member_repoll_stats: dict[str, NormalizedInterfaceStats] = field(
+    member_baseline_stats: dict[str, NormalizedInterfaceStats] = field(
         default_factory=dict
     )
     member_errors: dict[str, str] = field(default_factory=dict)

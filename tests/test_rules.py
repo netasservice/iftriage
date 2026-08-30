@@ -1,8 +1,16 @@
 """Verdict engine tests — including the fail-closed PARSE_ERROR behavior."""
 
+import pytest
+
 from iftriage.config import Thresholds
 from iftriage.models import InterfaceCase, NormalizedInterfaceStats, VerdictCategory
-from iftriage.rules import CounterClass, classify_counter, evaluate_case
+from iftriage.rules import (
+    CounterClass,
+    _counter_delta,
+    classify_counter,
+    evaluate_case,
+    format_window,
+)
 
 T = Thresholds()
 
@@ -40,11 +48,14 @@ def make_stats(**kwargs):
     return NormalizedInterfaceStats(**defaults)
 
 
-def run(case, stats, repoll=None, minutes=None, error=None, parse_errors=()):
+def run(case, stats, baseline=None, minutes=None, error=None, parse_errors=()):
+    """`stats` is the fresh sample; `baseline` is the EARLIER one, from a
+    previous run. The delta runs baseline -> stats, so the larger counter is
+    always the one passed as `stats`."""
     return evaluate_case(
         case,
         stats,
-        repoll,
+        baseline,
         minutes,
         T,
         collection_error=error,
@@ -147,47 +158,100 @@ def test_negligible_rate_is_ignore():
 
 
 def test_same_rate_is_physical_when_climbing_and_ignored_when_flat():
-    """The re-poll, not the floor, is what separates a live fault from an old
-    one: both interfaces sit at the same 0.5% lifetime rate."""
-    stats = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    """The comparison against an earlier sample, not the floor, is what
+    separates a live fault from an old one: both interfaces sit at the same
+    0.5% lifetime rate."""
+    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
     climbing = make_stats(input_errors=5_600, crc_errors=5_600, input_packets=1_100_000)
     flat = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_100_000)
 
-    live = run(make_case("Rcv-Err"), stats, climbing, minutes=10)
-    historical = run(make_case("Rcv-Err"), stats, flat, minutes=10)
+    live = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
+    historical = run(make_case("Rcv-Err"), flat, earlier, minutes=1080)
 
     assert live.category is VerdictCategory.PHYSICAL_MEDIA
     assert historical.category is VerdictCategory.IGNORE
 
 
 def test_ignored_flat_counter_is_not_called_below_threshold():
-    """A rate above the floor that the re-poll kills is historical, not noise:
+    """A rate above the floor that the baseline kills is historical, not noise:
     saying 'below the threshold' would send the operator to the wrong knob."""
-    stats = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
-    repoll = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_100_000)
+    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    current = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_100_000)
 
-    verdict = run(make_case("Rcv-Err"), stats, repoll, minutes=10)
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
 
     assert verdict.category is VerdictCategory.IGNORE
     assert "below the" not in verdict.reason
     assert "historical" in verdict.reason
 
 
-def test_flat_repoll_with_low_rate_is_ignore():
-    stats = make_stats(input_errors=500, crc_errors=500, input_packets=100_000_000)
-    repoll = make_stats(input_errors=500, crc_errors=500, input_packets=101_000_000)
-    verdict = run(make_case("Rcv-Err"), stats, repoll, minutes=10)
+def test_flat_baseline_with_low_rate_is_ignore():
+    earlier = make_stats(input_errors=500, crc_errors=500, input_packets=100_000_000)
+    current = make_stats(input_errors=500, crc_errors=500, input_packets=101_000_000)
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
     assert verdict.category is VerdictCategory.IGNORE
     assert "flat" in verdict.reason.lower()
 
 
-def test_incrementing_repoll_at_meaningful_rate_is_physical():
-    stats = make_stats(input_errors=1000, crc_errors=1000, input_packets=100_000_000)
-    repoll = make_stats(input_errors=1600, crc_errors=1600, input_packets=101_000_000)
-    # 600 errors / 1M packets in the window = 6e-4 >= rate_high
-    verdict = run(make_case("Rcv-Err"), stats, repoll, minutes=10)
+def test_incrementing_since_the_baseline_at_meaningful_rate_is_physical():
+    earlier = make_stats(input_errors=1000, crc_errors=1000, input_packets=100_000_000)
+    current = make_stats(input_errors=1600, crc_errors=1600, input_packets=101_000_000)
+    # 600 errors / 1M packets in the window = 6e-4 >= error_rate
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
     assert "incrementing" in verdict.reason.lower()
+    assert "18.0 h" in verdict.reason
+
+
+def test_counter_delta_direction():
+    """The subtraction inverted when the second sample moved from "collected
+    after a wait" to "read back from an earlier run"; nothing may call this
+    positionally, and nothing may treat a reset as a flat counter."""
+    earlier = make_stats(input_errors=100, input_packets=1_000_000)
+    later = make_stats(input_errors=180, input_packets=1_500_000)
+
+    assert _counter_delta(earlier=earlier, later=later, field="input_errors") == (
+        80,
+        500_000,
+    )
+    # Counters lower now than in the earlier sample: reload or counter clear.
+    assert _counter_delta(earlier=later, later=earlier, field="input_errors") is None
+
+    with pytest.raises(TypeError):
+        _counter_delta(earlier, later, "input_errors")
+
+
+def test_a_discarded_baseline_never_vetoes_escalation():
+    """A device that reloaded between the two samples yields no delta. That
+    must read as "unknown", never as "flat" — a flat counter suppresses the
+    escalation below, and this is the fail-closed direction."""
+    earlier = make_stats(input_errors=9_000, crc_errors=9_000, input_packets=9_000_000)
+    current = make_stats(input_errors=1_000, crc_errors=1_000, input_packets=1_000_000)
+
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert "flat" not in verdict.reason.lower()
+    assert "lifetime counters" in verdict.reason  # no window rate to quote
+    assert any("earlier sample discarded" in detail for detail in verdict.details)
+
+
+def test_missing_baseline_still_escalates_on_lifetime_rate():
+    """The comparison is a veto, never a precondition: with nothing stored to
+    compare against, a meaningful lifetime rate still escalates."""
+    stats = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+
+    verdict = run(make_case("Rcv-Err"), stats)
+
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert "lifetime counters" in verdict.reason
+
+
+def test_format_window_uses_the_largest_readable_unit():
+    assert format_window(45) == "45 min"
+    assert format_window(1080) == "18.0 h"
+    assert format_window(4320) == "3.0 d"
+    assert format_window(None) == "?"
 
 
 def test_dom_out_of_range_is_physical_media():
@@ -248,18 +312,18 @@ def run_po(
     stats,
     member_stats,
     member_errors=None,
-    member_repoll=None,
-    repoll=None,
+    member_baseline=None,
+    baseline=None,
     minutes=None,
 ):
     return evaluate_case(
         case,
         stats,
-        repoll,
+        baseline,
         minutes,
         T,
         member_stats=member_stats,
-        member_repoll_stats=member_repoll or {},
+        member_baseline_stats=member_baseline or {},
         member_errors=member_errors or {},
     )
 
@@ -298,17 +362,17 @@ def test_po_member_with_dom_out_of_range_is_physical_media():
     assert "DOM receive power -18.0 dBm" in verdict.reason
 
 
-def test_po_member_repoll_delta_confirms_live_errors():
+def test_po_member_baseline_delta_confirms_live_errors():
     bundle = make_stats(input_errors=100, crc_errors=100, input_packets=200_000_000)
-    first = make_stats(input_errors=100, crc_errors=100, input_packets=1_000_000)
-    second = make_stats(input_errors=200, crc_errors=200, input_packets=1_050_000)
+    earlier = make_stats(input_errors=100, crc_errors=100, input_packets=1_000_000)
+    current = make_stats(input_errors=200, crc_errors=200, input_packets=1_050_000)
 
     verdict = run_po(
         po_case(),
         bundle,
-        {"GigabitEthernet1/0/1": first},
-        member_repoll={"GigabitEthernet1/0/1": second},
-        minutes=10,
+        {"GigabitEthernet1/0/1": current},
+        member_baseline={"GigabitEthernet1/0/1": earlier},
+        minutes=1080,
     )
 
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA

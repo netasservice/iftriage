@@ -31,7 +31,7 @@
 <body>
 <h1>Interface Error Triage — Top-8 verification</h1>
 <p class="muted">Generated 2026-08-29 20:29 UTC · source: docs/examples/input.csv
- · re-poll window: 10.0 min · thresholds: errors 0.001% / discards 1% of frames</p>
+ · baseline: 7 of 8 case(s) compared against an earlier stored sample · thresholds: errors 0.001% / discards 1% of frames</p>
 
 <div class="summary"><strong>Executive summary:</strong> 8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE</div>
 
@@ -51,7 +51,10 @@ Poll timestamps span 2026-08-28T02:10:00 .. 2026-08-28T05:20:00: the 24h windows
     &nbsp;<strong>sw-acc-01</strong> — Gi3/0/20
     (Rcv-Err, Δ24h=2123)
   </div>
-<div class="muted">ACCESS-FLOOR3-PRINTER</div>  <p>PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over live re-poll window: real receive errors at meaningful rate. CRC/FCS accounts for 3,271 of 3,271 input errors. Inspect cable/transceiver/path. Counter still incrementing (+412 in 10 min).</p>
+<div class="muted">ACCESS-FLOOR3-PRINTER</div>  <p>PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over the 18.0 h since the earlier sample: real receive errors at meaningful rate. CRC/FCS accounts for 3,683 of 3,683 input errors. Inspect cable/transceiver/path. Counter still incrementing (+412 in 18.0 h).</p>
+  <p class="muted">Compared against the sample from
+  2026-08-29 02:29 UTC
+  (18.0 h earlier, run #1).</p>
   <p class="muted">Recurrence: this interface has appeared in 2
   ingested top-20 lists.</p>
   <details><summary>Raw evidence (8 commands)</summary>
@@ -229,7 +232,10 @@ Group  Port-channel  Protocol    Ports
     &nbsp;<strong>sw-dist-01</strong> — Et4/15
     (Rcv-Err, Δ24h=9459)
   </div>
-<div class="muted">UPLINK-SPINE1</div>  <p>PHYSICAL_MEDIA — DOM receive power -15.2 dBm is out of range (-14..2 dBm): degraded optical path (fiber, connector, or transceiver). Inspect the optical path. Counter flat across 10-min re-poll.</p>
+<div class="muted">UPLINK-SPINE1</div>  <p>PHYSICAL_MEDIA — DOM receive power -15.2 dBm is out of range (-14..2 dBm): degraded optical path (fiber, connector, or transceiver). Inspect the optical path. Counter flat over the 18.0 h since the earlier sample.</p>
+  <p class="muted">Compared against the sample from
+  2026-08-29 02:29 UTC
+  (18.0 h earlier, run #1).</p>
   <p class="muted">Recurrence: this interface has appeared in 2
   ingested top-20 lists.</p>
   <details><summary>Raw evidence (7 commands)</summary>
@@ -315,7 +321,10 @@ Et4/15               31.42    3.28     7.06     -2.63     -15.21       0:00:03 a
     &nbsp;<strong>sw-acc-02</strong> — Gi3/0/20
     (Late-Col, Δ24h=-154073)
   </div>
-<div class="muted">ACCESS-PHONE-RACK01-RU01</div>  <p>CONFIG_ISSUE — 38,445,927 late collisions on a half-duplex link while neighbor SEP001122AABB99 reports full duplex: duplex mismatch confirmed. Fix via CLI (align both ends), not by touching media. Counter still incrementing (+3,096 in 10 min).</p>
+<div class="muted">ACCESS-PHONE-RACK01-RU01</div>  <p>CONFIG_ISSUE — 38,449,023 late collisions on a half-duplex link while neighbor SEP001122AABB99 reports full duplex: duplex mismatch confirmed. Fix via CLI (align both ends), not by touching media. Counter still incrementing (+3,096 in 18.0 h).</p>
+  <p class="muted">Compared against the sample from
+  2026-08-29 02:29 UTC
+  (18.0 h earlier, run #1).</p>
   <p class="muted">Data-quality flags: negative_delta</p>
   <details><summary>Raw evidence (8 commands)</summary>
     <p class="muted">cpu</p>
@@ -499,7 +508,10 @@ Group  Port-channel  Protocol    Ports
     &nbsp;<strong>sw-core-01</strong> — Eth4/15
     (InDiscards, Δ24h=286)
   </div>
-<div class="muted">UPLINK-TO-CORE</div>  <p>CAPACITY — 388 input discards at 2.0000% (20,000 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+3,600 in 10 min).</p>
+<div class="muted">UPLINK-TO-CORE</div>  <p>CAPACITY — 3,988 input discards at 2.0000% (20,000 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+3,600 in 18.0 h).</p>
+  <p class="muted">Compared against the sample from
+  2026-08-29 02:29 UTC
+  (18.0 h earlier, run #1).</p>
   <details><summary>Raw evidence (8 commands)</summary>
     <p class="muted">cpu</p>
     <pre>Load average:   1 minute: 0.38   5 minutes: 0.32   15 minutes: 0.28
@@ -798,6 +810,9 @@ Group  Port-channel  Protocol    Ports
     (Rx, Δ24h=1133561112)
   </div>
 <div class="muted">ACCESS-FLOOR2-AP</div>  <p>IGNORE — 'Rx' is a total traffic counter, not an error counter; a 24h increase is normal operation. No action.</p>
+  <p class="muted">Compared against the sample from
+  2026-08-29 02:29 UTC
+  (18.0 h earlier, run #1).</p>
   <details><summary>Raw evidence (8 commands)</summary>
     <p class="muted">cpu</p>
     <pre>CPU utilization for five seconds: 12%/4%; one minute: 15%; five minutes: 14%
@@ -973,7 +988,10 @@ Group  Port-channel  Protocol    Ports
     &nbsp;<strong>sw-core-02</strong> — Eth4/15
     (Rcv-Err, Δ24h=28)
   </div>
-<div class="muted">UPLINK-TO-CORE-B</div>  <p>IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters, counter flat across 10-min re-poll: historical, not happening now. DOM rx power -3.5 dBm within range. No action.</p>
+<div class="muted">UPLINK-TO-CORE-B</div>  <p>IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters, counter flat over the 18.0 h since the earlier sample: historical, not happening now. DOM rx power -3.5 dBm within range. No action.</p>
+  <p class="muted">Compared against the sample from
+  2026-08-29 02:29 UTC
+  (18.0 h earlier, run #1).</p>
   <details><summary>Raw evidence (8 commands)</summary>
     <p class="muted">cpu</p>
     <pre>Load average:   1 minute: 0.38   5 minutes: 0.32   15 minutes: 0.28

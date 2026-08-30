@@ -84,9 +84,11 @@ $ iftriage run docs/examples/input.csv --user netops
 Ingested 8 cases from docs/examples/input.csv; 2 data-quality finding(s).
   [dq:negative_delta] sw-acc-02 Gi3/0/20 Late-Col: negative delta (-154073) — counter reset or device reload during the window. Delta is not meaningful; live verification decides.
   [dq:time_misalignment] Poll timestamps span 2026-08-28T02:10:00 .. 2026-08-28T05:20:00: the 24h windows are NOT aligned across rows. Deltas are not directly comparable between rows.
+Stored earlier samples found for 7 of 8 case(s) (newest 18.0 h ago, oldest 18.0 h ago).
+Compare against them, so the report can say whether each counter is still incrementing? [Y/n]: y
 Audit log: reports/iftriage_audit_20260829_202921.log
 Collecting from 7 device(s), one session at a time ...
-Waiting 10 min before re-poll (answers: is it still incrementing NOW?) ...
+Compared 7 of 8 case(s) against an earlier stored sample.
 
 8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
 Report (HTML): reports/iftriage_report_20260829_202921.html
@@ -106,7 +108,7 @@ evidence appended as extra columns, ready for Excel:
 ```
 INTERFACE ERROR TRIAGE — TOP-8 VERIFICATION
 Generated 2026-08-29 20:29 UTC | source: docs/examples/input.csv
-Re-poll window: 10.0 min
+Baseline: 7 of 8 case(s) compared against an earlier stored sample.
 
 EXECUTIVE SUMMARY
   8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
@@ -114,17 +116,19 @@ EXECUTIVE SUMMARY
 CASES
 --------------------------------------------------------------------------------
 [PHYSICAL_MEDIA] sw-acc-01 Gi3/0/20 (Rcv-Err, delta24h=2123)
-  PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over live re-poll
-  window: real receive errors at meaningful rate. CRC/FCS accounts for 3,271 of
-  3,271 input errors. Inspect cable/transceiver/path. Counter still incrementing
-  (+412 in 10 min).
+  PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over the 18.0 h
+  since the earlier sample: real receive errors at meaningful rate. CRC/FCS
+  accounts for 3,683 of 3,683 input errors. Inspect cable/transceiver/path.
+  Counter still incrementing (+412 in 18.0 h).
+  Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Recurrence: appeared in 2 ingested top-20 lists.
 --------------------------------------------------------------------------------
 [CONFIG_ISSUE] sw-acc-02 Gi3/0/20 (Late-Col, delta24h=-154073)
-  CONFIG_ISSUE — 38,445,927 late collisions on a half-duplex link while neighbor
+  CONFIG_ISSUE — 38,449,023 late collisions on a half-duplex link while neighbor
   SEP001122AABB99 reports full duplex: duplex mismatch confirmed. Fix via CLI
   (align both ends), not by touching media. Counter still incrementing (+3,096
-  in 10 min).
+  in 18.0 h).
+  Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Data-quality flags: negative_delta
 --------------------------------------------------------------------------------
 [PARSE_ERROR] sw-acc-01 Gi1/0/47 (Rcv-Err, delta24h=918)
@@ -133,9 +137,10 @@ CASES
   closed).
 --------------------------------------------------------------------------------
 [IGNORE] sw-core-02 Eth4/15 (Rcv-Err, delta24h=28)
-  IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters is
-  below the noise threshold, counter flat across 10-min re-poll. DOM rx power
-  -3.5 dBm within range. No action.
+  IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters,
+  counter flat over the 18.0 h since the earlier sample: historical, not
+  happening now. DOM rx power -3.5 dBm within range. No action.
+  Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
 ```
 
 That is the point of the tool: of eight alarming-looking rows, two were real
@@ -221,20 +226,26 @@ iftriage run top20.csv --dry-run
 iftriage run top20.csv --user youruser
 ```
 
-The second command prompts for the password (and optionally an enable secret),
-contacts each device once, waits 10 minutes, re-polls the counters, and writes
-the report and audit log into `reports/`. If the first pass collects nothing at
-all (every device failed — wrong credentials, unreachable network), the run
-aborts immediately with exit code 3 instead of sitting out the re-poll wait.
+The second command contacts each device **once** and returns — nothing blocks.
+It offers to compare each interface against the newest sample already stored for
+it, prompts for the password (and optionally an enable secret), and writes the
+report and audit log into `reports/`. If it collects nothing at all (every device
+failed — wrong credentials, unreachable network), the run aborts with exit code 3
+rather than writing a report that is already decided.
+
+Run it again tomorrow, next week, or with a different CSV: the second run answers
+the question the counters alone cannot, *is this still incrementing now?*
 
 ## Usage
 
 ```bash
-# Shorter re-poll window:
-iftriage run top20.csv --user youruser --repoll 5
+# Today, then tomorrow: the second run compares against the first.
+iftriage run top20.csv --user youruser
+iftriage run top20.csv --user youruser        # offers the stored samples
 
-# Single pass, no re-poll (faster; loses the "is it incrementing NOW?" answer):
-iftriage run top20.csv --user youruser --no-repoll --output reports/
+# Answer the offer up front, for scripts and cron:
+iftriage run top20.csv --user youruser --baseline
+iftriage run top20.csv --user youruser --no-baseline --output reports/
 
 # Opt in to contacting several devices at once (see the safety model below):
 iftriage run top20.csv --user youruser --workers 5
@@ -242,6 +253,41 @@ iftriage run top20.csv --user youruser --workers 5
 # Re-render the report from the collection already in the history database:
 iftriage run top20.csv --from-history
 ```
+
+### Comparing against an earlier sample
+
+A counter that is large is not the same as a counter that is *moving*. Two
+samples of the same interface answer that, and the second one comes from a
+previous run rather than from a wait — so no run ever freezes the terminal.
+
+The baseline belongs to the **interface**, not to the CSV. The lookup key is
+`(switch, interface, counter)`, so a different top-20 list tomorrow does not
+matter: every row searches history on its own, the interfaces seen before find
+their sample, the new ones do not, and **partial coverage is the normal case**.
+The report states per case what it was compared against — or that it had no
+earlier sample and its verdict rests on one reading. An interface spelled
+`Gi1/0/1` in one export and `GigabitEthernet1/0/1` in the next still matches;
+both forms are stored.
+
+Windows of different lengths across cases are fine, and that is not a
+concession: the rate is `error_delta / packet_delta` — per packet, not per
+second — so an interface compared against yesterday and one compared against
+five days ago land on the same scale and face the same thresholds. Two bounds
+in `config.yaml` guard the *claim*, not the arithmetic:
+
+- `baseline.min_window_minutes` (default 5) — samples closer together than this
+  are refused. Nothing had time to move, the counter would read as flat, and a
+  false "flat" **suppresses** escalation to `PHYSICAL_MEDIA` or `CAPACITY`.
+- `baseline.max_window_days` (default 14) — older samples are not offered.
+  "Still incrementing" stops meaning *now* once the window is a month wide.
+
+A sample whose counters read *lower* than today's is discarded outright: the
+device reloaded, or the counters were cleared. That case is reported as
+"unknown", never as flat — a discarded baseline can never veto an escalation.
+
+Without an explicit flag and without a terminal (cron, piped stdin), the answer
+is **no**: a baseline can only narrow a verdict, so it is never applied silently
+to a run nobody is watching. `--baseline` and `--no-baseline` answer up front.
 
 ### Re-rendering a report without collecting again
 
@@ -266,10 +312,10 @@ in the rebuilt report. The report says which run the data came from and when it
 was collected, since nothing stops you from rebuilding week-old data.
 
 The whole CSV is answered or nothing is: if any row has no stored collection —
-a new interface, a different CSV, or a database written before
-`--from-history` existed — the
-command exits 2 and names the rows to collect. `--repoll`, `--no-repoll` and
-`--user` are ignored (a note says so); `--dry-run` is rejected as contradictory.
+a new interface, a different CSV, or a database written before 0.6.0 — the
+command exits 2 and names the rows to collect. `--baseline`, `--no-baseline`
+and `--user` are ignored (a note says so); `--dry-run` is rejected as
+contradictory.
 
 Credentials are resolved per value, first match wins:
 
@@ -372,8 +418,8 @@ The CLI is deliberately small: one subcommand and nine flags.
 | `iftriage run <csv>` | Triage every case in a top-N CSV |
 | `--dry-run` | Print targets and exact commands; connect to nothing |
 | `--user USERNAME` | Device username (default: `$IFTRIAGE_USER`, else prompt) |
-| `--repoll MINUTES` | Re-poll counters after N minutes (default: `repoll.default_minutes`, 10) |
-| `--no-repoll` | Skip the re-poll pass entirely |
+| `--baseline` | Compare each interface against its newest earlier stored sample, without asking |
+| `--no-baseline` | Judge on this run's single sample only; ignore stored samples |
 | `--config PATH` | Alternate `config.yaml` (default: `./config.yaml` if present) |
 | `--output DIR` | Report/audit output directory (default: `reports/`) |
 | `--workers N` | Contact N devices at the same time (default: `1`). Explicit opt-in; weakens the AAA circuit breaker |
@@ -392,7 +438,7 @@ thresholds.
 
 ```yaml
 thresholds:
-  # Normalized rate = counter_delta / packet_delta (re-poll) or counter/packets
+  # Normalized rate = counter_delta / packet_delta (baseline) or counter/packets
   # lifetime, expressed here as a PERCENTAGE of the frames. Errors and discards
   # get their own floor because they are different phenomena: Cisco's port
   # troubleshooting guidance (Doc ID 12027) tolerates ~1% of errors only on
@@ -420,8 +466,15 @@ limits:
   max_output_bytes: 1000000  # hard ceiling per command; keeps the tail
   evidence_max_lines: 300    # lines kept as evidence (first 50 + last 250)
 
-repoll:
-  default_minutes: 10
+baseline:
+  # A run takes ONE sample and stores it. The delta that answers "is this
+  # counter still incrementing now?" comes from the newest earlier sample
+  # stored for the same interface -- whatever CSV or run it came from -- so
+  # nothing blocks the terminal. Both bounds guard that answer: a sample taken
+  # minutes ago looks flat because nothing had time to move (and a false "flat"
+  # suppresses escalation), while one from weeks ago can no longer claim "now".
+  min_window_minutes: 5    # earlier samples closer than this are not used
+  max_window_days: 14      # ...nor older than this
 
 # Manual platform overrides by mgmt_ip or hostname. Values: ios_xe | nxos | eos
 platform_overrides: {}
@@ -444,14 +497,14 @@ report:
 | `PHYSICAL_MEDIA` | CRC/FCS at or above the configured error threshold and still incrementing, DOM out of range, late-col on legacy half-duplex — inspect cable/transceiver/path |
 | `CONFIG_ISSUE` | Duplex mismatch confirmed (late-col against a full-duplex end) — fixed via CLI |
 | `CAPACITY` | Discards at or above the configured discard threshold — saturation or policy, not media |
-| `IGNORE` | Rate below its family's threshold / counter flat on re-poll (historical) / not an error counter |
+| `IGNORE` | Rate below its family's threshold / counter flat across the baseline window (historical) / not an error counter |
 | `UNVERIFIED` | Device unreachable / auth failed / required an enable secret that was not provided — CSV data only |
 | `PARSE_ERROR` | Output did not parse or critical fields missing (fail closed) |
 
 Cases are reported most-actionable-first: `PHYSICAL_MEDIA` → `CONFIG_ISSUE` →
 `CAPACITY` → `PARSE_ERROR` → `UNVERIFIED` → `IGNORE`.
 
-Rates are normalized: `error_delta / packet_delta` over the re-poll window, or
+Rates are normalized: `error_delta / packet_delta` over the baseline window, or
 lifetime errors/packets as fallback — a raw 24h delta on its own means nothing.
 Thresholds live in `config.yaml` (default: ≥1e-4 high, ≥1e-5 warn).
 
@@ -587,7 +640,8 @@ engine:
 | `iftriage/cli.py` | Argument parsing, credential resolution, run orchestration, exit codes |
 | `iftriage/ingest.py` | CSV parsing and the four data-quality checks |
 | `iftriage/session.py` | `ReadOnlySession` and the audit log — **the only module that may touch a device** |
-| `iftriage/collectors.py` | Per-device collection, platform resolution, AAA breaker, re-poll pass |
+| `iftriage/baseline.py` | Picks the earlier sample per interface, and explains every rejection |
+| `iftriage/collectors.py` | Per-device collection, platform resolution, AAA breaker |
 | `iftriage/platforms/` | One profile per OS: command templates + parsers (`base.py` holds the shared ones) |
 | `iftriage/normalize.py` | Interface-name validation and expansion |
 | `iftriage/models.py` | The canonical `NormalizedInterfaceStats` model and the shared dataclasses |

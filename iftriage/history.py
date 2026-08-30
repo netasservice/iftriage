@@ -20,7 +20,14 @@ from .models import (
 # to rebuild a CaseResult. Runs written before these columns existed have NULL
 # here and are never replayed: a missing parent_portchannel would silently
 # change a member case's verdict. Bump when a new column becomes load-bearing.
-REPLAY_SCHEMA = 1
+#
+# 2 (0.6.0): the second stored sample changed sides. A schema-1 row's
+# repoll_stats_json held the NEWER sample; a schema-2 row's baseline_stats_json
+# holds the OLDER one. Replaying a schema-1 row under the new direction would
+# look faithful while answering a different question, so those runs are barred
+# from replay — `latest_sample` deliberately still accepts them as baselines,
+# for the reasons in its docstring.
+REPLAY_SCHEMA = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS ingests (
@@ -41,7 +48,6 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at TEXT NOT NULL,
     finished_at TEXT,
     csv_file TEXT NOT NULL,
-    repoll_minutes REAL,
     summary_json TEXT,
     replay_schema INTEGER
 );
@@ -49,10 +55,11 @@ CREATE TABLE IF NOT EXISTS case_results (
     run_id INTEGER NOT NULL REFERENCES runs(id),
     switch TEXT, mgmt_ip TEXT, interface TEXT, counter TEXT,
     platform TEXT, verdict TEXT, reason TEXT,
-    stats_json TEXT, repoll_stats_json TEXT, raw_outputs_json TEXT,
+    stats_json TEXT, raw_outputs_json TEXT,
     collection_error TEXT, parse_errors_json TEXT, members_json TEXT,
     canonical_interface TEXT, parent_portchannel TEXT,
-    repoll_skip_reason TEXT, repoll_minutes REAL
+    baseline_stats_json TEXT, baseline_minutes REAL, baseline_taken_at TEXT,
+    baseline_run_id INTEGER, baseline_note TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_case_results_target
     ON case_results (switch, interface, counter);
@@ -72,10 +79,19 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "members_json": "TEXT",
         "canonical_interface": "TEXT",
         "parent_portchannel": "TEXT",
-        "repoll_skip_reason": "TEXT",
-        "repoll_minutes": "REAL",
+        "baseline_stats_json": "TEXT",
+        "baseline_minutes": "REAL",
+        "baseline_taken_at": "TEXT",
+        "baseline_run_id": "INTEGER",
+        "baseline_note": "TEXT",
     },
 }
+
+# Written by 0.5.0 and earlier, never read or written again: runs.repoll_minutes
+# and case_results.repoll_stats_json / repoll_skip_reason / repoll_minutes. A
+# database that already has them keeps them and their data, because dropping a
+# column rewrites the table for no gain. Never SELECT repoll_stats_json: it holds
+# the NEWER of two samples, and that is the one direction this schema inverted.
 
 _CASE_RESULT_COLUMNS = (
     "run_id",
@@ -87,15 +103,17 @@ _CASE_RESULT_COLUMNS = (
     "verdict",
     "reason",
     "stats_json",
-    "repoll_stats_json",
     "raw_outputs_json",
     "collection_error",
     "parse_errors_json",
     "members_json",
     "canonical_interface",
     "parent_portchannel",
-    "repoll_skip_reason",
-    "repoll_minutes",
+    "baseline_stats_json",
+    "baseline_minutes",
+    "baseline_taken_at",
+    "baseline_run_id",
+    "baseline_note",
 )
 
 _STATS_FIELDS = {stats_field.name for stats_field in fields(NormalizedInterfaceStats)}
@@ -153,9 +171,9 @@ def _members_json(result: CaseResult) -> str | None:
             "stats": {
                 name: _stats_dict(stats) for name, stats in result.member_stats.items()
             },
-            "repoll_stats": {
+            "baseline_stats": {
                 name: _stats_dict(stats)
-                for name, stats in result.member_repoll_stats.items()
+                for name, stats in result.member_baseline_stats.items()
             },
             "errors": result.member_errors,
         }
@@ -179,10 +197,25 @@ def _members_from_json(
         },
         {
             name: _stats_from_dict(raw)
-            for name, raw in (data.get("repoll_stats") or {}).items()
+            for name, raw in (data.get("baseline_stats") or {}).items()
         },
         dict(data.get("errors") or {}),
     )
+
+
+@dataclass(frozen=True)
+class StoredSample:
+    """One earlier sample of an interface, offered as a comparison baseline.
+
+    Deliberately smaller than StoredCase: a baseline needs the counters and
+    when they were read, nothing else. Everything a verdict adds on top comes
+    from the fresh sample.
+    """
+
+    run_id: int
+    taken_at: datetime
+    stats: NormalizedInterfaceStats
+    member_stats: dict[str, NormalizedInterfaceStats] = field(default_factory=dict)
 
 
 @dataclass
@@ -198,15 +231,17 @@ class StoredCase:
     platform: Platform | None = None
     canonical_interface: str | None = None
     stats: NormalizedInterfaceStats | None = None
-    repoll_stats: NormalizedInterfaceStats | None = None
-    repoll_minutes: float | None = None
+    baseline_stats: NormalizedInterfaceStats | None = None
+    baseline_minutes: float | None = None
+    baseline_taken_at: datetime | None = None
+    baseline_run_id: int | None = None
     raw_outputs: dict[str, str] = field(default_factory=dict)
     collection_error: str | None = None
     parse_errors: list[str] = field(default_factory=list)
     parent_portchannel: str | None = None
-    repoll_skip_reason: str | None = None
+    baseline_note: str | None = None
     member_stats: dict[str, NormalizedInterfaceStats] = field(default_factory=dict)
-    member_repoll_stats: dict[str, NormalizedInterfaceStats] = field(
+    member_baseline_stats: dict[str, NormalizedInterfaceStats] = field(
         default_factory=dict
     )
     member_errors: dict[str, str] = field(default_factory=dict)
@@ -274,17 +309,22 @@ class History:
 
     # -- runs ----------------------------------------------------------------
 
-    def start_run(self, csv_file: str, repoll_minutes: float | None) -> int:
+    def start_run(self, csv_file: str) -> tuple[int, str]:
+        """Open a run row; returns its id and the instant it started.
+
+        The caller needs that instant: it is the cutoff that makes a run
+        structurally incapable of being its own baseline.
+        """
+        started_at = _now()
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO runs (started_at, csv_file, repoll_minutes, "
-                "replay_schema) VALUES (?,?,?,?)",
-                (_now(), csv_file, repoll_minutes, REPLAY_SCHEMA),
+                "INSERT INTO runs (started_at, csv_file, replay_schema) VALUES (?,?,?)",
+                (started_at, csv_file, REPLAY_SCHEMA),
             )
             self._conn.commit()
             run_id = cur.lastrowid
             assert run_id is not None  # always set after INSERT
-            return run_id
+            return run_id, started_at
 
     def save_results(self, run_id: int, results: list[CaseResult]) -> None:
         columns = ", ".join(_CASE_RESULT_COLUMNS)
@@ -303,15 +343,19 @@ class History:
                         result.verdict.category.value if result.verdict else None,
                         result.verdict.reason if result.verdict else None,
                         _stats_json(result.stats),
-                        _stats_json(result.repoll_stats),
                         json.dumps(result.raw_outputs),
                         result.collection_error,
                         json.dumps(result.parse_errors),
                         _members_json(result),
                         result.canonical_interface,
                         result.parent_portchannel,
-                        result.repoll_skip_reason,
-                        result.repoll_minutes,
+                        _stats_json(result.baseline_stats),
+                        result.baseline_minutes,
+                        result.baseline_taken_at.isoformat()
+                        if result.baseline_taken_at
+                        else None,
+                        result.baseline_run_id,
+                        result.baseline_note,
                     )
                     for result in results
                 ],
@@ -349,9 +393,10 @@ class History:
             with self._lock:
                 cur = self._conn.execute(
                     "SELECT r.id, r.started_at, c.platform, c.canonical_interface, "
-                    "c.stats_json, c.repoll_stats_json, c.repoll_minutes, "
+                    "c.stats_json, c.baseline_stats_json, c.baseline_minutes, "
                     "c.raw_outputs_json, c.collection_error, c.parse_errors_json, "
-                    "c.parent_portchannel, c.repoll_skip_reason, c.members_json "
+                    "c.parent_portchannel, c.baseline_note, c.members_json, "
+                    "c.baseline_taken_at, c.baseline_run_id "
                     "FROM case_results AS c JOIN runs AS r ON r.id = c.run_id "
                     "WHERE c.switch=? AND c.interface=? AND c.counter=? "
                     "AND r.replay_schema >= ? "
@@ -371,24 +416,102 @@ class History:
                 f"unreadable: {exc}"
             ) from exc
 
+    def latest_sample(
+        self,
+        switch: str,
+        interface: str,
+        canonical: str | None,
+        counter: str,
+        *,
+        before: str,
+        not_before: str,
+    ) -> StoredSample | None:
+        """Newest stored sample of one interface inside a time window.
+
+        The key is the interface, never the CSV: today's work list and
+        yesterday's may share only a few rows, and each row finds its own
+        earlier sample independently. `interface` and `canonical` are both
+        matched because two CSVs can spell the same port differently
+        (`Gi1/0/1` / `GigabitEthernet1/0/1`).
+
+        `before` and `not_before` are the window bounds, both pushed into SQL:
+        picking the newest row and rejecting it afterwards would let a run from
+        minutes ago mask yesterday's, which is the one that can answer. `before`
+        also makes a run structurally incapable of being its own baseline.
+
+        Deliberately NOT filtered on replay_schema, unlike latest_case_result:
+        a baseline consumes one column, stats_json, whose meaning has never
+        changed. A full replay needs the whole row and must refuse partial
+        history; a baseline needs the earlier sample and nothing else, and a
+        field an old row does not carry simply yields no delta (rules.py fails
+        closed on that). This is what lets the first run after an upgrade
+        already compare against yesterday.
+        """
+        try:
+            with self._lock:
+                cur = self._conn.execute(
+                    "SELECT r.id, r.started_at, c.stats_json, c.members_json "
+                    "FROM case_results AS c JOIN runs AS r ON r.id = c.run_id "
+                    "WHERE c.switch=? AND c.counter=? "
+                    "AND (c.interface=? OR c.canonical_interface=?) "
+                    "AND c.stats_json IS NOT NULL "
+                    "AND r.started_at < ? AND r.started_at >= ? "
+                    "ORDER BY c.run_id DESC, c.rowid DESC LIMIT 1",
+                    (
+                        switch,
+                        counter,
+                        interface,
+                        canonical or interface,
+                        before,
+                        not_before,
+                    ),
+                )
+                row = cur.fetchone()
+        except sqlite3.Error as exc:
+            raise HistoryError(f"could not read {self.path}: {exc}") from exc
+        if row is None:
+            return None
+        try:
+            stats = _stats_from_json(row[2])
+            member_stats, _, _ = _members_from_json(row[3])
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise HistoryError(
+                f"stored sample for {switch} {interface} ({counter}) is "
+                f"unreadable: {exc}"
+            ) from exc
+        if stats is None:
+            return None
+        # The sample's own timestamp beats the run's: it is when this
+        # interface was actually read, which is what the window measures.
+        taken_at = stats.collected_at or datetime.fromisoformat(str(row[1]))
+        return StoredSample(
+            run_id=int(row[0]),
+            taken_at=taken_at,
+            stats=stats,
+            member_stats=member_stats,
+        )
+
     @staticmethod
     def _stored_case(row) -> StoredCase:
-        member_stats, member_repoll_stats, member_errors = _members_from_json(row[12])
+        member_stats, member_baseline_stats, member_errors = _members_from_json(row[12])
+        taken_at = row[13]
         return StoredCase(
             run_id=int(row[0]),
             run_started_at=str(row[1]),
             platform=_platform_or_none(row[2]),
             canonical_interface=row[3],
             stats=_stats_from_json(row[4]),
-            repoll_stats=_stats_from_json(row[5]),
-            repoll_minutes=row[6],
+            baseline_stats=_stats_from_json(row[5]),
+            baseline_minutes=row[6],
+            baseline_taken_at=datetime.fromisoformat(taken_at) if taken_at else None,
+            baseline_run_id=row[14],
             raw_outputs=json.loads(row[7]) if row[7] else {},
             collection_error=row[8],
             parse_errors=json.loads(row[9]) if row[9] else [],
             parent_portchannel=row[10],
-            repoll_skip_reason=row[11],
+            baseline_note=row[11],
             member_stats=member_stats,
-            member_repoll_stats=member_repoll_stats,
+            member_baseline_stats=member_baseline_stats,
             member_errors=member_errors,
         )
 

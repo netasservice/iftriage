@@ -7,10 +7,10 @@ audit log are the production ones — the artifacts are genuinely the tool's own
 output, which is what the README claims about them.
 
 What is scripted here is only what a device would have supplied: the raw text
-of each command, and how the counters move between the first sample and the
-re-poll. The first sample is served from `tests/fixtures/` verbatim; only the
-re-poll delta is authored, because a delta cannot be captured in a single
-snapshot.
+of each command, and how the counters moved between yesterday and today. The
+earlier sample is served from `tests/fixtures/` verbatim and stored by a
+priming run that is then back-dated; only the climb is authored, because a
+delta cannot be captured in a single snapshot.
 
     python scripts/regen_examples.py            # rewrite docs/examples/
     python scripts/regen_examples.py --check    # fail if they are out of date
@@ -21,13 +21,14 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import json
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
-import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -68,9 +69,10 @@ class DeviceScript:
     # and trims counters the capture carries but this story does not, so no
     # device is ever shown output that belongs to a different interface.
     edits: list[tuple[str, str]] = field(default_factory=list)
-    # Applied to the re-poll pass only: (old, new) text substitutions standing
-    # in for counters that moved between the two samples.
-    repoll_edits: list[tuple[str, str]] = field(default_factory=list)
+    # Applied to today's sample only: (old, new) substitutions standing in for
+    # counters that moved since the stored earlier one. The fixtures hold the
+    # earlier values, so these are always the larger numbers.
+    climb_edits: list[tuple[str, str]] = field(default_factory=list)
     # A device that starts in user exec and must be elevated to run shows.
     starts_in_user_exec: bool = False
     connect_error: str | None = None
@@ -140,7 +142,7 @@ DEVICES: dict[str, DeviceScript] = {
             **_ios_xe("GigabitEthernet1/0/47", invalid=True),
         },
         # +412 errors over +1,382,200 frames: a live rate of 298 per million.
-        repoll_edits=[
+        climb_edits=[
             ("3271 input errors, 3271 CRC", "3683 input errors, 3683 CRC"),
             ("109443210 packets input", "110825410 packets input"),
             (
@@ -174,7 +176,7 @@ DEVICES: dict[str, DeviceScript] = {
             ),
         },
         # +3,096 late collisions: the mismatch is live, not historical.
-        repoll_edits=[
+        climb_edits=[
             ("38445916 late collision", "38449023 late collision"),
             (
                 "Gi3/0/20     2221984     463596   38445927",
@@ -235,13 +237,13 @@ DEVICES: dict[str, DeviceScript] = {
         # A congestion case: frames arrive intact and are dropped, so the
         # capture's CRC counters are cleared — nothing is wrong with the media.
         edits=[("912 CRC", "0 CRC"), ("912 input error", "0 input error")],
-        repoll_edits=[
+        climb_edits=[
             ("388 input discard", "3988 input discard"),
             ("89425035 input packets", "89605035 input packets"),
         ],
     ),
     # sw-core-02: the mirror case — real receive errors, but far below the
-    # noise floor and flat across the re-poll. Its discards are cleared.
+    # noise floor and flat since the earlier sample. Its discards are cleared.
     "192.0.2.32": DeviceScript(
         platform=Platform.NXOS,
         prompt="switch_nexus#",
@@ -259,12 +261,17 @@ class UnscriptedCommand(Exception):
     """A command reached the simulator that no device script answers."""
 
 
+# Flipped between the priming run (yesterday's counters) and the run whose
+# output becomes the artifacts (today's, higher, counters).
+_CLIMBING = False
+
+
 class FakeConnection:
     """The Netmiko-shaped object `ReadOnlySession` drives. Answers from text."""
 
-    def __init__(self, script: DeviceScript, repoll: bool):
+    def __init__(self, script: DeviceScript, climbing: bool):
         self._script = script
-        self._repoll = repoll
+        self._climbing = climbing
         self._elevated = not script.starts_in_user_exec
 
     def find_prompt(self) -> str:
@@ -284,8 +291,8 @@ class FakeConnection:
             ) from None
         text = (FIXTURES / body).read_text() if body.endswith(".txt") else body
         edits = list(self._script.edits)
-        if self._repoll:
-            edits += self._script.repoll_edits
+        if self._climbing:
+            edits += self._script.climb_edits
         for old, new in edits:
             text = text.replace(old, new)
         return text
@@ -304,17 +311,12 @@ class _FrozenDateTime(datetime):
 
 def _install_simulator() -> None:
     """Swap in the fake transport, the scripted platforms and frozen time."""
-    # The first pass and the re-poll pass differ only in counter values; the
-    # re-poll is the second time a given device is connected to.
-    connections: dict[str, int] = {}
 
     def fake_connect(host, device_type, credentials, timeout):
         script = DEVICES[host]
         if script.connect_error:
             raise OSError(script.connect_error)
-        seen = connections.get(host, 0)
-        connections[host] = seen + 1
-        return FakeConnection(script, repoll=seen > 0)
+        return FakeConnection(script, climbing=_CLIMBING)
 
     def session_factory(**kwargs):
         return ReadOnlySession(**kwargs, connect_fn=fake_connect)
@@ -329,7 +331,6 @@ def _install_simulator() -> None:
 
     collectors.ReadOnlySession = session_factory  # type: ignore[assignment]
     collectors._autodetect = fake_autodetect  # type: ignore[assignment]
-    time.sleep = lambda _seconds: None  # the 10-minute re-poll wait
     for module in (cli, collectors, report_mod, session_mod, history_mod):
         module.datetime = _FrozenDateTime  # type: ignore[attr-defined]
 
@@ -349,13 +350,13 @@ def _seed_history(db_path: Path) -> None:
     store.close()
 
 
-def _run(workdir: Path) -> str:
-    """Run the CLI against the simulator; returns everything it printed."""
-    db_path = workdir / "history.db"
-    _seed_history(db_path)
+# How far in the past the priming run is placed. Wide enough to be a real
+# comparison window, short enough that "still incrementing" still means now.
+BASELINE_AGE = timedelta(hours=18)
 
-    os.environ["IFTRIAGE_PASS"] = "simulated"
-    os.environ["IFTRIAGE_ENABLE"] = "simulated"
+
+def _invoke(db_path: Path, out_dir: Path, flag: str) -> str:
+    """One CLI run against the simulator; returns everything it printed."""
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
         code = cli.main(
@@ -364,16 +365,62 @@ def _run(workdir: Path) -> str:
                 INPUT_CSV,
                 "--user",
                 "netops",
+                flag,
                 "--db",
                 str(db_path),
                 "--output",
-                str(workdir / "reports"),
+                str(out_dir),
             ]
         )
     if code != 0:
         sys.stdout.write(buffer.getvalue())
         raise SystemExit(f"iftriage exited {code}; artifacts not regenerated")
     return buffer.getvalue()
+
+
+def _prime_baseline(db_path: Path, workdir: Path) -> None:
+    """Store yesterday's sample the way a real operator would have: by running.
+
+    Time is frozen, so the run is back-dated afterwards — both the run row and
+    the samples it took, since the comparison window is measured from when each
+    interface was actually read. Its ingest is then removed: this run exists
+    only to leave counters behind, and counting it would inflate every
+    recurrence number in the report.
+    """
+    global _CLIMBING
+    _CLIMBING = False
+    _invoke(db_path, workdir / "priming", "--no-baseline")
+
+    moved = (FROZEN_NOW - BASELINE_AGE).isoformat(timespec="seconds")
+    store = sqlite3.connect(db_path)
+    store.execute("UPDATE runs SET started_at=?, finished_at=?", (moved, moved))
+    for rowid, raw in store.execute(
+        "SELECT rowid, stats_json FROM case_results WHERE stats_json IS NOT NULL"
+    ).fetchall():
+        stats = json.loads(raw)
+        stats["collected_at"] = moved
+        store.execute(
+            "UPDATE case_results SET stats_json=? WHERE rowid=?",
+            (json.dumps(stats), rowid),
+        )
+    store.execute("DELETE FROM ingest_rows WHERE ingest_id > 1")
+    store.execute("DELETE FROM ingests WHERE id > 1")
+    store.commit()
+    store.close()
+
+
+def _run(workdir: Path) -> str:
+    """Prime yesterday's sample, then produce today's artifacts against it."""
+    global _CLIMBING
+    db_path = workdir / "history.db"
+    _seed_history(db_path)
+
+    os.environ["IFTRIAGE_PASS"] = "simulated"
+    os.environ["IFTRIAGE_ENABLE"] = "simulated"
+    _prime_baseline(db_path, workdir)
+
+    _CLIMBING = True
+    return _invoke(db_path, workdir / "reports", "--baseline")
 
 
 def _collect_artifacts(workdir: Path, console: str) -> dict[str, str]:

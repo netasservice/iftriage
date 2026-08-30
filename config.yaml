@@ -1,7 +1,7 @@
 # iftriage configuration. All thresholds and operational limits are tunable here.
 
 thresholds:
-  # Normalized rate = counter_delta / packet_delta (re-poll) or counter/packets
+  # Normalized rate = counter_delta / packet_delta (baseline) or counter/packets
   # lifetime, expressed here as a PERCENTAGE of the frames. Errors and discards
   # get their own floor because they are different phenomena: Cisco's port
   # troubleshooting guidance (Doc ID 12027) tolerates ~1% of errors only on
@@ -35,8 +35,15 @@ limits:
   max_output_bytes: 1000000  # hard ceiling per command; keeps the tail
   evidence_max_lines: 300    # lines kept as evidence (first 50 + last 250)
 
-repoll:
-  default_minutes: 10
+baseline:
+  # A run takes ONE sample and stores it. The delta that answers "is this
+  # counter still incrementing now?" comes from the newest earlier sample
+  # stored for the same interface -- whatever CSV or run it came from -- so
+  # nothing blocks the terminal. Both bounds guard that answer: a sample taken
+  # minutes ago looks flat because nothing had time to move (and a false "flat"
+  # suppresses escalation), while one from weeks ago can no longer claim "now".
+  min_window_minutes: 5    # earlier samples closer than this are not used
+  max_window_days: 14      # ...nor older than this
 
 # Manual platform overrides by mgmt_ip or hostname. Values: ios_xe | nxos | eos
 platform_overrides: {}

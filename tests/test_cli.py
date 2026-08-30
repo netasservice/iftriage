@@ -2,6 +2,7 @@
 
 import shutil
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from conftest import FIXTURES
@@ -160,7 +161,7 @@ def test_non_interactive_run_without_environment_errors_cleanly(
     csv = tmp_path / "top20.csv"
     shutil.copy(FIXTURES / "sample_top20.csv", csv)
 
-    rc = main(["run", str(csv), "--no-repoll"])
+    rc = main(["run", str(csv)])
 
     assert rc == 2
     assert "interactive terminal" in capsys.readouterr().err
@@ -256,13 +257,17 @@ def _fake_sessions(monkeypatch, fail_auth=(), fail_timeout=()):
 
 
 def _record_sleeps(monkeypatch):
-    """Record repoll waits. The patch lands on the shared `time` module, so the
-    collectors' zero-second jitter sleeps are seen too; only the repoll wait is
-    a second or longer, and only it is recorded."""
+    """Record every wait the run path takes.
+
+    Nothing in a run may block any more: the delta comes from a previous run,
+    not from sitting on a timer. The live-run config sets both jitter bounds to
+    zero, so the collectors' anti-hammering sleep(0) is the only permitted call
+    and anything above zero is a regression.
+    """
     calls = []
     monkeypatch.setattr(
-        "iftriage.cli.time.sleep",
-        lambda seconds: calls.append(seconds) if seconds >= 1 else None,
+        "iftriage.collectors.time.sleep",
+        lambda seconds: calls.append(seconds) if seconds > 0 else None,
     )
     return calls
 
@@ -271,12 +276,12 @@ def test_single_device_bad_credentials_aborts_without_waiting(
     tmp_path, capsys, monkeypatch
 ):
     """One auth failure is below the AAA breaker limit (2), but with nothing
-    collected there is nothing to repoll: abort now, not ten minutes from now."""
+    collected the report is already decided: abort instead of reconnecting."""
     csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1"])
     attempts = _fake_sessions(monkeypatch, fail_auth={"10.0.0.1"})
     sleeps = _record_sleeps(monkeypatch)
 
-    rc = main(["run", str(csv), "--repoll", "10", "--output", str(tmp_path / "out")])
+    rc = main(["run", str(csv), "--output", str(tmp_path / "out")])
 
     err = capsys.readouterr().err
     assert rc == 3
@@ -287,16 +292,16 @@ def test_single_device_bad_credentials_aborts_without_waiting(
     assert not list((tmp_path / "out").glob("iftriage_report_*"))
 
 
-def test_all_devices_failing_aborts_before_the_repoll_wait(
+def test_all_devices_failing_aborts_without_writing_a_report(
     tmp_path, capsys, monkeypatch
 ):
     """Non-auth failures never trip the AAA breaker, but an all-failed pass
-    still has nothing to repoll and must not sit out the interval."""
+    has nothing left to say and must not reconnect for the member pass."""
     csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1", "10.0.0.2"])
     _fake_sessions(monkeypatch, fail_timeout={"10.0.0.1", "10.0.0.2"})
     sleeps = _record_sleeps(monkeypatch)
 
-    rc = main(["run", str(csv), "--repoll", "10", "--output", str(tmp_path / "out")])
+    rc = main(["run", str(csv), "--output", str(tmp_path / "out")])
 
     err = capsys.readouterr().err
     assert rc == 3
@@ -304,39 +309,42 @@ def test_all_devices_failing_aborts_before_the_repoll_wait(
     assert sleeps == []
 
 
-def test_no_repoll_run_with_all_failures_still_aborts(tmp_path, capsys, monkeypatch):
-    csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1"])
-    _fake_sessions(monkeypatch, fail_auth={"10.0.0.1"})
-
-    rc = main(["run", str(csv), "--no-repoll", "--output", str(tmp_path / "out")])
-
-    assert rc == 3
-    assert "no device could be collected" in capsys.readouterr().err
-    assert not list((tmp_path / "out").glob("iftriage_report_*"))
-
-
-def test_partial_failure_still_waits_and_repolls_only_survivors(
+def test_partial_failure_reports_survivors_without_waiting(
     tmp_path, capsys, monkeypatch
 ):
     csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1", "10.0.0.2"])
     attempts = _fake_sessions(monkeypatch, fail_timeout={"10.0.0.1"})
     sleeps = _record_sleeps(monkeypatch)
 
-    rc = main(["run", str(csv), "--repoll", "0.1", "--output", str(tmp_path / "out")])
+    rc = main(["run", str(csv), "--output", str(tmp_path / "out")])
 
     assert rc == 0
-    assert sleeps == [pytest.approx(6.0)]  # 0.1 min, spent once
-    # Pass 1 tried both devices; the repoll pass reconnected only to the survivor.
-    assert attempts == ["10.0.0.1", "10.0.0.2", "10.0.0.2"]
+    assert sleeps == []
+    # One connection per device, and no second visit to the survivor.
+    assert attempts == ["10.0.0.1", "10.0.0.2"]
     report_txt = next((tmp_path / "out").glob("iftriage_report_*.txt")).read_text()
     assert "UNVERIFIED" in report_txt
+
+
+def test_the_run_path_never_blocks_on_a_timer(tmp_path, monkeypatch):
+    """The whole point of the change: `import time` is gone from the CLI, and
+    no module in the run path spends a measurable second waiting."""
+    import iftriage.cli
+
+    assert not hasattr(iftriage.cli, "time")
+
+    csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1"])
+    _fake_sessions(monkeypatch)
+    sleeps = _record_sleeps(monkeypatch)
+
+    assert main(["run", str(csv), "--output", str(tmp_path / "out")]) == 0
+    assert sleeps == []
 
 
 def test_all_devices_cpu_skipped_still_reports_instead_of_aborting(
     tmp_path, capsys, monkeypatch
 ):
-    """A CPU skip is a deliberate outcome the report must show: no abort, and
-    no pointless re-poll wait either (nothing was collected to re-sample)."""
+    """A CPU skip is a deliberate outcome the report must show, not an abort."""
     csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1"])
 
     class BusySession:
@@ -358,12 +366,10 @@ def test_all_devices_cpu_skipped_still_reports_instead_of_aborting(
     monkeypatch.setattr("iftriage.collectors.ReadOnlySession", BusySession)
     sleeps = _record_sleeps(monkeypatch)
 
-    rc = main(["run", str(csv), "--repoll", "10", "--output", str(tmp_path / "out")])
+    rc = main(["run", str(csv), "--output", str(tmp_path / "out")])
 
-    out = capsys.readouterr().out
     assert rc == 0
     assert sleeps == []
-    assert "Skipping re-poll wait" in out
     report_txt = next((tmp_path / "out").glob("iftriage_report_*.txt")).read_text()
     assert "UNVERIFIED" in report_txt
     assert "device skipped: CPU utilization 92% above 80% threshold" in report_txt
@@ -454,7 +460,7 @@ def _stored_run(tmp_path, monkeypatch, ips=("10.0.0.1", "10.0.0.2")):
     csv = _live_run_setup(tmp_path, monkeypatch, list(ips))
     _fake_sessions(monkeypatch)
     _record_sleeps(monkeypatch)
-    assert main(["run", str(csv), "--no-repoll"]) == 0
+    assert main(["run", str(csv), "--no-baseline"]) == 0
     return csv
 
 
@@ -569,8 +575,7 @@ def test_from_history_says_which_collection_flags_it_ignores(
             "run",
             str(csv),
             "--from-history",
-            "--repoll",
-            "5",
+            "--no-baseline",
             "--user",
             "ops",
             "--output",
@@ -580,4 +585,186 @@ def test_from_history_says_which_collection_flags_it_ignores(
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert "ignoring --repoll, --user" in out
+    assert "ignoring --no-baseline, --user" in out
+
+
+# ---- comparing against an earlier stored sample -----------------------------
+
+
+def _backdate(tmp_path, hours=18):
+    """Move the stored run into the past so a real comparison window exists.
+
+    Two runs in a test are milliseconds apart, which the minimum-window guard
+    correctly refuses. Back-dating the run and the sample it took is how the
+    guard stays under test instead of being configured away.
+    """
+    import json
+
+    moved = datetime.now(UTC) - timedelta(hours=hours)
+    conn = sqlite3.connect(tmp_path / "iftriage_history.db")
+    conn.execute("UPDATE runs SET started_at=?", (moved.isoformat(),))
+    for rowid, raw in conn.execute(
+        "SELECT rowid, stats_json FROM case_results WHERE stats_json IS NOT NULL"
+    ).fetchall():
+        stats = json.loads(raw)
+        stats["collected_at"] = moved.isoformat()
+        conn.execute(
+            "UPDATE case_results SET stats_json=? WHERE rowid=?",
+            (json.dumps(stats), rowid),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _first_run(tmp_path, monkeypatch, ips=("10.0.0.1",)):
+    """One completed run, 18 h in the past, for a second one to compare with."""
+    csv = _live_run_setup(tmp_path, monkeypatch, list(ips))
+    _fake_sessions(monkeypatch)
+    assert main(["run", str(csv), "--output", str(tmp_path / "first")]) == 0
+    _backdate(tmp_path)
+    return csv
+
+
+def test_first_run_records_the_first_sample_and_does_not_ask(
+    tmp_path, capsys, monkeypatch
+):
+    csv = _live_run_setup(tmp_path, monkeypatch, ["10.0.0.1"])
+    _fake_sessions(monkeypatch)  # builtins.input already fails the test if called
+
+    rc = main(["run", str(csv), "--output", str(tmp_path / "out")])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "records the first one" in out
+    report = next((tmp_path / "out").glob("iftriage_report_*.txt")).read_text()
+    assert "Baseline: 0 of 1 case(s)" in report
+
+
+def test_accepting_the_offer_compares_against_the_earlier_sample(
+    tmp_path, capsys, monkeypatch
+):
+    csv = _first_run(tmp_path, monkeypatch)
+    capsys.readouterr()
+    monkeypatch.setattr("builtins.input", lambda label: "y")
+
+    rc = main(["run", str(csv), "--output", str(tmp_path / "second")])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Stored earlier samples found for 1 of 1 case(s)" in out
+    assert "Compared 1 of 1 case(s)" in out
+    report = next((tmp_path / "second").glob("iftriage_report_*.txt")).read_text()
+    assert (
+        "Baseline: 1 of 1 case(s) compared against an earlier stored sample" in report
+    )
+
+
+def test_declining_the_offer_keeps_the_run_single_sample(tmp_path, capsys, monkeypatch):
+    csv = _first_run(tmp_path, monkeypatch)
+    capsys.readouterr()
+    monkeypatch.setattr("builtins.input", lambda label: "n")
+
+    rc = main(["run", str(csv), "--output", str(tmp_path / "second")])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Single-sample run" in out
+    report = next((tmp_path / "second").glob("iftriage_report_*.txt")).read_text()
+    assert "Baseline: 0 of 1 case(s)" in report
+
+
+def test_without_a_terminal_the_stored_sample_is_not_used(
+    tmp_path, capsys, monkeypatch
+):
+    """Fail closed: a flat counter vetoes escalation, so a baseline is never
+    applied to a run nobody is watching. Cron takes the default and never hangs."""
+    csv = _first_run(tmp_path, monkeypatch)
+    capsys.readouterr()
+
+    def closed_stdin(label):
+        # What a closed (not merely empty) stdin actually raises.
+        raise ValueError("I/O operation on closed file")
+
+    monkeypatch.setattr("builtins.input", closed_stdin)
+
+    rc = main(["run", str(csv), "--output", str(tmp_path / "second")])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Single-sample run" in out
+    report = next((tmp_path / "second").glob("iftriage_report_*.txt")).read_text()
+    assert "Baseline: 0 of 1 case(s)" in report
+
+
+def test_empty_stdin_takes_the_default_without_raising(tmp_path, capsys, monkeypatch):
+    csv = _first_run(tmp_path, monkeypatch)
+    capsys.readouterr()
+    monkeypatch.setattr("builtins.input", lambda label: (_ for _ in ()).throw(EOFError))
+
+    assert main(["run", str(csv), "--output", str(tmp_path / "second")]) == 0
+    assert "Single-sample run" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("flag", ["--baseline", "--no-baseline"])
+def test_baseline_flags_skip_the_question_entirely(tmp_path, monkeypatch, flag):
+    csv = _first_run(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "builtins.input", lambda label: pytest.fail(f"{flag} must not prompt")
+    )
+
+    assert main(["run", str(csv), flag, "--output", str(tmp_path / "second")]) == 0
+
+
+def test_baseline_and_no_baseline_cannot_be_combined(tmp_path, capsys):
+    csv = tmp_path / "top20.csv"
+    shutil.copy(FIXTURES / "sample_top20.csv", csv)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["run", str(csv), "--baseline", "--no-baseline"])
+
+    assert excinfo.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err
+
+
+def test_dry_run_never_asks_about_baselines(tmp_path, monkeypatch):
+    """A dry run contacts nothing and must stay non-interactive."""
+    csv = _first_run(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "builtins.input", lambda label: pytest.fail("dry run must not prompt")
+    )
+
+    assert main(["run", str(csv), "--dry-run"]) == 0
+
+
+def test_leftover_repoll_config_section_is_a_hard_error(tmp_path, capsys):
+    """A file describing behavior that no longer exists must not be accepted in
+    silence: the operator would believe the tool still waits and re-polls."""
+    csv = tmp_path / "top20.csv"
+    shutil.copy(FIXTURES / "sample_top20.csv", csv)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("repoll:\n  default_minutes: 10\n")
+
+    rc = main(["run", str(csv), "--dry-run", "--config", str(config_path)])
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "'repoll' section was removed" in err
+    assert "baseline" in err
+
+
+def test_crossed_baseline_bounds_are_rejected(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "baseline:\n  min_window_minutes: 60\n  max_window_days: 0.01\n"
+    )
+
+    with pytest.raises(ValueError, match="must be longer than"):
+        load_config(config_path)
+
+
+def test_unknown_baseline_key_is_rejected(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("baseline:\n  max_window_minutes: 10\n")
+
+    with pytest.raises(ValueError, match="unknown key 'baseline.max_window_minutes'"):
+        load_config(config_path)

@@ -10,6 +10,7 @@ from pathlib import Path
 from jinja2 import Environment, PackageLoader, select_autoescape
 
 from .models import VERDICT_ORDER, CaseResult, DataQualityFinding, VerdictCategory
+from .rules import format_window
 
 # NormalizedInterfaceStats fields the rules engine actually consults, echoed
 # into the enriched CSV under the same names.
@@ -38,6 +39,8 @@ _CSV_ANALYSIS_COLUMNS = (
     "dq_flags",
     "duplicate_of",
     "recurrence",
+    "baseline_taken_at",  # empty when the verdict rests on one sample
+    "baseline_window",
     "member_summary",  # port-channel cases: one finding per member
 )
 
@@ -76,6 +79,14 @@ def _analysis_cells(result: CaseResult) -> list[str]:
     cells.append(";".join(result.case.dq_flags))
     cells.append(result.duplicate_of or "")
     cells.append(str(result.recurrence))
+    cells.append(
+        result.baseline_taken_at.isoformat() if result.baseline_taken_at else ""
+    )
+    cells.append(
+        format_window(result.baseline_minutes)
+        if result.baseline_taken_at is not None
+        else ""
+    )
     findings = dict(verdict.member_findings) if verdict else {}
     for member, error in result.member_errors.items():
         findings.setdefault(member, f"not evaluated: {error}")
@@ -122,6 +133,7 @@ def render_report(
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    env.globals["window"] = format_window
 
     order = {category: idx for idx, category in enumerate(VERDICT_ORDER)}
     sorted_results = sorted(

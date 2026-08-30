@@ -6,7 +6,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+- **The re-poll is gone, and with it the wait.** `--repoll`, `--no-repoll` and
+  the `repoll` section of `config.yaml` no longer exist. A run used to contact
+  every device, sleep for ten minutes and contact them all again; the terminal
+  was frozen for the whole interval and the answer it bought — is this counter
+  still incrementing? — was measured over ten minutes. It is now measured
+  against a previous run, over hours or days, and nothing blocks. Each device
+  is contacted once instead of twice, so the audit log is shorter too.
+- **A `config.yaml` still carrying `repoll:` fails the run** rather than being
+  ignored, for the same reason the retired `thresholds` keys do: the file would
+  describe behavior that no longer exists, and the operator would go on
+  believing the tool waits.
+
+### Added
+- **Runs now compare against the newest earlier sample stored for each
+  interface.** A run takes one sample, stores it, and — before contacting
+  anything — offers the stored samples it found: *"Stored earlier samples found
+  for 8 of 20 case(s) (newest 18.3 h ago, oldest 4.9 d ago)."* Answer once and
+  the rest of the run is unattended. `--baseline` and `--no-baseline` answer it
+  up front for scripts; without an explicit flag and without a terminal the
+  answer is no, because a baseline can only narrow a verdict and must never be
+  applied silently to a run nobody is watching.
+- The baseline belongs to the **interface**, not to the CSV: the key is
+  `(switch, interface, counter)`, so next week's top-20 list finds samples for
+  the rows it shares with this week's and simply has none for the rest. Partial
+  coverage is the normal case, and the report says per case what it was
+  compared against — or that its verdict rests on a single reading. A port
+  spelled `Gi1/0/1` in one export and `GigabitEthernet1/0/1` in the next still
+  matches; both forms are stored.
+- **`baseline.min_window_minutes` (5) and `baseline.max_window_days` (14)**
+  guard the claim the verdict makes. Samples too close together read as flat
+  because nothing had time to move, and a false "flat" *suppresses* escalation
+  to `PHYSICAL_MEDIA` or `CAPACITY`; samples weeks apart can no longer support
+  "still incrementing NOW". Both are configurable, and crossed bounds are a
+  hard error rather than a silently disabled feature.
+- Report provenance per case: the timestamp of the sample it was compared
+  against, how long the window was, and which run it came from — plus the
+  matching `baseline_taken_at` and `baseline_window` columns in the enriched
+  CSV.
+
 ### Changed
+- **The delta now runs from the stored sample to the fresh one**, the opposite
+  of the direction the code carried since 0.1.0, where the fresh sample was the
+  older half. `rules._counter_delta` is keyword-only (`earlier=`, `later=`) so
+  no positional call site can survive the change and silently negate every
+  delta. A sample whose counters read *lower* than today's is still discarded
+  as a reload or a counter clear — and discarded means unknown, never flat, so
+  it can never veto an escalation.
+- `runs.replay_schema` is `2`. A schema-1 row stored the newer sample where a
+  schema-2 row stores the older one, so runs recorded by 0.5.0 and earlier are
+  no longer replayable with `--from-history`. Their samples *can* still serve
+  as a baseline: that read consumes one column, `stats_json`, whose meaning
+  never changed, which is what lets the first run after an upgrade already
+  compare against yesterday.
+- `case_results` carries five `baseline_*` columns, added in place to existing
+  databases. The four retired `repoll_*` columns are left exactly where they
+  are — never written again, never read again — because dropping a column
+  rewrites the table for no gain and their data stays auditable.
 - **Errors and discards now have their own escalation floor, configured as a
   percentage.** `rate_high` and `rate_warn` are gone; `thresholds` takes
   `error_rate_percent` (default 0.001%, i.e. 10 per million frames) and
@@ -16,8 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   out-discard is an intact frame dropped for buffer or policy reasons —
   congestion, routine on a busy uplink. A single number could not serve both,
   and the discard noise that prompted this is what the 1% floor removes.
-  The re-poll is unchanged and remains the filter that separates a live fault
-  from a counter that stopped moving long ago.
+  The comparison against an earlier sample remains the filter that separates a
+  live fault from a counter that stopped moving long ago.
 - **A `config.yaml` carrying the retired keys now fails the run** instead of
   being ignored in silence, which would have judged every interface by the
   built-in defaults. Percentages are validated to be within `0 < x <= 100`.
@@ -26,8 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **The report header states the thresholds it judged with**, so a run made
   with a mistyped floor is recognizable from the deliverable alone.
 - **`IGNORE` no longer calls a flat counter "below the noise threshold".** A
-  rate above the floor that the re-poll shows flat is reported as historical;
-  only a rate under the floor is reported as below it.
+  rate above the floor that the earlier sample shows flat is reported as
+  historical; only a rate under the floor is reported as below it.
 
 ### Added
 - **`--from-history` rebuilds the report from the collection already stored**,
@@ -40,10 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   same CSV would inflate every recurrence count. If any row of the CSV has no
   stored collection, the whole rebuild fails with exit code 2 and names the
   rows to collect.
-- `case_results` now also stores `canonical_interface`, `parent_portchannel`,
-  `repoll_skip_reason` and the per-case `repoll_minutes` — the four fields a
-  faithful rebuild needs and the schema used to drop. Added in place to
-  existing databases, like `members_json` before them.
+- `case_results` now also stores `canonical_interface` and `parent_portchannel`
+  — fields a faithful rebuild needs and the schema used to drop. Added in place
+  to existing databases, like `members_json` before them.
 - `runs.replay_schema` marks a run as written with the full column set. Runs
   recorded by 0.5.0 and earlier are missing fields the verdict depends on, so
   `--from-history` refuses them rather than replaying a report that looks
