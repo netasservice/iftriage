@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   only narrows what actually is.
 
 ### Added
+- **`scripts/regen_examples.py`** regenerates every artifact in
+  `docs/examples/` by replaying the sanitized fixtures. Only the transport
+  under `session.py` is replaced, so the allow-list, the prompt guard and the
+  audit log doing the work are the production ones; the clock is frozen so the
+  output is byte-reproducible. `--check` fails when the committed artifacts
+  drift, and `tests/test_examples.py` runs it, so behavior changes can no
+  longer leave the examples stale. The committed artifacts had been generated
+  before 0.4.0 and were missing the CPU guard commands entirely.
 - **Member cases expand to their whole bundle.** Membership is now resolved in
   both directions from the same summary output, so a CSV case that is a
   *member* of a port-channel — not just a case that IS one — pulls in every
