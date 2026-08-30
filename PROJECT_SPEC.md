@@ -244,13 +244,17 @@ members of the one bundle, never full-chassis.
     on a neighbouring link, but they are listed as context only: a dirty or uncollectable
     sibling never changes the category of the port that was actually reported.
 - **Normalization is the core insight: raw delta means nothing. Rate = error_delta /
-  packet_delta (or error/packets lifetime as fallback). Thresholds (tunable in config.yaml):**
-  - rate ≥ 1e-4 (100/M packets) → high
-  - rate ≥ 1e-2 (1% of the frames) → warn — in practice this is the discard escalation
-    floor: `InDiscards`/`OutDiscards` below 1% are operational noise, not capacity. It sits
-    above the high level on purpose; lowering it below 1e-4 also re-enables the moderate-rate
-    branch for receive errors.
-  - below → noise (absent other signals)
+  packet_delta (or error/packets lifetime as fallback).**
+  Two floors, configured as percentages in `config.yaml`, because errors and discards are
+  different phenomena (Cisco Doc ID 12027: ~1% of errors is tolerable only on half-duplex,
+  full-duplex expects essentially zero FCS/CRC/alignment; an out-discard is an intact frame
+  dropped for buffer or policy reasons):
+  - `error_rate_percent` (default 0.001% = 10/M packets) → CRC/FCS/alignment/runts and
+    generic error counters at or above it are `PHYSICAL_MEDIA`.
+  - `discard_rate_percent` (default 1%) → `InDiscards`/`OutDiscards` at or above it are
+    `CAPACITY`; below it they are operational noise.
+  - Either way the re-poll can still veto: a counter that is flat across the window is a
+    historical event, reported as `IGNORE` and named as such.
 
 ### Verdict categories (final output vocabulary)
 
@@ -258,7 +262,8 @@ members of the one bundle, never full-chassis.
   half-duplex. Action: inspect cable/transceiver/path.
 - `CONFIG_ISSUE` — duplex mismatch confirmed (late-col on full-duplex, ideally corroborated by
   neighbor). Fixed via CLI, not by touching media.
-- `CAPACITY` — InDiscards at or above 1% of the frames. Not media, not config: saturation.
+- `CAPACITY` — InDiscards at or above the configured discard threshold. Not media, not
+  config: saturation.
 - `IGNORE` — negligible normalized rate, counter flat on re-poll, and/or chronic known noise.
 - `UNVERIFIED` — device unreachable / auth failed / SSH timeout. Report with CSV data only,
   clearly marked unconfirmed.

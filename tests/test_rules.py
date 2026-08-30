@@ -40,21 +40,13 @@ def make_stats(**kwargs):
     return NormalizedInterfaceStats(**defaults)
 
 
-def run(
-    case,
-    stats,
-    repoll=None,
-    minutes=None,
-    error=None,
-    parse_errors=(),
-    thresholds=T,
-):
+def run(case, stats, repoll=None, minutes=None, error=None, parse_errors=()):
     return evaluate_case(
         case,
         stats,
         repoll,
         minutes,
-        thresholds,
+        T,
         collection_error=error,
         parse_errors=parse_errors,
     )
@@ -154,6 +146,33 @@ def test_negligible_rate_is_ignore():
     assert verdict.category is VerdictCategory.IGNORE
 
 
+def test_same_rate_is_physical_when_climbing_and_ignored_when_flat():
+    """The re-poll, not the floor, is what separates a live fault from an old
+    one: both interfaces sit at the same 0.5% lifetime rate."""
+    stats = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    climbing = make_stats(input_errors=5_600, crc_errors=5_600, input_packets=1_100_000)
+    flat = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_100_000)
+
+    live = run(make_case("Rcv-Err"), stats, climbing, minutes=10)
+    historical = run(make_case("Rcv-Err"), stats, flat, minutes=10)
+
+    assert live.category is VerdictCategory.PHYSICAL_MEDIA
+    assert historical.category is VerdictCategory.IGNORE
+
+
+def test_ignored_flat_counter_is_not_called_below_threshold():
+    """A rate above the floor that the re-poll kills is historical, not noise:
+    saying 'below the threshold' would send the operator to the wrong knob."""
+    stats = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    repoll = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_100_000)
+
+    verdict = run(make_case("Rcv-Err"), stats, repoll, minutes=10)
+
+    assert verdict.category is VerdictCategory.IGNORE
+    assert "below the" not in verdict.reason
+    assert "historical" in verdict.reason
+
+
 def test_flat_repoll_with_low_rate_is_ignore():
     stats = make_stats(input_errors=500, crc_errors=500, input_packets=100_000_000)
     repoll = make_stats(input_errors=500, crc_errors=500, input_packets=101_000_000)
@@ -169,22 +188,6 @@ def test_incrementing_repoll_at_meaningful_rate_is_physical():
     verdict = run(make_case("Rcv-Err"), stats, repoll, minutes=10)
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
     assert "incrementing" in verdict.reason.lower()
-
-
-def test_moderate_rate_is_physical_when_rate_warn_is_lowered():
-    stats = make_stats(input_errors=1000, crc_errors=1000, input_packets=100_000_000)
-    repoll = make_stats(input_errors=1050, crc_errors=1050, input_packets=101_000_000)
-    # 50 errors / 1M packets in the window = 5e-5: between the configured warn
-    # and high levels, and still incrementing.
-    verdict = run(
-        make_case("Rcv-Err"),
-        stats,
-        repoll,
-        minutes=10,
-        thresholds=Thresholds(rate_warn=1.0e-5),
-    )
-    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
-    assert "moderate error rate" in verdict.reason.lower()
 
 
 def test_dom_out_of_range_is_physical_media():
@@ -209,7 +212,7 @@ def test_indiscards_at_rate_is_capacity_not_physical():
     assert "not a physical error" in verdict.reason.lower()
 
 
-def test_discards_below_one_percent_is_ignore():
+def test_discards_below_the_threshold_is_ignore():
     """Dropped-but-intact frames under 1% are operational noise, not capacity."""
     stats = make_stats(discards_in=5_000, input_packets=1_000_000)  # 0.5%
     verdict = run(make_case("InDiscards"), stats)

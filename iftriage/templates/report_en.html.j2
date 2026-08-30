@@ -31,7 +31,8 @@
 <body>
 <h1>Interface Error Triage — Top-{{ summary.total }} verification</h1>
 <p class="muted">Generated {{ generated_at }} · source: {{ meta.csv_file }}
-{% if meta.repoll_minutes %} · re-poll window: {{ meta.repoll_minutes }} min{% endif %}</p>
+{% if meta.repoll_minutes %} · re-poll window: {{ meta.repoll_minutes }} min{% endif %}
+{% if meta.error_rate_percent %} · thresholds: errors {{ "%g"|format(meta.error_rate_percent) }}% / discards {{ "%g"|format(meta.discard_rate_percent) }}% of frames{% endif %}</p>
 
 {% if meta.from_history %}
 <div class="dq"><strong>Rebuilt from stored collection</strong> — no device was

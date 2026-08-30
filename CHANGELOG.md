@@ -7,15 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
-- **Discards are only escalated at 1% of the frames or above.** `rate_warn`
-  moves from `1.0e-5` (10 discards per million frames) to `1.0e-2`, so an
-  `InDiscards`/`OutDiscards` case below 1% is now `IGNORE` instead of
-  `CAPACITY` — dropped-but-intact frames at that level are operational noise
-  and were flooding the report. `rate_warn` is shared with the receive-error
-  path, so this deliberately leaves its moderate-rate branch (rate between the
-  warn and high levels, counter still incrementing) dormant at the shipped
-  defaults: receive errors are now decided by `rate_high` alone. Lowering
-  `rate_warn` below `rate_high` in `config.yaml` restores the old behavior.
+- **Errors and discards now have their own escalation floor, configured as a
+  percentage.** `rate_high` and `rate_warn` are gone; `thresholds` takes
+  `error_rate_percent` (default 0.001%, i.e. 10 per million frames) and
+  `discard_rate_percent` (default 1%). Cisco's port troubleshooting guidance
+  (Doc ID 12027) puts the ~1% error tolerance on half-duplex links only and
+  expects essentially zero FCS/CRC/alignment on full-duplex, while an
+  out-discard is an intact frame dropped for buffer or policy reasons —
+  congestion, routine on a busy uplink. A single number could not serve both,
+  and the discard noise that prompted this is what the 1% floor removes.
+  The re-poll is unchanged and remains the filter that separates a live fault
+  from a counter that stopped moving long ago.
+- **A `config.yaml` carrying the retired keys now fails the run** instead of
+  being ignored in silence, which would have judged every interface by the
+  built-in defaults. Percentages are validated to be within `0 < x <= 100`.
+  Unknown keys under `connection` and `limits` are still skipped on purpose:
+  that is what keeps a stray `workers:` from widening the fan-out.
+- **The report header states the thresholds it judged with**, so a run made
+  with a mistyped floor is recognizable from the deliverable alone.
+- **`IGNORE` no longer calls a flat counter "below the noise threshold".** A
+  rate above the floor that the re-poll shows flat is reported as historical;
+  only a rate under the floor is reported as below it.
 
 ### Added
 - **`--from-history` rebuilds the report from the collection already stored**,

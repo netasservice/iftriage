@@ -1,6 +1,7 @@
 INTERFACE ERROR TRIAGE — TOP-8 VERIFICATION
 Generated 2026-08-29 20:29 UTC | source: docs/examples/input.csv
 Re-poll window: 10.0 min
+Thresholds: errors 0.001% / discards 1% of frames
 EXECUTIVE SUMMARY
   8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
 
@@ -35,7 +36,7 @@ CASES
   IGNORE — 'Rx' is a total traffic counter, not an error counter; a 24h increase is normal operation. No action.
 --------------------------------------------------------------------------------
 [IGNORE] sw-core-02 Eth4/15 (Rcv-Err, delta24h=28)
-  IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters is below the noise threshold, counter flat across 10-min re-poll. DOM rx power -3.5 dBm within range. No action.
+  IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters, counter flat across 10-min re-poll: historical, not happening now. DOM rx power -3.5 dBm within range. No action.
 --------------------------------------------------------------------------------
 iftriage is a read-only diagnostic tool. Raw evidence for each case is embedded
 in the HTML report; every command sent is recorded in the session audit log.
