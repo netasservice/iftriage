@@ -21,8 +21,9 @@ from ..normalize import (
 # Canonical command keys, in collection order. Profiles may omit keys.
 # "neighbors_lldp" comes before "neighbors" so that when a platform runs both
 # (NX-OS: LLDP fallback for non-Cisco neighbors), CDP data wins the merge
-# whenever it found an entry. The "cpu" key is deliberately absent: it feeds
-# the pre-collection CPU guard, not the per-interface stats.
+# whenever it found an entry. Two template keys are deliberately absent:
+# "cpu" feeds the pre-collection CPU guard, not the per-interface stats, and
+# "portchannel" is conditional (see PORTCHANNEL_KEY).
 COMMAND_KEYS = (
     "version",
     "interface",
@@ -30,7 +31,6 @@ COMMAND_KEYS = (
     "transceiver",
     "neighbors_lldp",
     "neighbors",
-    "portchannel",
     "logging",
 )
 
@@ -38,7 +38,12 @@ COMMAND_KEYS = (
 REPOLL_KEYS = ("interface", "counters")
 
 # Per-device commands (not per-interface): run once per device.
-DEVICE_LEVEL_KEYS = ("version", "portchannel")
+DEVICE_LEVEL_KEYS = ("version",)
+
+# The port-channel summary is device-level AND conditional: it is sent only
+# when a case on the device is a port-channel or a member of one, so it is
+# driven by its own collector step rather than by the per-interface key loop.
+PORTCHANNEL_KEY = "portchannel"
 
 # Commands run for each discovered port-channel member: the full per-interface
 # set. Device-level keys are excluded — already collected once per device.
@@ -61,6 +66,11 @@ class PlatformProfile(ABC):
     netmiko_device_type: str
     # command key -> template with {interface} placeholder
     templates: dict[str, str]
+    # True when `show interfaces` names the parent port-channel, so the
+    # port-channel summary can be deferred until a case proves it relevant.
+    # False (IOS-XE) means that summary is the only source of membership at
+    # all, so it must be sent unconditionally.
+    reports_portchannel_membership: bool = True
 
     def canonical_interface(self, name: str) -> str:
         return expand_interface(self.platform, name)

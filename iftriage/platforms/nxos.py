@@ -32,6 +32,9 @@ def _parse_show_interface(raw: str) -> dict:
     match = re.search(r"admin state is (\S+)", raw)
     if match:
         result["protocol_status"] = match.group(1).strip(",").lower()
+    match = re.search(r"^\s*Belongs to (\S+)", raw, re.MULTILINE)
+    if match:
+        result["member_of_portchannel"] = match.group(1)
     match = re.search(r"(full|half|auto)-duplex,\s*([^,\n]+)", raw, re.IGNORECASE)
     if match:
         result["duplex"] = match.group(1).lower()

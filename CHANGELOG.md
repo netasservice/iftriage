@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Arista EOS uses `show port-channel dense`** instead of
+  `show port-channel summary`. `dense` is the compact table the fleet's 7808
+  actually renders for its ~700 channels; the shared parser already handled the
+  dense flag characters (`+ ^ *`) and wrapped member lines, so this is a
+  command-table change only.
+- **The port-channel summary is now sent only when it can matter.** It used to
+  run once on every device regardless of what was being diagnosed. On EOS and
+  NX-OS a physical port's `show interfaces` names its bundle (`Member of
+  Port-Channel195`, `Belongs to Po21`), so the summary is now gated on a case
+  being a port-channel by name or declaring a parent. IOS-XE never names the
+  channel-group there, so `show etherchannel summary` stays unconditional — it
+  is the only source of membership on that platform. The allow-list is
+  unchanged: it remains the auditable ceiling of what may be sent, and the gate
+  only narrows what actually is.
+
+### Added
+- **Member cases expand to their whole bundle.** Membership is now resolved in
+  both directions from the same summary output, so a CSV case that is a
+  *member* of a port-channel — not just a case that IS one — pulls in every
+  other member of that bundle for collection. The verdict stays about the
+  interface the CSV reported and is judged exactly as any single interface;
+  the siblings are attached as `member_findings` context, and a dirty or
+  uncollectable sibling never changes the reported port's category. Sibling
+  members shared by two cases on one device are sampled once.
+
 ## [0.4.0] - 2026-08-29
 
 ### Added

@@ -164,7 +164,7 @@ show interfaces <intf>
 show interfaces <intf> counters errors
 show interfaces <intf> transceiver
 show lldp neighbors <intf> detail
-show port-channel summary
+show port-channel dense
 show logging | include <intf-pattern>
 ```
 
@@ -177,13 +177,23 @@ device's current CPU utilization is read and the device is skipped entirely
 During the re-poll pass a busy device keeps its first sample; only the delta is
 given up.
 
-For a port-channel case, the per-interface commands (everything except
-`show version` and the summary itself) are additionally rendered for each
-member discovered in the summary and run over a second connection to the same
-device. Member names are device-derived text: each must pass `normalize.py`
-validation before substitution, so this widens the *interface* set of the
-allow-list, never the command set. This remains targeted — only members of the
-reported port-channel, never full-chassis.
+The port-channel summary is the one **conditional** command: it is sent only
+when a case on the device is a port-channel by name, or when a case's own
+`show interfaces` output declared a parent bundle (EOS `Member of
+Port-Channel195`, NX-OS `Belongs to Po21`). IOS-XE never names the
+channel-group in `show interfaces`, so there the summary is the only source of
+membership and is always sent. The command stays in the allow-list either way —
+the allow-list is the auditable ceiling of what *may* be sent; the gate only
+narrows what actually is.
+
+For a case that touches a port-channel — as the bundle **or** as one of its
+members — the per-interface commands (everything except `show version` and the
+summary itself) are additionally rendered for every member of that bundle and
+run over a second connection to the same device. A member case skips itself:
+pass 1 already sampled it. Member names are device-derived text: each must pass
+`normalize.py` validation before substitution, so this widens the *interface*
+set of the allow-list, never the command set. This remains targeted — only
+members of the one bundle, never full-chassis.
 
 ## 6. Analysis pipeline
 
@@ -216,16 +226,23 @@ reported port-channel, never full-chassis.
 - `InDiscards`: frame arrived FINE and was dropped — almost always buffer congestion, VLAN not
   allowed on trunk, or ACL. NOT a physical error. Different escalation (capacity).
 - `Rx`: total receive count, not an error at all. Should not drive any problem verdict.
-- Port-channels: map Po → members via `etherchannel/port-channel summary`. If the CSV lists a Po
-  and one of its members on the same device, deduplicate — same physical issue counted twice.
-  When the CSV case IS a port-channel, collect the per-interface command set for every member
-  discovered in the summary (a second connection to the device; member names are validated by
+- Port-channels: map Po → members via `etherchannel summary` / `port-channel dense`, in both
+  directions — the same output answers "who are my members" and "which bundle am I in". If the
+  CSV lists a Po and one of its members on the same device, deduplicate — same physical issue
+  counted twice. Whenever a case touches a bundle, collect the per-interface command set for
+  every member of it (a second connection to the device; member names are validated by
   `normalize.py` before any template substitution — this widens the interface set, never the
-  command set). Members are re-polled too. The verdict is then member-driven: a member with an
-  actionable finding names the culprit (`fault isolated to member X`); a member that could not
-  be collected fails the bundle closed to PARSE_ERROR; bundle-only errors with clean members
-  degrade to "not attributable to any current member". Bundle counters alone are misleading —
-  they are sums across members, so one bad member's rate is diluted by its healthy peers.
+  command set). Members are re-polled too. The two directions differ in what they conclude:
+  - **The case IS the port-channel** → the verdict is member-driven: a member with an
+    actionable finding names the culprit (`fault isolated to member X`); a member that could
+    not be collected fails the bundle closed to PARSE_ERROR; bundle-only errors with clean
+    members degrade to "not attributable to any current member". Bundle counters alone are
+    misleading — they are sums across members, so one bad member's rate is diluted by its
+    healthy peers.
+  - **The case is a MEMBER of one** → the verdict stays about the reported interface, judged
+    exactly as any single interface. Its siblings are collected because a LAG fault often sits
+    on a neighbouring link, but they are listed as context only: a dirty or uncollectable
+    sibling never changes the category of the port that was actually reported.
 - **Normalization is the core insight: raw delta means nothing. Rate = error_delta /
   packet_delta (or error/packets lifetime as fallback). Thresholds (tunable in config.yaml):**
   - rate ≥ 1e-4 (100/M packets) → high

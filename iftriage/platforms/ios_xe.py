@@ -101,6 +101,9 @@ def _parse_version(raw: str) -> dict:
 class IosXeProfile(PlatformProfile):
     platform = Platform.IOS_XE
     netmiko_device_type = "cisco_xe"
+    # `show interfaces` on IOS-XE never names the channel-group, so the
+    # etherchannel summary is the only way to learn membership at all.
+    reports_portchannel_membership = False
     templates = {
         "cpu": "show processes cpu | include CPU utilization",
         "version": "show version",

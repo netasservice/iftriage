@@ -37,6 +37,7 @@ from .platforms.base import (
     COMMAND_KEYS,
     DEVICE_LEVEL_KEYS,
     MEMBER_KEYS,
+    PORTCHANNEL_KEY,
     REPOLL_KEYS,
     PlatformProfile,
 )
@@ -224,6 +225,65 @@ def _collect_one_interface(
     return _merge_stats(parsed_by_key)
 
 
+def _portchannel_is_relevant(
+    profile: PlatformProfile, targets: list[CaseResult]
+) -> bool:
+    """Does the port-channel summary have anything to say about this device?
+
+    Yes when a case is a port-channel by name, or when a case's own interface
+    output already declared a parent bundle. Platforms whose `show interfaces`
+    stays silent about membership (IOS-XE) cannot answer the second question
+    without the summary itself, so for them the answer is always yes.
+    """
+    if not profile.reports_portchannel_membership:
+        return True
+    return any(
+        is_portchannel_name(result.canonical_interface or "")
+        or (result.stats is not None and result.stats.member_of_portchannel)
+        for result in targets
+    )
+
+
+def _collect_portchannel(
+    session: ReadOnlySession,
+    profile: PlatformProfile,
+    targets: list[CaseResult],
+    config: Config,
+) -> None:
+    """Send the device's port-channel summary once, when it is relevant.
+
+    Runs after every target's interface output is in hand — that output is what
+    tells us a physical port belongs to a bundle — and shares the single parse
+    with every case on the device. Mutates results.
+    """
+    command = profile.templates.get(PORTCHANNEL_KEY)
+    if command is None or not _portchannel_is_relevant(profile, targets):
+        return
+    try:
+        raw = session.get(command)
+    except SafetyViolation:
+        raise
+    except Exception as exc:
+        for result in targets:
+            result.parse_errors.append(f"{PORTCHANNEL_KEY}: command failed: {exc}")
+        return
+    evidence = _bounded_evidence(raw, config.limits.evidence_max_lines)
+    for result in targets:
+        result.raw_outputs[PORTCHANNEL_KEY] = evidence
+    try:
+        parsed = profile.parse(PORTCHANNEL_KEY, raw, "")
+    except Exception as exc:
+        for result in targets:
+            result.parse_errors.append(f"{PORTCHANNEL_KEY}: parse failed: {exc}")
+        return
+    members = parsed.get("port_channel_members")
+    if not members:
+        return
+    for result in targets:
+        if result.stats is not None:
+            result.stats.port_channel_members = members
+
+
 def _check_cpu(
     session: ReadOnlySession, profile: PlatformProfile, config: Config
 ) -> tuple[str | None, str]:
@@ -394,6 +454,8 @@ def _collect_device(
                     )
             else:
                 result.stats = stats
+        if keys == COMMAND_KEYS:
+            _collect_portchannel(session, profile, targets, config)
     finally:
         session.disconnect()
 
@@ -501,27 +563,41 @@ def collect(
     return results
 
 
-def _discover_members(result: CaseResult, profile: PlatformProfile) -> list[str]:
-    """Validated canonical member names for a port-channel case.
+def _resolve_portchannel_group(
+    result: CaseResult, profile: PlatformProfile
+) -> tuple[str | None, list[str]]:
+    """The bundle this case belongs to and the members worth sampling.
 
-    Member tokens come from device output (the pass-1 summary). Each must pass
-    canonical-name validation before it may ever be substituted into a command
-    template; rejected tokens are recorded in member_errors, never sent.
+    Two directions, both answered from the same pass-1 summary:
+      - the case IS a port-channel -> (None, its members);
+      - the case is a MEMBER of one -> (parent name, its sibling members).
+    Siblings exclude the case itself: pass 1 already sampled it.
+
+    Member tokens are device output. Each must pass canonical-name validation
+    before it may ever be substituted into a command template; rejected tokens
+    are recorded in member_errors, never sent.
     """
     canonical = result.canonical_interface
     stats = result.stats
-    if (
-        canonical is None
-        or stats is None
-        or not stats.port_channel_members
-        or not is_portchannel_name(canonical)
-    ):
-        return []
+    if canonical is None or stats is None or not stats.port_channel_members:
+        return None, []
+
+    parent: str | None = None
     member_tokens: list[str] = []
-    for name, tokens in stats.port_channel_members.items():
-        if interface_matches_token(name, canonical):
-            member_tokens = tokens
-            break
+    if is_portchannel_name(canonical):
+        for name, tokens in stats.port_channel_members.items():
+            if interface_matches_token(name, canonical):
+                member_tokens = tokens
+                break
+    else:
+        for name, tokens in stats.port_channel_members.items():
+            if any(interface_matches_token(token, canonical) for token in tokens):
+                parent = name
+                member_tokens = tokens
+                break
+        if parent is None:
+            return None, []
+
     validated: list[str] = []
     for token in member_tokens:
         try:
@@ -529,9 +605,9 @@ def _discover_members(result: CaseResult, profile: PlatformProfile) -> list[str]
         except InterfaceNameError as exc:
             result.member_errors.setdefault(token, f"member name rejected: {exc}")
             continue
-        if member not in validated:
+        if member != canonical and member not in validated:
             validated.append(member)
-    return validated
+    return parent, validated
 
 
 def _collect_device_members(
@@ -556,7 +632,7 @@ def _collect_device_members(
         if result.platform is None:
             continue
         result_profile = get_profile(result.platform)  # one platform per device
-        members = _discover_members(result, result_profile)
+        _parent, members = _resolve_portchannel_group(result, result_profile)
         if members:
             targets.append((result, members))
             profile = result_profile
@@ -605,6 +681,8 @@ def _collect_device_members(
     breaker.record_success()
 
     device_level_raw: dict[str, str] = {}
+    # Sibling cases of one bundle ask for the same members; sample each once.
+    sampled: dict[str, NormalizedInterfaceStats] = {}
     try:
         cpu_skip_reason, _cpu_raw = _check_cpu(session, profile, config)
         if cpu_skip_reason is not None:
@@ -612,17 +690,19 @@ def _collect_device_members(
             return
         for result, members in targets:
             for member in members:
-                result.member_stats[member] = _collect_one_interface(
-                    session,
-                    profile,
-                    member,
-                    keys,
-                    config,
-                    result.raw_outputs,
-                    f"{member}:",
-                    result.parse_errors.append,
-                    device_level_raw,
-                )
+                if member not in sampled:
+                    sampled[member] = _collect_one_interface(
+                        session,
+                        profile,
+                        member,
+                        keys,
+                        config,
+                        result.raw_outputs,
+                        f"{member}:",
+                        result.parse_errors.append,
+                        device_level_raw,
+                    )
+                result.member_stats[member] = sampled[member]
     finally:
         session.disconnect()
 
@@ -635,17 +715,28 @@ def collect_members(
     history: History | None,
     workers: int = 1,
 ) -> int:
-    """Member pass for port-channel cases: reconnect to each device holding one
-    and sample every member interface. Returns the number of cases covered."""
-    eligible = [
-        result
-        for result in repoll_eligible(results)
-        if result.platform is not None
-        and result.canonical_interface is not None
-        and result.stats is not None
-        and result.stats.port_channel_members
-        and is_portchannel_name(result.canonical_interface)
-    ]
+    """Member pass: reconnect to each device holding a case that touches a
+    port-channel — as the bundle or as one of its members — and sample every
+    other member of that bundle. Returns the number of cases covered."""
+    eligible: list[CaseResult] = []
+    for result in repoll_eligible(results):
+        if (
+            result.platform is None
+            or result.canonical_interface is None
+            or result.stats is None
+            or not result.stats.port_channel_members
+        ):
+            continue
+        # Bundle or member: both expand to the same member set. The parent is
+        # recorded even when nothing is left to sample, because resolving can
+        # itself reject member names into member_errors — and rules.py must
+        # know a member case from a bundle case to judge those errors right.
+        parent, members = _resolve_portchannel_group(
+            result, get_profile(result.platform)
+        )
+        result.parent_portchannel = parent
+        if members:
+            eligible.append(result)
     if not eligible:
         return 0
     by_ip: dict[str, list[CaseResult]] = {}

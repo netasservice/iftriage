@@ -174,6 +174,44 @@ def _po_result_with_members():
     return result
 
 
+def _member_result_with_siblings():
+    cases, _ = ingest_csv(FIXTURES / "sample_top20.csv")
+    member_case = next(case for case in cases if case.interface == "Po214")
+    member_case.interface = "Gi3/0/23"
+    result = CaseResult(case=member_case)
+    result.platform = Platform.IOS_XE
+    result.canonical_interface = "GigabitEthernet3/0/23"
+    result.parent_portchannel = "Po214"
+    result.stats = NormalizedInterfaceStats(link_status="up")
+    result.member_stats = {
+        "GigabitEthernet3/0/24": NormalizedInterfaceStats(link_status="up")
+    }
+    result.verdict = Verdict(
+        VerdictCategory.IGNORE,
+        "IGNORE — test reason for the reported member.",
+        member_findings={
+            "GigabitEthernet3/0/24": "PHYSICAL_MEDIA — test sibling reason."
+        },
+    )
+    return result
+
+
+def test_reports_label_siblings_as_context_for_a_member_case(tmp_path):
+    """The same member list means something different here: these are the
+    reported port's siblings, not the culprits behind its verdict."""
+    results, findings = _results()
+    results.append(_member_result_with_siblings())
+    meta = {"csv_file": "x.csv", "repoll_minutes": 10, "audit_log": "a.log"}
+
+    paths = render_report(results, findings, meta, "report_en", tmp_path)
+
+    txt = paths["txt"].read_text()
+    assert "Other members of Po214" in txt
+    assert "the verdict above is for Gi3/0/23 itself" in txt
+    assert "Member interfaces:" not in txt
+    assert "GigabitEthernet3/0/24: PHYSICAL_MEDIA — test sibling reason." in txt
+
+
 def test_reports_render_the_member_breakdown(tmp_path):
     results, findings = _results()
     results.append(_po_result_with_members())

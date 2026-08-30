@@ -131,11 +131,14 @@ def evaluate_case(
     member_stats: dict[str, NormalizedInterfaceStats] | None = None,
     member_repoll_stats: dict[str, NormalizedInterfaceStats] | None = None,
     member_errors: dict[str, str] | None = None,
+    parent_portchannel: str | None = None,
 ) -> Verdict:
     """Produce the verdict for one case. Pure function.
 
-    A case with member data (a port-channel whose members were sampled) is
-    judged member by member; every other case takes the single-interface path.
+    A port-channel with sampled members is judged member by member. A case that
+    is itself a member of a bundle (parent_portchannel set) keeps its own
+    single-interface verdict and carries its siblings as context. Every other
+    case takes the plain single-interface path.
     """
 
     if collection_error:
@@ -156,6 +159,19 @@ def evaluate_case(
     if (member_stats or member_errors) and classify_counter(
         case.counter
     ) is not CounterClass.TOTAL_TRAFFIC:
+        if parent_portchannel:
+            return _member_case_verdict(
+                case,
+                stats,
+                repoll_stats,
+                repoll_minutes,
+                thresholds,
+                list(parse_errors),
+                parent_portchannel,
+                member_stats or {},
+                member_repoll_stats or {},
+                member_errors or {},
+            )
         return _portchannel_verdict(
             case,
             stats,
@@ -411,6 +427,72 @@ _ACTIONABLE = (
 )
 
 
+def _member_findings(
+    counter_name: str,
+    repoll_minutes: float | None,
+    thresholds: Thresholds,
+    member_stats: dict[str, NormalizedInterfaceStats],
+    member_repoll_stats: dict[str, NormalizedInterfaceStats],
+    member_errors: dict[str, str],
+) -> tuple[dict[str, Verdict], dict[str, str]]:
+    """Evaluate every sampled member; return their verdicts and one-line
+    findings, with uncollectable members spelled out rather than omitted."""
+    verdicts = {
+        name: _evaluate_stats(
+            counter_name,
+            stats,
+            member_repoll_stats.get(name),
+            repoll_minutes,
+            thresholds,
+            [],
+        )
+        for name, stats in member_stats.items()
+    }
+    findings = {name: verdict.reason for name, verdict in verdicts.items()}
+    for name, error in member_errors.items():
+        findings[name] = f"not evaluated: {error}"
+    return verdicts, findings
+
+
+def _member_case_verdict(
+    case: InterfaceCase,
+    stats: NormalizedInterfaceStats,
+    repoll_stats: NormalizedInterfaceStats | None,
+    repoll_minutes: float | None,
+    thresholds: Thresholds,
+    parse_errors: list[str],
+    parent_portchannel: str,
+    member_stats: dict[str, NormalizedInterfaceStats],
+    member_repoll_stats: dict[str, NormalizedInterfaceStats],
+    member_errors: dict[str, str],
+) -> Verdict:
+    """Judge a case that is a member of a port-channel.
+
+    The CSV asked about this interface, so the verdict is this interface's own
+    — identical to the plain single-interface path. Its sibling members were
+    sampled because a LAG fault often sits on a neighbouring link, but they are
+    context only: a dirty or uncollectable sibling never changes the category
+    of the port that was actually reported.
+    """
+    verdict = _evaluate_stats(
+        case.counter, stats, repoll_stats, repoll_minutes, thresholds, parse_errors
+    )
+    _, findings = _member_findings(
+        case.counter,
+        repoll_minutes,
+        thresholds,
+        member_stats,
+        member_repoll_stats,
+        member_errors,
+    )
+    verdict.details.append(
+        f"member of port-channel {parent_portchannel}: the members listed are "
+        f"context; the verdict is for {case.interface} itself"
+    )
+    verdict.member_findings = findings
+    return verdict
+
+
 def _portchannel_verdict(
     case: InterfaceCase,
     stats: NormalizedInterfaceStats,
@@ -430,20 +512,14 @@ def _portchannel_verdict(
     single-interface logic; the verdict names the culpable member, and any
     member that could not be evaluated fails the bundle closed.
     """
-    member_verdicts = {
-        name: _evaluate_stats(
-            case.counter,
-            m_stats,
-            member_repoll_stats.get(name),
-            repoll_minutes,
-            thresholds,
-            [],
-        )
-        for name, m_stats in member_stats.items()
-    }
-    findings = {name: verdict.reason for name, verdict in member_verdicts.items()}
-    for name, error in member_errors.items():
-        findings[name] = f"not evaluated: {error}"
+    member_verdicts, findings = _member_findings(
+        case.counter,
+        repoll_minutes,
+        thresholds,
+        member_stats,
+        member_repoll_stats,
+        member_errors,
+    )
 
     bundle = _evaluate_stats(
         case.counter,

@@ -96,22 +96,31 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
    CPU cannot be read — is skipped, fail closed), then run the per-interface
    command set from the platform profile (device-level commands once per
    device), parse into `NormalizedInterfaceStats`. The raw output kept as
-   evidence is bounded; the text handed to parsers is not.
+   evidence is bounded; the text handed to parsers is not. The port-channel
+   summary comes last and is conditional: it is sent only once every case's
+   interface output is in hand and one of them proves relevant (a port-channel
+   by name, or a port that named its parent bundle). IOS-XE cannot answer that
+   from `show interfaces`, so it always sends the summary.
 4. Abort gate: if the first pass collected nothing at all (every live case
    failed, none deliberately skipped), the run aborts here — exit code 3, no
    re-poll wait, no report.
-5. Member pass: for each case that is a port-channel, reconnect to the device
-   and run the per-interface command set on every member discovered in the
-   pass-1 summary (member names are validated by `normalize.py` before any
-   template substitution; the session's allow-list is scoped to the member
-   commands). Failures land in `member_errors`, never on the pass-1 sample.
+5. Member pass: for each case that touches a port-channel — as the bundle or
+   as one of its members, resolved in both directions from the pass-1 summary —
+   reconnect to the device and run the per-interface command set on every
+   member of that bundle (member names are validated by `normalize.py` before
+   any template substitution; the session's allow-list is scoped to the member
+   commands). A member case skips itself; a member shared by two cases on one
+   device is sampled once. Failures land in `member_errors`, never on the
+   pass-1 sample.
 6. Optional re-poll pass after N minutes re-runs the counter commands (for the
    case interface and for every sampled member) to answer: still incrementing
    NOW, or historical?
 7. `rules.py` produces one `Verdict` per case — a port-channel with member
-   data is judged member by member and the verdict names the culpable member;
-   port-channel members listed alongside their Po are marked duplicates;
-   recurrence counts come from history.
+   data is judged member by member and the verdict names the culpable member,
+   while a case that is itself a member keeps its own single-interface verdict
+   and carries its siblings as context only; port-channel members listed
+   alongside their Po are marked duplicates; recurrence counts come from
+   history.
 8. Results persist to SQLite; Jinja2 renders the HTML + text report and the
    enriched CSV echoes the input table with the analysis columns appended (in
    the original row order); the audit log holds every command sent.

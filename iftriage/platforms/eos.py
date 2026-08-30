@@ -30,6 +30,9 @@ def _parse_show_interfaces(raw: str) -> dict:
         admin = match.group(2).strip().lower()
         result["link_status"] = "up" if admin == "up" else admin
         result["protocol_status"] = match.group(3).strip().lower()
+    match = re.search(r"^\s*Member of (\S+)", raw, re.MULTILINE)
+    if match:
+        result["member_of_portchannel"] = match.group(1)
     match = re.search(r"(Full|Half|Auto)-duplex,\s*([^,\n]+)", raw)
     if match:
         result["duplex"] = match.group(1).lower()
@@ -111,7 +114,7 @@ class EosProfile(PlatformProfile):
         "counters": "show interfaces {interface} counters errors",
         "transceiver": "show interfaces {interface} transceiver",
         "neighbors": "show lldp neighbors {interface} detail",
-        "portchannel": "show port-channel summary",
+        "portchannel": "show port-channel dense",
         "logging": "show logging | include {interface}",
     }
 

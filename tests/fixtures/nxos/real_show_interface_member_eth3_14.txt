@@ -1,0 +1,46 @@
+switch_nexus# show interface Ethernet3/14
+Ethernet3/14 is up
+admin state is up, Dedicated Interface
+  Belongs to Po21
+  Hardware: 10000 Ethernet, address: 0011.22aa.bb03 (bia 0011.22aa.bb03)
+  Description: DIST-TRUNK-PO21-MEMBER-A
+  MTU 1500 bytes, BW 10000000 Kbit, DLY 10 usec
+  reliability 255/255, txload 4/255, rxload 1/255
+  Encapsulation ARPA, medium is broadcast
+  Port mode is trunk
+  full-duplex, 10 Gb/s, media type is 10G
+  Beacon is turned off
+  Auto-Negotiation is turned off
+  Input flow-control is off, output flow-control is off
+  Auto-mdix is turned off
+  Rate mode is dedicated
+  Switchport monitor is off
+  EtherType is 0x8100
+  EEE (efficient-ethernet) : n/a
+  Last link flapped 66week(s) 4day(s)
+  Last clearing of "show interface" counters 114w3d
+  1 interface resets
+  Load-Interval #1: 30 seconds
+    30 seconds input rate 66299520 bits/sec, 19017 packets/sec
+    30 seconds output rate 186471328 bits/sec, 46690 packets/sec
+    input rate 66.29 Mbps, 19.02 Kpps; output rate 186.47 Mbps, 46.69 Kpps
+  Load-Interval #2: 5 minute (300 seconds)
+    300 seconds input rate 70449104 bits/sec, 19584 packets/sec
+    300 seconds output rate 180443920 bits/sec, 46125 packets/sec
+    input rate 70.45 Mbps, 19.58 Kpps; output rate 180.44 Mbps, 46.12 Kpps
+  RX
+    4288579229411 unicast packets  2116027675 multicast packets  991505018 broadcast packets
+    4290111871791 input packets  4542088254682895 bytes
+    0 jumbo packets  0 storm suppression packets
+    0 runts  0 giants  0 CRC/FCS  0 no buffer
+    0 input error  0 short frame  0 overrun   0 underrun  0 ignored
+    0 watchdog  0 bad etype drop  0 bad proto drop  0 if down drop
+    0 input with dribble  45158036 input discard
+    0 Rx pause
+  TX
+    2638735311304 unicast packets  1744528709 multicast packets  1579771456 broadcast packets
+    2641707249780 output packets  2224011741733068 bytes
+    0 jumbo packets
+    0 output error  0 collision  0 deferred  0 late collision
+    0 lost carrier  0 no carrier  0 babble  6240 output discard
+    0 Tx pause

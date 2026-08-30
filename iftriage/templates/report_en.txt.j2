@@ -24,7 +24,7 @@ CASES
   Note: re-poll skipped ({{ r.repoll_skip_reason }}); verdict uses the first sample only, no delta.
 {% endif %}
 {% if r.verdict and r.verdict.member_findings %}
-  Member interfaces:
+  {% if r.parent_portchannel %}Other members of {{ r.parent_portchannel }} (context — the verdict above is for {{ r.case.interface }} itself):{% else %}Member interfaces:{% endif %}
 {% for member, finding in r.verdict.member_findings.items() %}
     - {{ member }}: {{ finding }}
 {% endfor %}
