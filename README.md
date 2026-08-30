@@ -394,7 +394,12 @@ thresholds.
 thresholds:
   # Normalized error rate = error_delta / packet_delta (repoll) or errors/packets lifetime.
   rate_high: 1.0e-4      # >= 100 errors per million frames -> high
-  rate_warn: 1.0e-5      # >= 10 errors per million frames  -> warn
+  # The warn level is what discard counters (InDiscards/OutDiscards) are judged
+  # against: below 1% of the frames, dropped-but-intact frames are operational
+  # noise, not a capacity problem worth escalating. It sits ABOVE rate_high on
+  # purpose -- discards tolerate far more than receive errors do. Lowering it
+  # below rate_high re-enables the moderate-rate branch for receive errors.
+  rate_warn: 1.0e-2      # >= 1% of frames -> warn (discard escalation floor)
   dom_rx_low_dbm: -14.0  # DOM receive power below this -> out of range
   dom_rx_high_dbm: 2.0   # DOM receive power above this -> out of range
 
@@ -436,8 +441,8 @@ report:
 |---|---|
 | `PHYSICAL_MEDIA` | Real CRC/FCS at meaningful rate, DOM out of range, late-col on legacy half-duplex — inspect cable/transceiver/path |
 | `CONFIG_ISSUE` | Duplex mismatch confirmed (late-col against a full-duplex end) — fixed via CLI |
-| `CAPACITY` | Discards under load — saturation or policy, not media |
-| `IGNORE` | Negligible normalized rate / flat on re-poll / not an error counter |
+| `CAPACITY` | Discards at or above 1% of the frames — saturation or policy, not media |
+| `IGNORE` | Negligible normalized rate (discards below 1%) / flat on re-poll / not an error counter |
 | `UNVERIFIED` | Device unreachable / auth failed / required an enable secret that was not provided — CSV data only |
 | `PARSE_ERROR` | Output did not parse or critical fields missing (fail closed) |
 

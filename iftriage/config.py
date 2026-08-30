@@ -11,7 +11,7 @@ import yaml
 @dataclass
 class Thresholds:
     rate_high: float = 1.0e-4
-    rate_warn: float = 1.0e-5
+    rate_warn: float = 1.0e-2
     dom_rx_low_dbm: float = -14.0
     dom_rx_high_dbm: float = 2.0
 

@@ -236,7 +236,7 @@ DEVICES: dict[str, DeviceScript] = {
         # capture's CRC counters are cleared — nothing is wrong with the media.
         edits=[("912 CRC", "0 CRC"), ("912 input error", "0 input error")],
         repoll_edits=[
-            ("388 input discard", "1628 input discard"),
+            ("388 input discard", "3988 input discard"),
             ("89425035 input packets", "89605035 input packets"),
         ],
     ),

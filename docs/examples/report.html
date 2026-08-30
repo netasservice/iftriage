@@ -499,7 +499,7 @@ Group  Port-channel  Protocol    Ports
     &nbsp;<strong>sw-core-01</strong> — Eth4/15
     (InDiscards, Δ24h=286)
   </div>
-<div class="muted">UPLINK-TO-CORE</div>  <p>CAPACITY — 388 input discards at 0.6889% (6,889 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+1,240 in 10 min).</p>
+<div class="muted">UPLINK-TO-CORE</div>  <p>CAPACITY — 388 input discards at 2.0000% (20,000 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+3,600 in 10 min).</p>
   <details><summary>Raw evidence (8 commands)</summary>
     <p class="muted">cpu</p>
     <pre>Load average:   1 minute: 0.38   5 minutes: 0.32   15 minutes: 0.28
@@ -561,7 +561,7 @@ admin state is up, Dedicated Interface
     0 runts  0 giants  0 CRC  0 no buffer
     0 input error  0 short frame  0 overrun   0 underrun  0 ignored
     0 watchdog  0 bad etype drop  0 bad proto drop  0 if down drop
-    0 input with dribble  1628 input discard
+    0 input with dribble  3988 input discard
     0 Rx pause
   TX
     91234567 unicast packets  234567 multicast packets  4567 broadcast packets

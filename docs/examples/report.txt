@@ -23,7 +23,7 @@ CASES
   Data-quality flags: negative_delta
 --------------------------------------------------------------------------------
 [CAPACITY] sw-core-01 Eth4/15 (InDiscards, delta24h=286)
-  CAPACITY — 388 input discards at 0.6889% (6,889 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+1,240 in 10 min).
+  CAPACITY — 388 input discards at 2.0000% (20,000 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+3,600 in 10 min).
 --------------------------------------------------------------------------------
 [PARSE_ERROR] sw-acc-01 Gi1/0/47 (Rcv-Err, delta24h=918)
   PARSE_ERROR — critical field(s) input_errors, crc_errors, input_packets, link_status could not be parsed from device output. Refusing to guess (fail closed).
