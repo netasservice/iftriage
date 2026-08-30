@@ -41,7 +41,11 @@ The example below is a complete run of eight cases across seven switches. Every
 artifact in [`docs/examples/`](docs/examples/) was produced by running iftriage
 itself; the devices are simulated by replaying the sanitized captures in
 `tests/fixtures/`, so the timestamps are compressed but every command, verdict
-string, and rendered file is the tool's real output.
+string, and rendered file is the tool's real output. Reproduce them with
+`python scripts/regen_examples.py` — only the transport under `session.py` is
+replaced, so the allow-list, the prompt guard and the audit log doing the work
+are the production ones. CI fails if the committed artifacts drift from what
+the tool produces today.
 
 **1. Dry run first** — see the exact commands, connect to nothing
 ([full output](docs/examples/dry_run.txt)):
@@ -144,13 +148,14 @@ and four needed no action at all — and each answer carries its evidence.
 ```
 2026-08-29T20:29:21+00:00 | 192.0.2.12 | <connected>
 2026-08-29T20:29:21+00:00 | 192.0.2.12 | <enable elevation>
+2026-08-29T20:29:21+00:00 | 192.0.2.12 | show processes cpu | include CPU utilization
 2026-08-29T20:29:21+00:00 | 192.0.2.12 | show version
 2026-08-29T20:29:21+00:00 | 192.0.2.12 | show interfaces GigabitEthernet3/0/20
 2026-08-29T20:29:21+00:00 | 192.0.2.12 | show interfaces GigabitEthernet3/0/20 counters errors
 2026-08-29T20:29:21+00:00 | 192.0.2.12 | show interfaces GigabitEthernet3/0/20 transceiver detail
 2026-08-29T20:29:21+00:00 | 192.0.2.12 | show cdp neighbors GigabitEthernet3/0/20 detail
-2026-08-29T20:29:21+00:00 | 192.0.2.12 | show etherchannel summary
 2026-08-29T20:29:21+00:00 | 192.0.2.12 | show logging | include GigabitEthernet3/0/20
+2026-08-29T20:29:21+00:00 | 192.0.2.12 | show etherchannel summary
 2026-08-29T20:29:21+00:00 | 192.0.2.12 | <disconnected>
 ```
 

@@ -54,24 +54,90 @@ Poll timestamps span 2026-08-28T02:10:00 .. 2026-08-28T05:20:00: the 24h windows
 <div class="muted">ACCESS-FLOOR3-PRINTER</div>  <p>PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over live re-poll window: real receive errors at meaningful rate. CRC/FCS accounts for 3,271 of 3,271 input errors. Inspect cable/transceiver/path. Counter still incrementing (+412 in 10 min).</p>
   <p class="muted">Recurrence: this interface has appeared in 2
   ingested top-20 lists.</p>
-  <details><summary>Raw evidence (7 commands)</summary>
+  <details><summary>Raw evidence (8 commands)</summary>
+    <p class="muted">cpu</p>
+    <pre>CPU utilization for five seconds: 12%/4%; one minute: 15%; five minutes: 14%
+</pre>
     <p class="muted">version</p>
-    <pre>Cisco IOS XE Software, Version 17.06.05
+    <pre>switch_catalyst#show version
+Cisco IOS XE Software, Version 17.06.05
 Cisco IOS Software [Bengaluru], Catalyst L3 Switch Software (CAT9K_IOSXE), Version 17.6.5, RELEASE SOFTWARE (fc2)
 Technical Support: http://www.cisco.com/techsupport
-Copyright (c) 1986-2022 by Cisco Systems, Inc.
+Copyright (c) 1986-2023 by Cisco Systems, Inc.
+Compiled Wed 25-Jan-23 16:15 by mcpre
 
-ROM: IOS-XE ROMMON
-BOOTLDR: System Bootstrap, Version 17.6.1r
 
-switch1 uptime is 41 weeks, 3 days, 2 hours, 11 minutes
-Uptime for this control processor is 41 weeks, 3 days, 2 hours, 13 minutes
+Cisco IOS-XE software, Copyright (c) 2005-2023 by cisco Systems, Inc.
+All rights reserved.  Certain components of Cisco IOS-XE software are
+licensed under the GNU General Public License ("GPL") Version 2.0.  The
+software code licensed under GPL Version 2.0 is free software that comes
+with ABSOLUTELY NO WARRANTY.  You can redistribute and/or modify such
+GPL code under the terms of GPL Version 2.0.  For more details, see the
+documentation or "License Notice" file accompanying the IOS-XE software,
+or the applicable URL provided on the flyer accompanying the IOS-XE
+software.
 
-cisco C9300-48P (X86) processor with 1338934K/6147K bytes of memory.
-Processor board ID FCW0000TEST4
 
-Model Number                       : C9300-48P
-System Serial Number               : FCW0000TEST4
+ROM: IOS-XE ROMMONBOOTLDR: System Bootstrap, Version 17.6.1r[FC2], RELEASE SOFTWARE (P)
+
+switch_catalyst uptime is 2 years, 49 weeks, 2 days, 26 minutes
+Uptime for this control processor is 2 years, 24 weeks, 23 hours, 9 minutes
+System returned to ROM by SSO Switchover at 12:13:00 EDT Tue Apr 4 2023
+System restarted at 21:24:34 EDT Sun Mar 10 2024
+System image file is "bootflash:packages.conf"
+Last reload reason: PowerOn
+
+
+
+This product contains cryptographic features and is subject to United
+States and local country laws governing import, export, transfer and
+use. Delivery of Cisco cryptographic products does not imply
+third-party authority to import, export, distribute or use encryption.
+Importers, exporters, distributors and users are responsible for
+compliance with U.S. and local country laws. By using this product you
+agree to comply with applicable laws and regulations. If you are unable
+to comply with U.S. and local laws, return this product immediately.
+
+A summary of U.S. laws governing Cisco cryptographic products may be found at:
+http://www.cisco.com/wwl/export/crypto/tool/stqrg.html
+
+If you require further assistance please contact us by sending email to
+export@cisco.com.
+
+
+Technology Package License Information:
+
+------------------------------------------------------------------------------
+Technology-package                                     Technology-package
+Current                         Type                   Next reboot
+------------------------------------------------------------------------------
+network-advantage       Smart License                    network-advantage
+dna-advantage           Subscription Smart License       dna-advantage
+AIR License Level: AIR DNA Advantage
+Next reload AIR license Level: AIR DNA Advantage
+
+Smart Licensing Status: Registration Not Applicable/Not Applicable
+
+cisco C9410R (X86) processor (revision V01) with 1841308K/6147K bytes of memory.
+Processor board ID FXS0000TEST1
+6 Virtual Ethernet interfaces
+192 Gigabit Ethernet interfaces
+208 Ten Gigabit Ethernet interfaces
+4 TwentyFive Gigabit Ethernet interfaces
+4 Forty Gigabit Ethernet interfaces
+32768K bytes of non-volatile configuration memory.
+15995680K bytes of physical memory.
+11161600K bytes of Bootflash at bootflash:.
+16384000K bytes of Crash Files at crashinfo:.
+234430023K bytes of SATA hard disk at disk0:.
+
+Base Ethernet MAC Address          : 00:11:22:aa:bb:c0
+Motherboard Assembly Number        : 18BFB
+Motherboard Serial Number          : FOC0000TEST3
+Model Revision Number              : V02
+Motherboard Revision Number        : 5
+Model Number                       : C9410R
+System Serial Number               : FXS0000TEST2
 </pre>
     <p class="muted">interface</p>
     <pre>GigabitEthernet3/0/20 is up, line protocol is up (connected)
@@ -136,6 +202,10 @@ Management address(es):
 
 Total cdp entries displayed : 1
 </pre>
+    <p class="muted">logging</p>
+    <pre>Aug 24 02:11:41.520: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to down
+Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to up
+</pre>
     <p class="muted">portchannel</p>
     <pre>Flags:  D - down        P - bundled in port-channel
         I - stand-alone s - suspended
@@ -150,10 +220,6 @@ Group  Port-channel  Protocol    Ports
 ------+-------------+-----------+-----------------------------------------------
 214    Po214(SU)         LACP      Gi3/0/23(P)     Gi3/0/24(P)
 </pre>
-    <p class="muted">logging</p>
-    <pre>Aug 24 02:11:41.520: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to down
-Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed state to up
-</pre>
   </details>
 </div>
 <div class="case">
@@ -167,6 +233,9 @@ Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet3/0/20, changed st
   <p class="muted">Recurrence: this interface has appeared in 2
   ingested top-20 lists.</p>
   <details><summary>Raw evidence (7 commands)</summary>
+    <p class="muted">cpu</p>
+    <pre>%Cpu(s):  4.7 us,  2.9 sy,  0.0 ni, 92.1 id,  0.2 wa,  0.0 hi,  0.1 si,  0.0 st
+</pre>
     <p class="muted">version</p>
     <pre>Arista DCS-7808-CH
 Hardware version: 12.00
@@ -235,10 +304,6 @@ Et4/15               31.42    3.28     7.06     -2.63     -15.21       0:00:03 a
   - Management Address Subtype: IPv4
     Management Address        : 10.0.1.1
 </pre>
-    <p class="muted">portchannel</p>
-    <pre>Port Channel Po214:
-  Active Ports: Ethernet4/16 Ethernet4/17
-</pre>
     <p class="muted">logging</p>
     <pre></pre>
   </details>
@@ -252,7 +317,10 @@ Et4/15               31.42    3.28     7.06     -2.63     -15.21       0:00:03 a
   </div>
 <div class="muted">ACCESS-PHONE-RACK01-RU01</div>  <p>CONFIG_ISSUE — 38,445,927 late collisions on a half-duplex link while neighbor SEP001122AABB99 reports full duplex: duplex mismatch confirmed. Fix via CLI (align both ends), not by touching media. Counter still incrementing (+3,096 in 10 min).</p>
   <p class="muted">Data-quality flags: negative_delta</p>
-  <details><summary>Raw evidence (7 commands)</summary>
+  <details><summary>Raw evidence (8 commands)</summary>
+    <p class="muted">cpu</p>
+    <pre>CPU utilization for five seconds: 12%/4%; one minute: 15%; five minutes: 14%
+</pre>
     <p class="muted">version</p>
     <pre>switch_catalyst#show version
 Cisco IOS XE Software, Version 17.06.05
@@ -354,7 +422,7 @@ GigabitEthernet3/0/20 is up, line protocol is up (connected)
   Output queue: 0/40 (size/max)
   30 second input rate 27000 bits/sec, 9 packets/sec
   30 second output rate 52000 bits/sec, 16 packets/sec
-     92971720 packets input, 13935173874 bytes, 0 no buffer
+     92983104 packets input, 13935173874 bytes, 0 no buffer
      Received 176683 broadcasts (171017 multicasts)
      0 runts, 0 giants, 0 throttles
      0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -364,7 +432,7 @@ GigabitEthernet3/0/20 is up, line protocol is up (connected)
      Output 1030318 broadcasts (3421639 multicasts)
      936685 output errors, 2686094 collisions, 0 interface resets
      0 unknown protocol drops
-     0 babbles, 38449012 late collision, 0 deferred
+     0 babbles, 38449023 late collision, 0 deferred
      0 lost carrier, 0 no carrier, 0 pause output
      0 output buffer failures, 0 output buffers swapped out
 </pre>
@@ -403,32 +471,24 @@ Power request levels are:6086 0 0 0 0
 
 Total cdp entries displayed : 1
 </pre>
+    <p class="muted">logging</p>
+    <pre>switch_catalyst#show logging | include GigabitEthernet3/0/20
+Aug 26 2026 18:30:29.655 EDT: %CDP-4-DUPLEX_MISMATCH: duplex mismatch discovered on GigabitEthernet3/0/20 (not full duplex), with SEP001122AABB99 Port 1 (full duplex).
+Aug 26 2026 18:31:29.668 EDT: %CDP-4-DUPLEX_MISMATCH: duplex mismatch discovered on GigabitEthernet3/0/20 (not full duplex), with SEP001122AABB99 Port 1 (full duplex).
+</pre>
     <p class="muted">portchannel</p>
-    <pre>switch_catalyst#show etherchannel summary
-Flags:  D - down        P - bundled in port-channel
+    <pre>Flags:  D - down        P - bundled in port-channel
         I - stand-alone s - suspended
         H - Hot-standby (LACP only)
         R - Layer3      S - Layer2
         U - in use      f - failed to allocate aggregator
 
-        M - not in use, minimum links not met
-        u - unsuitable for bundling
-        w - waiting to be aggregated
-        d - default port
-
-        A - formed by Auto LAG
-
-
-Number of channel-groups in use: 0
-Number of aggregators:           0
+Number of channel-groups in use: 1
+Number of aggregators:           1
 
 Group  Port-channel  Protocol    Ports
 ------+-------------+-----------+-----------------------------------------------
-</pre>
-    <p class="muted">logging</p>
-    <pre>switch_catalyst#show logging | include GigabitEthernet3/0/20
-Aug 26 2026 18:30:29.655 EDT: %CDP-4-DUPLEX_MISMATCH: duplex mismatch discovered on GigabitEthernet3/0/20 (not full duplex), with SEP001122AABB99 Port 1 (full duplex).
-Aug 26 2026 18:31:29.668 EDT: %CDP-4-DUPLEX_MISMATCH: duplex mismatch discovered on GigabitEthernet3/0/20 (not full duplex), with SEP001122AABB99 Port 1 (full duplex).
+214    Po214(SU)         LACP      Gi3/0/23(P)     Gi3/0/24(P)
 </pre>
   </details>
 </div>
@@ -441,6 +501,13 @@ Aug 26 2026 18:31:29.668 EDT: %CDP-4-DUPLEX_MISMATCH: duplex mismatch discovered
   </div>
 <div class="muted">UPLINK-TO-CORE</div>  <p>CAPACITY — 388 input discards at 0.6889% (6,889 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+1,240 in 10 min).</p>
   <details><summary>Raw evidence (8 commands)</summary>
+    <p class="muted">cpu</p>
+    <pre>Load average:   1 minute: 0.38   5 minutes: 0.32   15 minutes: 0.28
+Processes   :   721 total, 1 running
+CPU states  :   2.55% user,   3.25% kernel,   94.20% idle
+        CPU0 states  :   1.00% user,   2.00% kernel,   97.00% idle
+Memory usage:   16400380K total,   6134936K used,  10265444K free
+</pre>
     <p class="muted">version</p>
     <pre>Cisco Nexus Operating System (NX-OS) Software
 TAC support: http://www.cisco.com/tac
@@ -491,8 +558,8 @@ admin state is up, Dedicated Interface
     88213456 unicast packets  1203456 multicast packets  8123 broadcast packets
     89605035 input packets  71234567890 bytes
     0 jumbo packets  0 storm suppression packets
-    0 runts  0 giants  912 CRC  0 no buffer
-    912 input error  0 short frame  0 overrun   0 underrun  0 ignored
+    0 runts  0 giants  0 CRC  0 no buffer
+    0 input error  0 short frame  0 overrun   0 underrun  0 ignored
     0 watchdog  0 bad etype drop  0 bad proto drop  0 if down drop
     0 input with dribble  1628 input discard
     0 Rx pause
@@ -538,48 +605,53 @@ Eth4/15               0        912          0        912          0          57
   Note: ++  high-alarm; +  high-warning; --  low-alarm; -  low-warning
 </pre>
     <p class="muted">neighbors_lldp</p>
-    <pre>switch_nexus# show lldp neighbors interface eth4/15 detail
-Capability codes:
-  (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
-  (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
-Device ID            Local Intf      Hold-time  Capability  Port ID
+    <pre>----------------------------------------
+Device ID:core-sw-01(FDO12345678)
+System Name: core-sw-01
 
-Chassis id: 0011.22aa.bb05
-Port id: Ethernet45
-Local Port id: Eth4/15
-Port Description: UPLINK-ARISTA E4/15
-System Name: arista switch
-System Description: Arista Networks EOS version 4.32.5.1M running on an Arista Networks DCS-7280SR-48C6
-Time remaining: 106 seconds
-System Capabilities: B, R
-Enabled Capabilities: B, R
-Management Address: 192.0.2.24
-Vlan ID: 1
+Interface address(es):
+    IPv4 Address: 10.0.0.1
+Platform: N9K-C9336C-FX2, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
+Interface: Ethernet4/15, Port ID (outgoing port): Ethernet1/33
+Holdtime: 176 sec
 
-Total entries displayed: 1
+Version:
+Cisco Nexus Operating System (NX-OS) Software, Version 9.3(10)
+
+Advertisement Version: 2
+
+Native VLAN: 1
+Duplex: full
+MTU: 1500
+Physical Location: snmplocation
+Mgmt address(es):
+    IPv4 Address: 10.0.0.1
 </pre>
     <p class="muted">neighbors</p>
-    <pre>switch_nexus# show cdp neighbors interface eth4/15 detail
-Note: CDP Neighbor entry not found
-</pre>
-    <p class="muted">portchannel</p>
-    <pre>Flags:  D - Down        P - Up in port-channel (members)
-        I - Individual  H - Hot-standby (LACP only)
-        s - Suspended   r - Module-removed
-        b - BFD Session Wait
-        S - Switched    R - Routed
-        U - Up (port-channel)
-        p - Up in delay-lacp mode (member)
-        M - Not in use. Min-links not met
---------------------------------------------------------------------------------
-Group Port-       Type     Protocol  Member Ports
-      Channel
---------------------------------------------------------------------------------
-214   Po214(SU)   Eth      LACP      Eth4/16(P)   Eth4/17(P)
+    <pre>----------------------------------------
+Device ID:core-sw-01(FDO12345678)
+System Name: core-sw-01
+
+Interface address(es):
+    IPv4 Address: 10.0.0.1
+Platform: N9K-C9336C-FX2, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
+Interface: Ethernet4/15, Port ID (outgoing port): Ethernet1/33
+Holdtime: 176 sec
+
+Version:
+Cisco Nexus Operating System (NX-OS) Software, Version 9.3(10)
+
+Advertisement Version: 2
+
+Native VLAN: 1
+Duplex: full
+MTU: 1500
+Physical Location: snmplocation
+Mgmt address(es):
+    IPv4 Address: 10.0.0.1
 </pre>
     <p class="muted">logging</p>
-    <pre>switch_nexus# show logging logfile | include Ethernet4/15
-</pre>
+    <pre></pre>
   </details>
 </div>
 <div class="case">
@@ -590,41 +662,109 @@ Group Port-       Type     Protocol  Member Ports
     (Rcv-Err, Δ24h=918)
   </div>
 <div class="muted">DECOMMISSIONED</div>  <p>PARSE_ERROR — critical field(s) input_errors, crc_errors, input_packets, link_status could not be parsed from device output. Refusing to guess (fail closed).</p>
-  <details><summary>Raw evidence (7 commands)</summary>
+  <details><summary>Raw evidence (8 commands)</summary>
+    <p class="muted">cpu</p>
+    <pre>CPU utilization for five seconds: 12%/4%; one minute: 15%; five minutes: 14%
+</pre>
     <p class="muted">version</p>
-    <pre>Cisco IOS XE Software, Version 17.06.05
+    <pre>switch_catalyst#show version
+Cisco IOS XE Software, Version 17.06.05
 Cisco IOS Software [Bengaluru], Catalyst L3 Switch Software (CAT9K_IOSXE), Version 17.6.5, RELEASE SOFTWARE (fc2)
 Technical Support: http://www.cisco.com/techsupport
-Copyright (c) 1986-2022 by Cisco Systems, Inc.
+Copyright (c) 1986-2023 by Cisco Systems, Inc.
+Compiled Wed 25-Jan-23 16:15 by mcpre
 
-ROM: IOS-XE ROMMON
-BOOTLDR: System Bootstrap, Version 17.6.1r
 
-switch1 uptime is 41 weeks, 3 days, 2 hours, 11 minutes
-Uptime for this control processor is 41 weeks, 3 days, 2 hours, 13 minutes
+Cisco IOS-XE software, Copyright (c) 2005-2023 by cisco Systems, Inc.
+All rights reserved.  Certain components of Cisco IOS-XE software are
+licensed under the GNU General Public License ("GPL") Version 2.0.  The
+software code licensed under GPL Version 2.0 is free software that comes
+with ABSOLUTELY NO WARRANTY.  You can redistribute and/or modify such
+GPL code under the terms of GPL Version 2.0.  For more details, see the
+documentation or "License Notice" file accompanying the IOS-XE software,
+or the applicable URL provided on the flyer accompanying the IOS-XE
+software.
 
-cisco C9300-48P (X86) processor with 1338934K/6147K bytes of memory.
-Processor board ID FCW0000TEST4
 
-Model Number                       : C9300-48P
-System Serial Number               : FCW0000TEST4
+ROM: IOS-XE ROMMONBOOTLDR: System Bootstrap, Version 17.6.1r[FC2], RELEASE SOFTWARE (P)
+
+switch_catalyst uptime is 2 years, 49 weeks, 2 days, 26 minutes
+Uptime for this control processor is 2 years, 24 weeks, 23 hours, 9 minutes
+System returned to ROM by SSO Switchover at 12:13:00 EDT Tue Apr 4 2023
+System restarted at 21:24:34 EDT Sun Mar 10 2024
+System image file is "bootflash:packages.conf"
+Last reload reason: PowerOn
+
+
+
+This product contains cryptographic features and is subject to United
+States and local country laws governing import, export, transfer and
+use. Delivery of Cisco cryptographic products does not imply
+third-party authority to import, export, distribute or use encryption.
+Importers, exporters, distributors and users are responsible for
+compliance with U.S. and local country laws. By using this product you
+agree to comply with applicable laws and regulations. If you are unable
+to comply with U.S. and local laws, return this product immediately.
+
+A summary of U.S. laws governing Cisco cryptographic products may be found at:
+http://www.cisco.com/wwl/export/crypto/tool/stqrg.html
+
+If you require further assistance please contact us by sending email to
+export@cisco.com.
+
+
+Technology Package License Information:
+
+------------------------------------------------------------------------------
+Technology-package                                     Technology-package
+Current                         Type                   Next reboot
+------------------------------------------------------------------------------
+network-advantage       Smart License                    network-advantage
+dna-advantage           Subscription Smart License       dna-advantage
+AIR License Level: AIR DNA Advantage
+Next reload AIR license Level: AIR DNA Advantage
+
+Smart Licensing Status: Registration Not Applicable/Not Applicable
+
+cisco C9410R (X86) processor (revision V01) with 1841308K/6147K bytes of memory.
+Processor board ID FXS0000TEST1
+6 Virtual Ethernet interfaces
+192 Gigabit Ethernet interfaces
+208 Ten Gigabit Ethernet interfaces
+4 TwentyFive Gigabit Ethernet interfaces
+4 Forty Gigabit Ethernet interfaces
+32768K bytes of non-volatile configuration memory.
+15995680K bytes of physical memory.
+11161600K bytes of Bootflash at bootflash:.
+16384000K bytes of Crash Files at crashinfo:.
+234430023K bytes of SATA hard disk at disk0:.
+
+Base Ethernet MAC Address          : 00:11:22:aa:bb:c0
+Motherboard Assembly Number        : 18BFB
+Motherboard Serial Number          : FOC0000TEST3
+Model Revision Number              : V02
+Motherboard Revision Number        : 5
+Model Number                       : C9410R
+System Serial Number               : FXS0000TEST2
 </pre>
     <p class="muted">interface</p>
-    <pre>                              ^
+    <pre>                                       ^
 % Invalid input detected at '^' marker.
 </pre>
     <p class="muted">counters</p>
-    <pre>                              ^
+    <pre>                                       ^
 % Invalid input detected at '^' marker.
 </pre>
     <p class="muted">transceiver</p>
-    <pre>                              ^
+    <pre>                                       ^
 % Invalid input detected at '^' marker.
 </pre>
     <p class="muted">neighbors</p>
-    <pre>                              ^
+    <pre>                                       ^
 % Invalid input detected at '^' marker.
 </pre>
+    <p class="muted">logging</p>
+    <pre></pre>
     <p class="muted">portchannel</p>
     <pre>Flags:  D - down        P - bundled in port-channel
         I - stand-alone s - suspended
@@ -639,8 +779,6 @@ Group  Port-channel  Protocol    Ports
 ------+-------------+-----------+-----------------------------------------------
 214    Po214(SU)         LACP      Gi3/0/23(P)     Gi3/0/24(P)
 </pre>
-    <p class="muted">logging</p>
-    <pre></pre>
   </details>
 </div>
 <div class="case">
@@ -660,29 +798,95 @@ Group  Port-channel  Protocol    Ports
     (Rx, Δ24h=1133561112)
   </div>
 <div class="muted">ACCESS-FLOOR2-AP</div>  <p>IGNORE — 'Rx' is a total traffic counter, not an error counter; a 24h increase is normal operation. No action.</p>
-  <details><summary>Raw evidence (7 commands)</summary>
+  <details><summary>Raw evidence (8 commands)</summary>
+    <p class="muted">cpu</p>
+    <pre>CPU utilization for five seconds: 12%/4%; one minute: 15%; five minutes: 14%
+</pre>
     <p class="muted">version</p>
-    <pre>Cisco IOS XE Software, Version 17.06.05
+    <pre>switch_catalyst#show version
+Cisco IOS XE Software, Version 17.06.05
 Cisco IOS Software [Bengaluru], Catalyst L3 Switch Software (CAT9K_IOSXE), Version 17.6.5, RELEASE SOFTWARE (fc2)
 Technical Support: http://www.cisco.com/techsupport
-Copyright (c) 1986-2022 by Cisco Systems, Inc.
+Copyright (c) 1986-2023 by Cisco Systems, Inc.
+Compiled Wed 25-Jan-23 16:15 by mcpre
 
-ROM: IOS-XE ROMMON
-BOOTLDR: System Bootstrap, Version 17.6.1r
 
-switch1 uptime is 41 weeks, 3 days, 2 hours, 11 minutes
-Uptime for this control processor is 41 weeks, 3 days, 2 hours, 13 minutes
+Cisco IOS-XE software, Copyright (c) 2005-2023 by cisco Systems, Inc.
+All rights reserved.  Certain components of Cisco IOS-XE software are
+licensed under the GNU General Public License ("GPL") Version 2.0.  The
+software code licensed under GPL Version 2.0 is free software that comes
+with ABSOLUTELY NO WARRANTY.  You can redistribute and/or modify such
+GPL code under the terms of GPL Version 2.0.  For more details, see the
+documentation or "License Notice" file accompanying the IOS-XE software,
+or the applicable URL provided on the flyer accompanying the IOS-XE
+software.
 
-cisco C9300-48P (X86) processor with 1338934K/6147K bytes of memory.
-Processor board ID FCW0000TEST4
 
-Model Number                       : C9300-48P
-System Serial Number               : FCW0000TEST4
+ROM: IOS-XE ROMMONBOOTLDR: System Bootstrap, Version 17.6.1r[FC2], RELEASE SOFTWARE (P)
+
+switch_catalyst uptime is 2 years, 49 weeks, 2 days, 26 minutes
+Uptime for this control processor is 2 years, 24 weeks, 23 hours, 9 minutes
+System returned to ROM by SSO Switchover at 12:13:00 EDT Tue Apr 4 2023
+System restarted at 21:24:34 EDT Sun Mar 10 2024
+System image file is "bootflash:packages.conf"
+Last reload reason: PowerOn
+
+
+
+This product contains cryptographic features and is subject to United
+States and local country laws governing import, export, transfer and
+use. Delivery of Cisco cryptographic products does not imply
+third-party authority to import, export, distribute or use encryption.
+Importers, exporters, distributors and users are responsible for
+compliance with U.S. and local country laws. By using this product you
+agree to comply with applicable laws and regulations. If you are unable
+to comply with U.S. and local laws, return this product immediately.
+
+A summary of U.S. laws governing Cisco cryptographic products may be found at:
+http://www.cisco.com/wwl/export/crypto/tool/stqrg.html
+
+If you require further assistance please contact us by sending email to
+export@cisco.com.
+
+
+Technology Package License Information:
+
+------------------------------------------------------------------------------
+Technology-package                                     Technology-package
+Current                         Type                   Next reboot
+------------------------------------------------------------------------------
+network-advantage       Smart License                    network-advantage
+dna-advantage           Subscription Smart License       dna-advantage
+AIR License Level: AIR DNA Advantage
+Next reload AIR license Level: AIR DNA Advantage
+
+Smart Licensing Status: Registration Not Applicable/Not Applicable
+
+cisco C9410R (X86) processor (revision V01) with 1841308K/6147K bytes of memory.
+Processor board ID FXS0000TEST1
+6 Virtual Ethernet interfaces
+192 Gigabit Ethernet interfaces
+208 Ten Gigabit Ethernet interfaces
+4 TwentyFive Gigabit Ethernet interfaces
+4 Forty Gigabit Ethernet interfaces
+32768K bytes of non-volatile configuration memory.
+15995680K bytes of physical memory.
+11161600K bytes of Bootflash at bootflash:.
+16384000K bytes of Crash Files at crashinfo:.
+234430023K bytes of SATA hard disk at disk0:.
+
+Base Ethernet MAC Address          : 00:11:22:aa:bb:c0
+Motherboard Assembly Number        : 18BFB
+Motherboard Serial Number          : FOC0000TEST3
+Model Revision Number              : V02
+Motherboard Revision Number        : 5
+Model Number                       : C9410R
+System Serial Number               : FXS0000TEST2
 </pre>
     <p class="muted">interface</p>
     <pre>GigabitEthernet2/0/1 is up, line protocol is up (connected)
   Hardware is Gigabit Ethernet, address is 70b3.17aa.0114 (bia 70b3.17aa.0114)
-  Description: ACCESS-FLOOR3-PRINTER
+  Description: ACCESS-FLOOR2-AP
   MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
      reliability 255/255, txload 1/255, rxload 1/255
   Encapsulation ARPA, loopback not set
@@ -700,7 +904,7 @@ System Serial Number               : FCW0000TEST4
      109443210 packets input, 2394664329 bytes, 0 no buffer
      Received 434399 broadcasts (312 multicasts)
      0 runts, 0 giants, 0 throttles
-     3271 input errors, 3271 CRC, 0 frame, 0 overrun, 0 ignored
+     0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
      0 watchdog, 312 multicast, 0 pause input
      0 input packets with dribble condition detected
      98210331 packets output, 8873201991 bytes, 0 underruns
@@ -712,13 +916,13 @@ System Serial Number               : FCW0000TEST4
 </pre>
     <p class="muted">counters</p>
     <pre>Port          Align-Err     FCS-Err    Xmit-Err     Rcv-Err  UnderSize  OutDiscards
-Gi2/0/1              0        3271           0        3271          0           42
+Gi2/0/1               0           0           0           0          0           42
 
 Port        Single-Col  Multi-Col   Late-Col  Excess-Col  Carri-Sen      Runts     Giants
-Gi2/0/1             0          0          0           0          0          0          0
+Gi2/0/1              0          0          0           0          0          0          0
 </pre>
     <p class="muted">transceiver</p>
-    <pre>switch_catalyst#show int gi3/0/20 transceiver detail
+    <pre>switch_catalyst#show int gi2/0/1 transceiver detail
 Diagnostic Monitoring is not implemented.
 </pre>
     <p class="muted">neighbors</p>
@@ -742,6 +946,10 @@ Management address(es):
 
 Total cdp entries displayed : 1
 </pre>
+    <p class="muted">logging</p>
+    <pre>Aug 24 02:11:41.520: %LINK-3-UPDOWN: Interface GigabitEthernet2/0/1, changed state to down
+Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet2/0/1, changed state to up
+</pre>
     <p class="muted">portchannel</p>
     <pre>Flags:  D - down        P - bundled in port-channel
         I - stand-alone s - suspended
@@ -756,10 +964,6 @@ Group  Port-channel  Protocol    Ports
 ------+-------------+-----------+-----------------------------------------------
 214    Po214(SU)         LACP      Gi3/0/23(P)     Gi3/0/24(P)
 </pre>
-    <p class="muted">logging</p>
-    <pre>Aug 24 02:11:41.520: %LINK-3-UPDOWN: Interface GigabitEthernet2/0/1, changed state to down
-Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet2/0/1, changed state to up
-</pre>
   </details>
 </div>
 <div class="case">
@@ -771,6 +975,13 @@ Aug 24 02:11:44.101: %LINK-3-UPDOWN: Interface GigabitEthernet2/0/1, changed sta
   </div>
 <div class="muted">UPLINK-TO-CORE-B</div>  <p>IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters is below the noise threshold, counter flat across 10-min re-poll. DOM rx power -3.5 dBm within range. No action.</p>
   <details><summary>Raw evidence (8 commands)</summary>
+    <p class="muted">cpu</p>
+    <pre>Load average:   1 minute: 0.38   5 minutes: 0.32   15 minutes: 0.28
+Processes   :   721 total, 1 running
+CPU states  :   2.55% user,   3.25% kernel,   94.20% idle
+        CPU0 states  :   1.00% user,   2.00% kernel,   97.00% idle
+Memory usage:   16400380K total,   6134936K used,  10265444K free
+</pre>
     <p class="muted">version</p>
     <pre>Cisco Nexus Operating System (NX-OS) Software
 TAC support: http://www.cisco.com/tac
@@ -824,7 +1035,7 @@ admin state is up, Dedicated Interface
     0 runts  0 giants  912 CRC  0 no buffer
     912 input error  0 short frame  0 overrun   0 underrun  0 ignored
     0 watchdog  0 bad etype drop  0 bad proto drop  0 if down drop
-    0 input with dribble  388 input discard
+    0 input with dribble  0 input discard
     0 Rx pause
   TX
     91234567 unicast packets  234567 multicast packets  4567 broadcast packets
@@ -868,52 +1079,57 @@ Eth4/15               0        912          0        912          0          57
   Note: ++  high-alarm; +  high-warning; --  low-alarm; -  low-warning
 </pre>
     <p class="muted">neighbors_lldp</p>
-    <pre>switch_nexus# show lldp neighbors interface eth4/15 detail
-Capability codes:
-  (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
-  (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
-Device ID            Local Intf      Hold-time  Capability  Port ID
+    <pre>----------------------------------------
+Device ID:core-sw-01(FDO12345678)
+System Name: core-sw-01
 
-Chassis id: 0011.22aa.bb05
-Port id: Ethernet45
-Local Port id: Eth4/15
-Port Description: UPLINK-ARISTA E4/15
-System Name: arista switch
-System Description: Arista Networks EOS version 4.32.5.1M running on an Arista Networks DCS-7280SR-48C6
-Time remaining: 106 seconds
-System Capabilities: B, R
-Enabled Capabilities: B, R
-Management Address: 192.0.2.24
-Vlan ID: 1
+Interface address(es):
+    IPv4 Address: 10.0.0.1
+Platform: N9K-C9336C-FX2, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
+Interface: Ethernet4/15, Port ID (outgoing port): Ethernet1/33
+Holdtime: 176 sec
 
-Total entries displayed: 1
+Version:
+Cisco Nexus Operating System (NX-OS) Software, Version 9.3(10)
+
+Advertisement Version: 2
+
+Native VLAN: 1
+Duplex: full
+MTU: 1500
+Physical Location: snmplocation
+Mgmt address(es):
+    IPv4 Address: 10.0.0.1
 </pre>
     <p class="muted">neighbors</p>
-    <pre>switch_nexus# show cdp neighbors interface eth4/15 detail
-Note: CDP Neighbor entry not found
-</pre>
-    <p class="muted">portchannel</p>
-    <pre>Flags:  D - Down        P - Up in port-channel (members)
-        I - Individual  H - Hot-standby (LACP only)
-        s - Suspended   r - Module-removed
-        b - BFD Session Wait
-        S - Switched    R - Routed
-        U - Up (port-channel)
-        p - Up in delay-lacp mode (member)
-        M - Not in use. Min-links not met
---------------------------------------------------------------------------------
-Group Port-       Type     Protocol  Member Ports
-      Channel
---------------------------------------------------------------------------------
-214   Po214(SU)   Eth      LACP      Eth4/16(P)   Eth4/17(P)
+    <pre>----------------------------------------
+Device ID:core-sw-01(FDO12345678)
+System Name: core-sw-01
+
+Interface address(es):
+    IPv4 Address: 10.0.0.1
+Platform: N9K-C9336C-FX2, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
+Interface: Ethernet4/15, Port ID (outgoing port): Ethernet1/33
+Holdtime: 176 sec
+
+Version:
+Cisco Nexus Operating System (NX-OS) Software, Version 9.3(10)
+
+Advertisement Version: 2
+
+Native VLAN: 1
+Duplex: full
+MTU: 1500
+Physical Location: snmplocation
+Mgmt address(es):
+    IPv4 Address: 10.0.0.1
 </pre>
     <p class="muted">logging</p>
-    <pre>switch_nexus# show logging logfile | include Ethernet4/15
-</pre>
+    <pre></pre>
   </details>
 </div>
 
 <p class="muted">iftriage is a read-only diagnostic tool. Every command sent is
-recorded in the session audit log (/private/tmp/claude-501/-Users-israelfernandez-Documents-automation---AI-iftriage/ec69bc67-c3a9-4ed7-a93d-8b8fe96cf111/scratchpad/work/reports/iftriage_audit_20260829_202921.log).</p>
+recorded in the session audit log (reports/iftriage_audit_20260829_202921.log).</p>
 </body>
 </html>
