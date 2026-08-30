@@ -40,13 +40,21 @@ def make_stats(**kwargs):
     return NormalizedInterfaceStats(**defaults)
 
 
-def run(case, stats, repoll=None, minutes=None, error=None, parse_errors=()):
+def run(
+    case,
+    stats,
+    repoll=None,
+    minutes=None,
+    error=None,
+    parse_errors=(),
+    thresholds=T,
+):
     return evaluate_case(
         case,
         stats,
         repoll,
         minutes,
-        T,
+        thresholds,
         collection_error=error,
         parse_errors=parse_errors,
     )
@@ -163,6 +171,22 @@ def test_incrementing_repoll_at_meaningful_rate_is_physical():
     assert "incrementing" in verdict.reason.lower()
 
 
+def test_moderate_rate_is_physical_when_rate_warn_is_lowered():
+    stats = make_stats(input_errors=1000, crc_errors=1000, input_packets=100_000_000)
+    repoll = make_stats(input_errors=1050, crc_errors=1050, input_packets=101_000_000)
+    # 50 errors / 1M packets in the window = 5e-5: between the configured warn
+    # and high levels, and still incrementing.
+    verdict = run(
+        make_case("Rcv-Err"),
+        stats,
+        repoll,
+        minutes=10,
+        thresholds=Thresholds(rate_warn=1.0e-5),
+    )
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert "moderate error rate" in verdict.reason.lower()
+
+
 def test_dom_out_of_range_is_physical_media():
     stats = make_stats(
         input_errors=100,
@@ -179,10 +203,17 @@ def test_dom_out_of_range_is_physical_media():
 
 
 def test_indiscards_at_rate_is_capacity_not_physical():
-    stats = make_stats(discards_in=388, input_packets=1_000_000)
+    stats = make_stats(discards_in=20_000, input_packets=1_000_000)  # 2%
     verdict = run(make_case("InDiscards"), stats)
     assert verdict.category is VerdictCategory.CAPACITY
     assert "not a physical error" in verdict.reason.lower()
+
+
+def test_discards_below_one_percent_is_ignore():
+    """Dropped-but-intact frames under 1% are operational noise, not capacity."""
+    stats = make_stats(discards_in=5_000, input_packets=1_000_000)  # 0.5%
+    verdict = run(make_case("InDiscards"), stats)
+    assert verdict.category is VerdictCategory.IGNORE
 
 
 def test_negligible_discards_is_ignore():

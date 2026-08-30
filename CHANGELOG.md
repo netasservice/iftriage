@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Discards are only escalated at 1% of the frames or above.** `rate_warn`
+  moves from `1.0e-5` (10 discards per million frames) to `1.0e-2`, so an
+  `InDiscards`/`OutDiscards` case below 1% is now `IGNORE` instead of
+  `CAPACITY` — dropped-but-intact frames at that level are operational noise
+  and were flooding the report. `rate_warn` is shared with the receive-error
+  path, so this deliberately leaves its moderate-rate branch (rate between the
+  warn and high levels, counter still incrementing) dormant at the shipped
+  defaults: receive errors are now decided by `rate_high` alone. Lowering
+  `rate_warn` below `rate_high` in `config.yaml` restores the old behavior.
+
 ### Added
 - **`--from-history` rebuilds the report from the collection already stored**,
   contacting no device and asking for no credentials. Collection is the

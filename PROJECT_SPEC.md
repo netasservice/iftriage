@@ -246,7 +246,10 @@ members of the one bundle, never full-chassis.
 - **Normalization is the core insight: raw delta means nothing. Rate = error_delta /
   packet_delta (or error/packets lifetime as fallback). Thresholds (tunable in config.yaml):**
   - rate ≥ 1e-4 (100/M packets) → high
-  - rate ≥ 1e-5 (10/M packets) → warn
+  - rate ≥ 1e-2 (1% of the frames) → warn — in practice this is the discard escalation
+    floor: `InDiscards`/`OutDiscards` below 1% are operational noise, not capacity. It sits
+    above the high level on purpose; lowering it below 1e-4 also re-enables the moderate-rate
+    branch for receive errors.
   - below → noise (absent other signals)
 
 ### Verdict categories (final output vocabulary)
@@ -255,7 +258,7 @@ members of the one bundle, never full-chassis.
   half-duplex. Action: inspect cable/transceiver/path.
 - `CONFIG_ISSUE` — duplex mismatch confirmed (late-col on full-duplex, ideally corroborated by
   neighbor). Fixed via CLI, not by touching media.
-- `CAPACITY` — InDiscards with high utilization. Not media, not config: saturation.
+- `CAPACITY` — InDiscards at or above 1% of the frames. Not media, not config: saturation.
 - `IGNORE` — negligible normalized rate, counter flat on re-poll, and/or chronic known noise.
 - `UNVERIFIED` — device unreachable / auth failed / SSH timeout. Report with CSV data only,
   clearly marked unconfirmed.

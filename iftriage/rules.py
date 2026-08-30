@@ -366,6 +366,9 @@ def _evaluate_stats(
                 + (f" {repoll_note.capitalize()}." if repoll_note else ""),
                 details=details,
             )
+        # Only reachable when the operator configures rate_warn below
+        # rate_high: the shipped default puts rate_warn at 1% because
+        # discards are its real consumer, which leaves this branch dormant.
         if rate >= thresholds.rate_warn and flat is False:
             return Verdict(
                 VerdictCategory.PHYSICAL_MEDIA,
