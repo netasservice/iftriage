@@ -1,6 +1,7 @@
 """CLI dry-run: prints targets and exact commands, connects to nothing."""
 
 import shutil
+import sqlite3
 
 import pytest
 from conftest import FIXTURES
@@ -408,3 +409,137 @@ def test_dry_run_notes_member_discovery_for_portchannel_cases(
     assert rc == 0
     assert "NOTE: port-channel — members are discovered" in out
     assert "No devices were contacted." in out
+
+
+def _stored_run(tmp_path, monkeypatch, ips=("10.0.0.1", "10.0.0.2")):
+    """One completed live run against fake sessions; returns the CSV path."""
+    csv = _live_run_setup(tmp_path, monkeypatch, list(ips))
+    _fake_sessions(monkeypatch)
+    _record_sleeps(monkeypatch)
+    assert main(["run", str(csv), "--no-repoll"]) == 0
+    return csv
+
+
+def _forbid_collection(monkeypatch):
+    monkeypatch.setattr(
+        "iftriage.collectors.ReadOnlySession",
+        lambda **kwargs: pytest.fail("--from-history must contact no device"),
+    )
+    monkeypatch.setattr(
+        "iftriage.cli._resolve_credentials",
+        lambda username_arg: pytest.fail("--from-history must not need credentials"),
+    )
+    _clear_credential_env(monkeypatch)
+
+
+def test_from_history_rebuilds_the_report_without_credentials_or_network(
+    tmp_path, capsys, monkeypatch
+):
+    csv = _stored_run(tmp_path, monkeypatch)
+    capsys.readouterr()
+    _forbid_collection(monkeypatch)
+
+    rc = main(["run", str(csv), "--from-history", "--output", str(tmp_path / "again")])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Rebuilt from stored collection: run #1" in out
+    assert "no device was contacted" in out
+    again = tmp_path / "again"
+    assert len(list(again.glob("iftriage_report_*.html"))) == 1
+    assert len(list(again.glob("iftriage_report_*.csv"))) == 1
+    # No commands were sent, so there is nothing to audit.
+    assert not list(again.glob("iftriage_audit_*.log"))
+
+
+def test_from_history_writes_nothing_back_to_the_database(
+    tmp_path, capsys, monkeypatch
+):
+    """A second archive of the same CSV would inflate every recurrence count."""
+    csv = _stored_run(tmp_path, monkeypatch)
+    _forbid_collection(monkeypatch)
+    db = tmp_path / "iftriage_history.db"
+
+    def counts():
+        conn = sqlite3.connect(db)
+        try:
+            return tuple(
+                conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                for table in ("ingests", "ingest_rows", "runs", "case_results")
+            )
+        finally:
+            conn.close()
+
+    before = counts()
+    assert main(["run", str(csv), "--from-history", "--output", str(tmp_path)]) == 0
+    assert counts() == before
+
+
+def test_from_history_and_dry_run_are_mutually_exclusive(tmp_path, capsys):
+    csv = tmp_path / "top20.csv"
+    shutil.copy(FIXTURES / "sample_top20.csv", csv)
+
+    rc = main(["run", str(csv), "--from-history", "--dry-run"])
+
+    assert rc == 2
+    assert "mutually exclusive" in capsys.readouterr().err
+
+
+def test_from_history_without_a_database_says_how_to_get_one(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    csv = tmp_path / "top20.csv"
+    shutil.copy(FIXTURES / "sample_top20.csv", csv)
+
+    rc = main(["run", str(csv), "--from-history"])
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "no history database" in err
+    assert "run without --from-history first" in err
+
+
+def test_from_history_refuses_when_a_case_was_never_collected(
+    tmp_path, capsys, monkeypatch
+):
+    csv = _stored_run(tmp_path, monkeypatch)
+    capsys.readouterr()
+    _forbid_collection(monkeypatch)
+    csv.write_text(
+        csv.read_text()
+        + "2026-08-24T09:00:00,sw-new,10.0.0.9,Gi1/0/9,desc,up,up,Rcv-Err,0,5,5\n"
+    )
+
+    rc = main(["run", str(csv), "--from-history", "--output", str(tmp_path)])
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "no stored collection for 1 of 3 case(s)" in err
+    assert "sw-new Gi1/0/9 (Rcv-Err)" in err
+
+
+def test_from_history_says_which_collection_flags_it_ignores(
+    tmp_path, capsys, monkeypatch
+):
+    csv = _stored_run(tmp_path, monkeypatch)
+    capsys.readouterr()
+    _forbid_collection(monkeypatch)
+
+    rc = main(
+        [
+            "run",
+            str(csv),
+            "--from-history",
+            "--repoll",
+            "5",
+            "--user",
+            "ops",
+            "--output",
+            str(tmp_path),
+        ]
+    )
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "ignoring --repoll, --user" in out

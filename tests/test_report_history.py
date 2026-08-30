@@ -5,7 +5,7 @@ from importlib.resources import files
 
 from conftest import FIXTURES
 
-from iftriage.history import History
+from iftriage.history import REPLAY_SCHEMA, History
 from iftriage.ingest import ingest_csv
 from iftriage.models import (
     CaseResult,
@@ -269,3 +269,65 @@ def test_members_json_roundtrips_and_migrates_old_databases(tmp_path):
     assert payload["repoll_stats"]["GigabitEthernet3/0/23"]["link_status"] == "up"
     assert payload["errors"] == {"GigabitEthernet3/0/24": "member collection failed: x"}
     history.close()
+
+
+def test_replay_columns_are_added_to_an_existing_database(tmp_path):
+    """A 0.5.0 database gains the columns --from-history needs, in place."""
+    import sqlite3
+
+    db = tmp_path / "history.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE runs ("
+        "id INTEGER PRIMARY KEY, started_at TEXT NOT NULL, finished_at TEXT, "
+        "csv_file TEXT NOT NULL, repoll_minutes REAL, summary_json TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE case_results ("
+        "run_id INTEGER NOT NULL, switch TEXT, mgmt_ip TEXT, interface TEXT, "
+        "counter TEXT, platform TEXT, verdict TEXT, reason TEXT, "
+        "stats_json TEXT, repoll_stats_json TEXT, raw_outputs_json TEXT, "
+        "collection_error TEXT, parse_errors_json TEXT, members_json TEXT)"
+    )
+    conn.execute("INSERT INTO runs (started_at, csv_file) VALUES ('old', 'old.csv')")
+    conn.commit()
+    conn.close()
+
+    history = History(db)
+    run_id = history.start_run("x.csv", 10)
+    history.save_results(run_id, [_po_result_with_members()])
+
+    row = history._conn.execute(
+        "SELECT canonical_interface, parent_portchannel, repoll_skip_reason, "
+        "repoll_minutes FROM case_results WHERE run_id=?",
+        (run_id,),
+    ).fetchone()
+    assert row[0] == "Port-channel214"
+    # The pre-existing run keeps a NULL stamp and is therefore never replayed.
+    stamps = history._conn.execute("SELECT replay_schema FROM runs ORDER BY id")
+    assert [value for (value,) in stamps] == [None, REPLAY_SCHEMA]
+    history.close()
+
+
+def test_provenance_block_appears_only_when_rebuilt_from_history(tmp_path):
+    results, findings = _results()
+    live = {"csv_file": "x.csv", "repoll_minutes": 10, "audit_log": "audit.log"}
+    replayed = {
+        "csv_file": "x.csv",
+        "repoll_minutes": 10,
+        "from_history": True,
+        "collected_from": "run #7, collected 2026-08-29T20:29:21+00:00",
+    }
+
+    live_paths = render_report(results, findings, live, "report_en", tmp_path / "live")
+    replay_paths = render_report(
+        results, findings, replayed, "report_en", tmp_path / "replay"
+    )
+
+    for kind in ("html", "txt"):
+        assert "stored collection" not in live_paths[kind].read_text().lower()
+        rebuilt = replay_paths[kind].read_text()
+        assert "stored collection" in rebuilt.lower()
+        assert "run #7" in rebuilt
+    assert "audit.log" in live_paths["html"].read_text()
+    assert "audit" not in replay_paths["html"].read_text().lower()
