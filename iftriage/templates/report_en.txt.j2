@@ -2,7 +2,8 @@ INTERFACE ERROR TRIAGE — TOP-{{ summary.total }} VERIFICATION
 Generated {{ generated_at }} | source: {{ meta.csv_file }}
 {% if meta.repoll_minutes %}Re-poll window: {{ meta.repoll_minutes }} min
 {% endif %}
-{% if meta.from_history %}REBUILT FROM STORED COLLECTION — no device was contacted.
+{% if meta.error_rate_percent %}Thresholds: errors {{ "%g"|format(meta.error_rate_percent) }}% / discards {{ "%g"|format(meta.discard_rate_percent) }}% of frames
+{% endif %}{% if meta.from_history %}REBUILT FROM STORED COLLECTION — no device was contacted.
 Device data: {{ meta.collected_from }}
 
 {% endif %}

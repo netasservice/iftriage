@@ -379,6 +379,44 @@ def test_cpu_threshold_is_configurable_with_a_default_of_eighty(tmp_path):
     assert load_config(with_key).connection.cpu_skip_threshold_percent == 65.0
 
 
+def test_threshold_percentages_are_read_as_fractions(tmp_path):
+    """The percent-to-fraction conversion is where a factor of 100 would slip
+    in unnoticed, so it is asserted rather than assumed."""
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "thresholds:\n  error_rate_percent: 0.5\n  discard_rate_percent: 2\n"
+    )
+
+    thresholds = load_config(config_path).thresholds
+
+    assert thresholds.error_rate == pytest.approx(0.005)
+    assert thresholds.discard_rate == pytest.approx(0.02)
+
+
+def test_retired_threshold_keys_are_rejected_not_ignored(tmp_path):
+    """A config still carrying the pre-0.6 keys must not be accepted in
+    silence: the run would judge every interface by the built-in defaults."""
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("thresholds:\n  rate_high: 1.0e-4\n")
+
+    with pytest.raises(ValueError) as excinfo:
+        load_config(config_path)
+
+    assert "rate_high" in str(excinfo.value)
+    assert "error_rate_percent" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("percent", ["0", "-1", "150"])
+def test_threshold_percentage_out_of_range_is_rejected(tmp_path, percent):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"thresholds:\n  error_rate_percent: {percent}\n")
+
+    with pytest.raises(ValueError) as excinfo:
+        load_config(config_path)
+
+    assert "percentage" in str(excinfo.value)
+
+
 def test_workers_defaults_to_one_session_at_a_time():
     args = _build_parser().parse_args(["run", "top20.csv"])
     assert args.workers == 1

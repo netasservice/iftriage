@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import yaml
@@ -10,10 +10,29 @@ import yaml
 
 @dataclass
 class Thresholds:
-    rate_high: float = 1.0e-4
-    rate_warn: float = 1.0e-2
+    """Escalation floors, expressed as a percentage of the frames.
+
+    Errors and discards get their own floor because they are different
+    phenomena. Cisco's port troubleshooting guidance (Doc ID 12027) puts the
+    tolerance for FCS/CRC/alignment errors on a full-duplex link at
+    essentially zero, while an out-discard is a frame that arrived intact and
+    was dropped for buffer or policy reasons -- congestion, not media, and
+    routine on a busy uplink. One number cannot serve both.
+    """
+
+    error_rate_percent: float = 0.001  # 10 per million frames
+    discard_rate_percent: float = 1.0
     dom_rx_low_dbm: float = -14.0
     dom_rx_high_dbm: float = 2.0
+
+    @property
+    def error_rate(self) -> float:
+        """The error floor as a fraction, which is what the rules compare."""
+        return self.error_rate_percent / 100
+
+    @property
+    def discard_rate(self) -> float:
+        return self.discard_rate_percent / 100
 
 
 @dataclass
@@ -54,6 +73,33 @@ class Config:
     output_dir: str = "reports"
 
 
+_PERCENT_KEYS = ("error_rate_percent", "discard_rate_percent")
+
+
+def _load_thresholds(thresholds: Thresholds, data: dict) -> None:
+    """Apply the `thresholds` section, refusing anything unrecognized.
+
+    Unlike the other sections, an unknown key here is an error rather than
+    something to skip: a config file still carrying the pre-0.6 `rate_high` /
+    `rate_warn` would otherwise be accepted in silence and the run would judge
+    every interface by the built-in defaults instead.
+    """
+    accepted = tuple(field.name for field in fields(thresholds))
+    for key, raw in data.items():
+        if key not in accepted:
+            raise ValueError(
+                f"unknown key 'thresholds.{key}'; accepted keys are "
+                f"{', '.join(accepted)}"
+            )
+        value = float(raw)
+        if key in _PERCENT_KEYS and not 0 < value <= 100:
+            raise ValueError(
+                f"'thresholds.{key}' is a percentage of the frames: it must be "
+                f"greater than 0 and at most 100 (got {value})"
+            )
+        setattr(thresholds, key, value)
+
+
 def load_config(path: str | Path | None = None) -> Config:
     """Load config.yaml; missing file or missing keys fall back to defaults."""
     cfg = Config()
@@ -65,9 +111,7 @@ def load_config(path: str | Path | None = None) -> Config:
 
     data = yaml.safe_load(Path(path).read_text()) or {}
 
-    for key, value in (data.get("thresholds") or {}).items():
-        if hasattr(cfg.thresholds, key):
-            setattr(cfg.thresholds, key, float(value))
+    _load_thresholds(cfg.thresholds, data.get("thresholds") or {})
     for key, value in (data.get("connection") or {}).items():
         if hasattr(cfg.connection, key):
             current = getattr(cfg.connection, key)

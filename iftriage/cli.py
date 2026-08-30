@@ -219,6 +219,13 @@ def _evaluate_all(results, config, history: History) -> None:
 
 
 def _render_and_print(results, findings, meta, config, output_dir) -> None:
+    # The thresholds ride along in the report itself: a run judged with a
+    # mistyped floor should be recognizable from the deliverable alone.
+    meta = {
+        **meta,
+        "error_rate_percent": config.thresholds.error_rate_percent,
+        "discard_rate_percent": config.thresholds.discard_rate_percent,
+    }
     paths = render_report(results, findings, meta, config.template, output_dir)
     print(f"\n{build_summary(results)['line']}")
     print(f"Report (HTML): {paths['html']}")

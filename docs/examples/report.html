@@ -31,7 +31,7 @@
 <body>
 <h1>Interface Error Triage — Top-8 verification</h1>
 <p class="muted">Generated 2026-08-29 20:29 UTC · source: docs/examples/input.csv
- · re-poll window: 10.0 min</p>
+ · re-poll window: 10.0 min · thresholds: errors 0.001% / discards 1% of frames</p>
 
 <div class="summary"><strong>Executive summary:</strong> 8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE</div>
 
@@ -973,7 +973,7 @@ Group  Port-channel  Protocol    Ports
     &nbsp;<strong>sw-core-02</strong> — Eth4/15
     (Rcv-Err, Δ24h=28)
   </div>
-<div class="muted">UPLINK-TO-CORE-B</div>  <p>IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters is below the noise threshold, counter flat across 10-min re-poll. DOM rx power -3.5 dBm within range. No action.</p>
+<div class="muted">UPLINK-TO-CORE-B</div>  <p>IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters, counter flat across 10-min re-poll: historical, not happening now. DOM rx power -3.5 dBm within range. No action.</p>
   <details><summary>Raw evidence (8 commands)</summary>
     <p class="muted">cpu</p>
     <pre>Load average:   1 minute: 0.38   5 minutes: 0.32   15 minutes: 0.28

@@ -392,14 +392,16 @@ thresholds.
 
 ```yaml
 thresholds:
-  # Normalized error rate = error_delta / packet_delta (repoll) or errors/packets lifetime.
-  rate_high: 1.0e-4      # >= 100 errors per million frames -> high
-  # The warn level is what discard counters (InDiscards/OutDiscards) are judged
-  # against: below 1% of the frames, dropped-but-intact frames are operational
-  # noise, not a capacity problem worth escalating. It sits ABOVE rate_high on
-  # purpose -- discards tolerate far more than receive errors do. Lowering it
-  # below rate_high re-enables the moderate-rate branch for receive errors.
-  rate_warn: 1.0e-2      # >= 1% of frames -> warn (discard escalation floor)
+  # Normalized rate = counter_delta / packet_delta (re-poll) or counter/packets
+  # lifetime, expressed here as a PERCENTAGE of the frames. Errors and discards
+  # get their own floor because they are different phenomena: Cisco's port
+  # troubleshooting guidance (Doc ID 12027) tolerates ~1% of errors only on
+  # half-duplex links and expects essentially zero FCS/CRC/alignment on
+  # full-duplex, while an out-discard is a frame that arrived intact and was
+  # dropped for buffer or policy reasons -- congestion, routine on a busy
+  # uplink, and never a media fault.
+  error_rate_percent: 0.001   # CRC/FCS/alignment/runts: 10 per million frames
+  discard_rate_percent: 1.0   # In/OutDiscards: escalate as capacity from 1% up
   dom_rx_low_dbm: -14.0  # DOM receive power below this -> out of range
   dom_rx_high_dbm: 2.0   # DOM receive power above this -> out of range
 
@@ -439,10 +441,10 @@ report:
 
 | Verdict | Meaning |
 |---|---|
-| `PHYSICAL_MEDIA` | Real CRC/FCS at meaningful rate, DOM out of range, late-col on legacy half-duplex — inspect cable/transceiver/path |
+| `PHYSICAL_MEDIA` | CRC/FCS at or above the configured error threshold and still incrementing, DOM out of range, late-col on legacy half-duplex — inspect cable/transceiver/path |
 | `CONFIG_ISSUE` | Duplex mismatch confirmed (late-col against a full-duplex end) — fixed via CLI |
-| `CAPACITY` | Discards at or above 1% of the frames — saturation or policy, not media |
-| `IGNORE` | Negligible normalized rate (discards below 1%) / flat on re-poll / not an error counter |
+| `CAPACITY` | Discards at or above the configured discard threshold — saturation or policy, not media |
+| `IGNORE` | Rate below its family's threshold / counter flat on re-poll (historical) / not an error counter |
 | `UNVERIFIED` | Device unreachable / auth failed / required an enable secret that was not provided — CSV data only |
 | `PARSE_ERROR` | Output did not parse or critical fields missing (fail closed) |
 

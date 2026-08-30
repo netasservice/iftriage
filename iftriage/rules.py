@@ -94,6 +94,11 @@ def _fmt_rate(rate: float) -> str:
     return f"{rate * 100:.4f}% ({per_million:,.0f} per million frames)"
 
 
+def _fmt_threshold(percent: float) -> str:
+    """The configured floor, without the trailing zeros of a fixed format."""
+    return f"{percent:g}%"
+
+
 def _lifetime_rate(errors: int, packets: int) -> float | None:
     if packets and packets > 0:
         return errors / packets
@@ -357,7 +362,7 @@ def _evaluate_stats(
                 + dom_note,
                 details=details,
             )
-        if rate >= thresholds.rate_high and flat is not True:
+        if rate >= thresholds.error_rate and flat is not True:
             return Verdict(
                 VerdictCategory.PHYSICAL_MEDIA,
                 f"PHYSICAL_MEDIA — error rate {_fmt_rate(rate)} over "
@@ -366,24 +371,22 @@ def _evaluate_stats(
                 + (f" {repoll_note.capitalize()}." if repoll_note else ""),
                 details=details,
             )
-        # Only reachable when the operator configures rate_warn below
-        # rate_high: the shipped default puts rate_warn at 1% because
-        # discards are its real consumer, which leaves this branch dormant.
-        if rate >= thresholds.rate_warn and flat is False:
-            return Verdict(
-                VerdictCategory.PHYSICAL_MEDIA,
-                f"PHYSICAL_MEDIA — moderate error rate {_fmt_rate(rate)} and "
-                f"the counter is still incrementing now.{crc_note} "
-                "Inspect cable/transceiver/path."
-                + (f" {repoll_note.capitalize()}." if repoll_note else ""),
-                details=details,
-            )
-        reason_bits = [
-            f"error rate {_fmt_rate(rate)} over {rate_basis} is "
-            "below the noise threshold"
-        ]
-        if repoll_note:
-            reason_bits.append(repoll_note)
+        # Two different reasons to ignore, and the report must not confuse
+        # them: a rate under the floor is noise, while a rate over it that the
+        # re-poll shows flat is a historical event that has already stopped.
+        if rate < thresholds.error_rate:
+            reason_bits = [
+                f"error rate {_fmt_rate(rate)} over {rate_basis} is below the "
+                f"{_fmt_threshold(thresholds.error_rate_percent)} threshold"
+            ]
+            if repoll_note:
+                reason_bits.append(repoll_note)
+        else:
+            reason_bits = [
+                f"error rate {_fmt_rate(rate)} over {rate_basis}, "
+                + repoll_note
+                + ": historical, not happening now"
+            ]
         return Verdict(
             VerdictCategory.IGNORE,
             "IGNORE — " + ", ".join(reason_bits) + f".{dom_note} No action.",
@@ -394,7 +397,7 @@ def _evaluate_stats(
     if cls in (CounterClass.IN_DISCARDS, CounterClass.OUT_DISCARDS):
         direction = "input" if cls is CounterClass.IN_DISCARDS else "output"
         value = getattr(stats, value_field)
-        if rate is not None and rate >= thresholds.rate_warn and flat is not True:
+        if rate is not None and rate >= thresholds.discard_rate and flat is not True:
             return Verdict(
                 VerdictCategory.CAPACITY,
                 f"CAPACITY — {value:,} {direction} discards at "
@@ -404,9 +407,16 @@ def _evaluate_stats(
                 + (f" {repoll_note.capitalize()}." if repoll_note else ""),
                 details=details,
             )
+        below_floor = rate is None or rate < thresholds.discard_rate
+        headline = (
+            f"{direction} discards below the "
+            f"{_fmt_threshold(thresholds.discard_rate_percent)} threshold"
+            if below_floor
+            else f"{direction} discards are historical, not happening now"
+        )
         return Verdict(
             VerdictCategory.IGNORE,
-            f"IGNORE — {direction} discards at negligible rate"
+            f"IGNORE — {headline}"
             + (f" ({_fmt_rate(rate)})" if rate is not None else "")
             + (f", {repoll_note}" if repoll_note else "")
             + ". No action.",
