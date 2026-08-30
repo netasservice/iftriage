@@ -291,7 +291,19 @@ the worst failure mode of this tool. Missing data ⇒ `PARSE_ERROR`/`UNVERIFIED`
 
 - Archive every ingested CSV (raw rows + received timestamp) BEFORE analysis. Each received
   table is free historical feed.
-- Store every run: collected stats, verdicts, evidence references.
+- Store every run: collected stats, verdicts, evidence references, and every
+  remaining `CaseResult` field (`canonical_interface`, `parent_portchannel`,
+  `repoll_skip_reason`, per-case `repoll_minutes`) — a stored run must be enough
+  to rebuild the report it produced.
+- `runs.replay_schema` marks a run as written with that full column set. A run
+  missing fields the verdict depends on is never replayed: partial history is
+  refused, not silently filled with defaults (fail closed, section 3's principle
+  applied to storage).
+- Replay (`replay.py`, `iftriage run <csv> --from-history`) rebuilds the results
+  from storage and re-runs the rules: zero device egress, and no run recorded.
+  The ingest is deliberately not re-archived — a second row for the same CSV
+  would inflate every recurrence count. (Opening the database still applies
+  pending schema migrations; nothing else is written.)
 - IP→platform cache.
 - Future: suppression list with justification ("switch1 Gi3/0/20: chronic late-col since 2024,
   legacy half-duplex industrial link, ref X") so future reports highlight only NEW findings.
@@ -319,6 +331,7 @@ iftriage/
 │   │   └── eos.py
 │   ├── rules.py              # verdict engine — PURE functions, no I/O, fully testable
 │   ├── history.py            # SQLite persistence
+│   ├── replay.py             # rebuild results from history (--from-history)
 │   ├── report.py             # Jinja2 HTML/text report
 │   └── templates/            # report templates, shipped as package data
 │                             # (language lives here)

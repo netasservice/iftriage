@@ -238,7 +238,38 @@ iftriage run top20.csv --user youruser --no-repoll --output reports/
 
 # Opt in to contacting several devices at once (see the safety model below):
 iftriage run top20.csv --user youruser --workers 5
+
+# Re-render the report from the collection already in the history database:
+iftriage run top20.csv --from-history
 ```
+
+### Re-rendering a report without collecting again
+
+Collection is the expensive half of a run; the analysis is the cheap half.
+`--from-history` replays the first so the second can be iterated on — a template
+tweak, a threshold change, a new rule — without asking the fleet again:
+
+```bash
+iftriage run top20.csv                 # collects, reports, stores
+vim iftriage/templates/report_en.html.j2
+iftriage run top20.csv --from-history  # same data, new report, no SSH
+```
+
+It contacts no device, asks for no credentials, and **records nothing**: no run
+row, and no second archive of the CSV — re-archiving it would inflate every
+recurrence count. Because the original run archived it already, the recurrence
+numbers come out identical to the report being rebuilt.
+
+Verdicts are re-derived, not replayed: the stored counters go back through
+`rules.py` with the thresholds in effect now, so a `config.yaml` edit shows up
+in the rebuilt report. The report says which run the data came from and when it
+was collected, since nothing stops you from rebuilding week-old data.
+
+The whole CSV is answered or nothing is: if any row has no stored collection —
+a new interface, a different CSV, or a database written before
+`--from-history` existed — the
+command exits 2 and names the rows to collect. `--repoll`, `--no-repoll` and
+`--user` are ignored (a note says so); `--dry-run` is rejected as contradictory.
 
 Credentials are resolved per value, first match wins:
 
@@ -315,7 +346,7 @@ history database:
 | Text report | `reports/iftriage_report_<stamp>.txt` | Same content, plain text |
 | Enriched CSV | `reports/iftriage_report_<stamp>.csv` | The input CSV, original columns and row order, with the verdict and the analysis evidence appended as extra columns (the last one, `member_summary`, holds the per-member findings of a port-channel case) |
 | Audit log | `reports/iftriage_audit_<stamp>.log` | `<timestamp> \| <ip> \| <exact command>`, plus `<connected>`, `<enable elevation>`, `<disconnected>` |
-| History DB | `iftriage_history.db` | Every ingested CSV archived verbatim, run results, per-case evidence, and the IP→platform cache |
+| History DB | `iftriage_history.db` | Every ingested CSV archived verbatim, run results, per-case evidence, and the IP→platform cache. Also what `--from-history` reads back |
 
 The history database is what makes "Recurrence: appeared in N ingested top-20
 lists" possible — the CSV is archived before analysis, so an interface that
@@ -329,12 +360,12 @@ nothing collected from a device is meant to be committed.
 | Code | Meaning |
 |---|---|
 | `0` | Run completed (or a dry run finished). Verdicts are in the report, not in the exit code |
-| `2` | Usage or input error: bad flags, unreadable/malformed `config.yaml`, missing CSV or missing columns, credentials that could not be resolved |
+| `2` | Usage or input error: bad flags, unreadable/malformed `config.yaml`, missing CSV or missing columns, credentials that could not be resolved, or `--from-history` with no stored collection for some case |
 | `3` | `RUN ABORTED` — a safety violation (config-mode prompt), the AAA circuit breaker, or a first pass in which no device at all could be collected (e.g. wrong credentials on a single-device run). Whatever caused it is on stderr |
 
 ## Command reference
 
-The CLI is deliberately small: one subcommand and eight flags.
+The CLI is deliberately small: one subcommand and nine flags.
 
 | Command / flag | Effect |
 |---|---|
@@ -347,6 +378,7 @@ The CLI is deliberately small: one subcommand and eight flags.
 | `--output DIR` | Report/audit output directory (default: `reports/`) |
 | `--workers N` | Contact N devices at the same time (default: `1`). Explicit opt-in; weakens the AAA circuit breaker |
 | `--db PATH` | SQLite history path (default: `iftriage_history.db`) |
+| `--from-history` | Rebuild the report from the collection already stored; contact no device and record no new run |
 | `-h`, `--help` | Help for `iftriage` or for `iftriage run` |
 | `--version` | Print version and exit |
 

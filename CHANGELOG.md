@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`--from-history` rebuilds the report from the collection already stored**,
+  contacting no device and asking for no credentials. Collection is the
+  expensive half of a run and the analysis is the cheap half; this replays the
+  first so the second can be iterated on — a template tweak, a threshold
+  change, a new rule — without asking the fleet again. Verdicts are re-derived
+  from the stored counters rather than replayed, so `rules.py` and
+  `config.yaml` edits show up too. It writes nothing back: re-archiving the
+  same CSV would inflate every recurrence count. If any row of the CSV has no
+  stored collection, the whole rebuild fails with exit code 2 and names the
+  rows to collect.
+- `case_results` now also stores `canonical_interface`, `parent_portchannel`,
+  `repoll_skip_reason` and the per-case `repoll_minutes` — the four fields a
+  faithful rebuild needs and the schema used to drop. Added in place to
+  existing databases, like `members_json` before them.
+- `runs.replay_schema` marks a run as written with the full column set. Runs
+  recorded by 0.5.0 and earlier are missing fields the verdict depends on, so
+  `--from-history` refuses them rather than replaying a report that looks
+  faithful while quietly answering a different question.
+
 ## [0.5.0] - 2026-08-29
 
 ### Changed

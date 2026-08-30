@@ -24,12 +24,13 @@ from .collectors import (
     repoll as repoll_pass,
 )
 from .config import load_config
-from .history import History
+from .history import History, HistoryError
 from .ingest import IngestError, ingest_csv
 from .models import Credentials, Platform
 from .normalize import is_portchannel_name
 from .platforms import get_profile
 from .platforms.base import PORTCHANNEL_KEY
+from .replay import ReplayError, load_results
 from .report import build_summary, render_report
 from .rules import evaluate_case
 from .session import AuditLog
@@ -80,6 +81,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "time). Raising this weakens the AAA circuit breaker — see README.",
     )
     run.add_argument("--db", default=None, help="Override SQLite history path")
+    run.add_argument(
+        "--from-history",
+        action="store_true",
+        help="Rebuild the report from the collection already stored in the "
+        "history database; contact no device and record no new run.",
+    )
     return parser
 
 
@@ -185,11 +192,116 @@ def _dry_run(cases, config, history) -> int:
     return 0
 
 
+def _evaluate_all(results, config, history: History) -> None:
+    """Verdict, recurrence and duplicate marking for every case.
+
+    Pure analysis over already-collected data: shared by a live run and by
+    --from-history, so both answer with the same rules and thresholds.
+    """
+    for result in results:
+        result.verdict = evaluate_case(
+            case=result.case,
+            stats=result.stats,
+            repoll_stats=result.repoll_stats,
+            repoll_minutes=result.repoll_minutes,
+            thresholds=config.thresholds,
+            collection_error=result.collection_error,
+            parse_errors=result.parse_errors,
+            member_stats=result.member_stats,
+            member_repoll_stats=result.member_repoll_stats,
+            member_errors=result.member_errors,
+            parent_portchannel=result.parent_portchannel,
+        )
+        result.recurrence = history.recurrence_count(
+            result.case.switch, result.case.interface
+        )
+    mark_portchannel_duplicates(results)
+
+
+def _render_and_print(results, findings, meta, config, output_dir) -> None:
+    paths = render_report(results, findings, meta, config.template, output_dir)
+    print(f"\n{build_summary(results)['line']}")
+    print(f"Report (HTML): {paths['html']}")
+    print(f"Report (text): {paths['txt']}")
+    print(f"Report (CSV):  {paths['csv']}")
+
+
+def _from_history(args, config, cases, findings, output_dir) -> int:
+    """Re-render the report from stored data, recording no run of its own.
+
+    The ingest is deliberately NOT archived again: a second ingests row for the
+    same CSV would inflate every recurrence count. Because the original run
+    archived this file already, recurrence comes out identical to the report
+    this one rebuilds.
+    """
+    ignored = [
+        name
+        for name, given in (
+            ("--repoll", args.repoll is not None),
+            ("--no-repoll", args.no_repoll),
+            ("--user", args.user is not None),
+        )
+        if given
+    ]
+    if ignored:
+        print(
+            f"Note: ignoring {', '.join(ignored)} — --from-history contacts no device."
+        )
+
+    db_path = Path(config.db_path)
+    if not db_path.exists():
+        print(
+            f"error: no history database at {db_path} — run without "
+            "--from-history first to collect.",
+            file=sys.stderr,
+        )
+        return 2
+
+    history = History(db_path)
+    try:
+        results, source = load_results(cases, history)
+        _evaluate_all(results, config, history)
+    except (ReplayError, HistoryError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        history.close()
+
+    # Every replayed result carries the re-poll window of the run that produced
+    # it; a run made with --no-repoll leaves them all None.
+    repoll_minutes = next(
+        (
+            result.repoll_minutes
+            for result in results
+            if result.repoll_minutes is not None
+        ),
+        None,
+    )
+    meta = {
+        "csv_file": args.csv,
+        "repoll_minutes": repoll_minutes,
+        "from_history": True,
+        "collected_from": source.describe(),
+    }
+    print(
+        f"Rebuilt from stored collection: {source.describe()} — "
+        "no device was contacted."
+    )
+    _render_and_print(results, findings, meta, config, output_dir)
+    return 0
+
+
 def _cmd_run(args) -> int:
     try:
         config = load_config(args.config)
     except Exception as exc:  # malformed YAML must not surface as a traceback
         print(f"error: could not load configuration: {exc}", file=sys.stderr)
+        return 2
+    if args.from_history and args.dry_run:
+        print(
+            "error: --from-history and --dry-run are mutually exclusive",
+            file=sys.stderr,
+        )
         return 2
     if args.workers < 1:
         print(
@@ -221,6 +333,9 @@ def _cmd_run(args) -> int:
         finally:
             if history:
                 history.close()
+
+    if args.from_history:
+        return _from_history(args, config, cases, findings, output_dir)
 
     repoll_minutes: float | None
     if args.no_repoll:
@@ -292,24 +407,7 @@ def _cmd_run(args) -> int:
             history.finish_run(run_id, {"aborted": str(exc)})
             return 3
 
-        for result in results:
-            result.verdict = evaluate_case(
-                case=result.case,
-                stats=result.stats,
-                repoll_stats=result.repoll_stats,
-                repoll_minutes=result.repoll_minutes,
-                thresholds=config.thresholds,
-                collection_error=result.collection_error,
-                parse_errors=result.parse_errors,
-                member_stats=result.member_stats,
-                member_repoll_stats=result.member_repoll_stats,
-                member_errors=result.member_errors,
-                parent_portchannel=result.parent_portchannel,
-            )
-            result.recurrence = history.recurrence_count(
-                result.case.switch, result.case.interface
-            )
-        mark_portchannel_duplicates(results)
+        _evaluate_all(results, config, history)
 
         history.save_results(run_id, results)
         summary = build_summary(results)
@@ -322,12 +420,7 @@ def _cmd_run(args) -> int:
         "repoll_minutes": repoll_minutes,
         "audit_log": str(audit.path),
     }
-    paths = render_report(results, findings, meta, config.template, output_dir)
-
-    print(f"\n{summary['line']}")
-    print(f"Report (HTML): {paths['html']}")
-    print(f"Report (text): {paths['txt']}")
-    print(f"Report (CSV):  {paths['csv']}")
+    _render_and_print(results, findings, meta, config, output_dir)
     return 0
 
 

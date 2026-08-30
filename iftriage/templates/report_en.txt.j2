@@ -2,6 +2,10 @@ INTERFACE ERROR TRIAGE — TOP-{{ summary.total }} VERIFICATION
 Generated {{ generated_at }} | source: {{ meta.csv_file }}
 {% if meta.repoll_minutes %}Re-poll window: {{ meta.repoll_minutes }} min
 {% endif %}
+{% if meta.from_history %}REBUILT FROM STORED COLLECTION — no device was contacted.
+Device data: {{ meta.collected_from }}
+
+{% endif %}
 EXECUTIVE SUMMARY
   {{ summary.line }}
 
@@ -38,4 +42,4 @@ CASES
 {% endfor %}
 --------------------------------------------------------------------------------
 iftriage is a read-only diagnostic tool. Raw evidence for each case is embedded
-in the HTML report; every command sent is recorded in the session audit log.
+in the HTML report; {% if meta.from_history %}no command was sent — this report was rebuilt from stored data.{% else %}every command sent is recorded in the session audit log.{% endif %}

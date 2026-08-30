@@ -33,6 +33,10 @@
 <p class="muted">Generated {{ generated_at }} · source: {{ meta.csv_file }}
 {% if meta.repoll_minutes %} · re-poll window: {{ meta.repoll_minutes }} min{% endif %}</p>
 
+{% if meta.from_history %}
+<div class="dq"><strong>Rebuilt from stored collection</strong> — no device was
+contacted for this report. Device data comes from {{ meta.collected_from }}.</div>
+{% endif %}
 <div class="summary"><strong>Executive summary:</strong> {{ summary.line }}</div>
 
 {% if findings %}
@@ -94,7 +98,7 @@
 </div>
 {% endfor %}
 
-<p class="muted">iftriage is a read-only diagnostic tool. Every command sent is
-recorded in the session audit log{% if meta.audit_log %} ({{ meta.audit_log }}){% endif %}.</p>
+<p class="muted">iftriage is a read-only diagnostic tool. {% if meta.from_history %}No command was sent: this report was rebuilt from stored data.{% else %}Every command sent is
+recorded in the session audit log{% if meta.audit_log %} ({{ meta.audit_log }}){% endif %}.{% endif %}</p>
 </body>
 </html>

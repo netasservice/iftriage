@@ -28,6 +28,9 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
               ├──> session.py (ReadOnlySession — the ONLY device egress)
               │
               └──> history.py (SQLite: archive, results, platform cache)
+                        │
+                        └──> replay.py (--from-history: results back out of
+                              storage, straight into rules.py — no device)
 ```
 
 ## Module responsibilities
@@ -43,6 +46,7 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 | `platforms/` | `PlatformProfile` ABC + registry; command templates and parsers | no |
 | `rules.py` | Verdict engine — pure functions over the canonical model | no |
 | `history.py` | SQLite persistence (archive, runs, platform cache, recurrence) | no |
+| `replay.py` | Rebuilds a run's results from stored data (`--from-history`); reads the database, never writes it | no |
 | `report.py` | Jinja2 HTML/text rendering + enriched CSV writer (input rows echoed with analysis columns appended) | no |
 
 ## Key invariants
@@ -124,3 +128,12 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 8. Results persist to SQLite; Jinja2 renders the HTML + text report and the
    enriched CSV echoes the input table with the analysis columns appended (in
    the original row order); the audit log holds every command sent.
+
+`iftriage run <csv> --from-history` short-circuits steps 2–6: `replay.py` pairs
+every case ingested at step 1 with its newest stored collection and hands the
+rebuilt `CaseResult`s straight to step 7. Analysis re-runs in full, so a rules
+or threshold change is visible; collection does not happen at all. Nothing is
+recorded — no run row, and no second archive of the CSV, which would inflate
+every recurrence count. A case with no
+stored collection fails the whole rebuild rather than quietly dropping a row
+the operator asked about.
