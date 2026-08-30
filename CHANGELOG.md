@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-29
+
 ### Changed
 - **Arista EOS uses `show port-channel dense`** instead of
   `show port-channel summary`. `dense` is the compact table the fleet's 7808
