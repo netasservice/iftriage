@@ -29,6 +29,7 @@ from .ingest import IngestError, ingest_csv
 from .models import Credentials, Platform
 from .normalize import is_portchannel_name
 from .platforms import get_profile
+from .platforms.base import PORTCHANNEL_KEY
 from .report import build_summary, render_report
 from .rules import evaluate_case
 from .session import AuditLog
@@ -134,6 +135,15 @@ def _resolve_credentials(username_arg: str | None) -> Credentials:
     )
 
 
+def _conditional_note(profile, key: str, case_is_portchannel: bool) -> str:
+    """Flag the one command the run may decide not to send after all."""
+    if key != PORTCHANNEL_KEY or case_is_portchannel:
+        return ""
+    if not profile.reports_portchannel_membership:
+        return "   [always sent: the only way to learn membership here]"
+    return "   [only if this port turns out to be a bundle member]"
+
+
 def _dry_run(cases, config, history) -> int:
     print("DRY RUN — connecting to nothing. Targets and exact commands:\n")
     by_ip: dict[str, list] = {}
@@ -161,8 +171,9 @@ def _dry_run(cases, config, history) -> int:
                     print(f"      {plat.value}: INTERFACE NAME ERROR: {exc}")
                     continue
                 prefix = f"      {plat.value}: " if len(platforms) > 1 else "      "
-                for command in profile.render_commands(canonical).values():
-                    print(f"{prefix}{command}")
+                is_po = is_portchannel_name(case.interface)
+                for key, command in profile.render_commands(canonical).items():
+                    print(f"{prefix}{command}{_conditional_note(profile, key, is_po)}")
             if is_portchannel_name(case.interface):
                 print(
                     "      NOTE: port-channel — members are discovered "
@@ -293,6 +304,7 @@ def _cmd_run(args) -> int:
                 member_stats=result.member_stats,
                 member_repoll_stats=result.member_repoll_stats,
                 member_errors=result.member_errors,
+                parent_portchannel=result.parent_portchannel,
             )
             result.recurrence = history.recurrence_count(
                 result.case.switch, result.case.interface

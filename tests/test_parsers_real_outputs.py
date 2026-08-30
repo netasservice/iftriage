@@ -237,6 +237,7 @@ def test_real_eos_down_breakout_interface():
     assert parsed["discards_in"] == 199760
     assert parsed["discards_out"] == 221624
     assert parsed["late_collisions"] == 0
+    assert parsed["member_of_portchannel"] == "Port-Channel195"
 
 
 def test_real_eos_counters_breakout():
@@ -268,6 +269,22 @@ def test_real_eos_lldp_no_neighbors():
         "Ethernet3/25/3",
     )
     assert parsed == {}
+
+
+def test_real_nxos_member_port_names_its_bundle():
+    """The `Belongs to Po21` line is what lets the collector skip the
+    port-channel summary on devices where no case touches a bundle."""
+    parsed = NX.parse(
+        "interface",
+        load_fixture("nxos", "real_show_interface_member_eth3_14.txt"),
+        "Ethernet3/14",
+    )
+    assert parsed["member_of_portchannel"] == "Po21"
+    assert parsed["link_status"] == "up"
+    assert parsed["duplex"] == "full"
+    assert parsed["crc_errors"] == 0
+    assert parsed["discards_in"] == 45158036
+    assert parsed["discards_out"] == 6240
 
 
 def test_real_eos_port_channel_dense_flags():

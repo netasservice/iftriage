@@ -55,12 +55,13 @@ DRY RUN — connecting to nothing. Targets and exact commands:
 
 == sw-acc-01 (192.0.2.11) — platform: UNKNOWN (will autodetect on connect)
    -- Gi3/0/20 [Rcv-Err]
+      ios_xe: show processes cpu | include CPU utilization
       ios_xe: show version
       ios_xe: show interfaces GigabitEthernet3/0/20
       ios_xe: show interfaces GigabitEthernet3/0/20 counters errors
       ios_xe: show interfaces GigabitEthernet3/0/20 transceiver detail
       ios_xe: show cdp neighbors GigabitEthernet3/0/20 detail
-      ios_xe: show etherchannel summary
+      ios_xe: show etherchannel summary   [always sent: the only way to learn membership here]
       ios_xe: show logging | include GigabitEthernet3/0/20
       nxos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform nxos in 'Gi3/0/20'
       eos: INTERFACE NAME ERROR: unknown interface prefix 'Gi' for platform eos in 'Gi3/0/20'
@@ -410,16 +411,32 @@ Rates are normalized: `error_delta / packet_delta` over the re-poll window, or
 lifetime errors/packets as fallback — a raw 24h delta on its own means nothing.
 Thresholds live in `config.yaml` (default: ≥1e-4 high, ≥1e-5 warn).
 
-**Port-channels are judged member by member.** When a case is a Po, iftriage
-reconnects to the device and runs the per-interface command set on every member
-discovered in the `etherchannel`/`port-channel summary` output (member names
-are validated before ever reaching a command). Bundle counters are sums across
-members — one bad member's rate is diluted by its healthy peers — so the
-verdict names the culprit (`fault isolated to member Gi3/0/23`), a member that
-could not be collected fails the bundle closed to `PARSE_ERROR`, and bundle
-errors with clean members degrade to "not attributable to any current member".
+**Port-channels pull in the whole bundle.** Whenever a case touches a
+port-channel — as the bundle or as one of its members — iftriage reconnects to
+the device and runs the per-interface command set on every member of it (member
+names are validated before ever reaching a command). What it concludes depends
+on which end the CSV reported:
+
+- **The case is the Po.** Bundle counters are sums across members — one bad
+  member's rate is diluted by its healthy peers — so the verdict names the
+  culprit (`fault isolated to member Gi3/0/23`), a member that could not be
+  collected fails the bundle closed to `PARSE_ERROR`, and bundle errors with
+  clean members degrade to "not attributable to any current member".
+- **The case is a member.** The verdict stays about the interface the CSV
+  reported, judged like any single interface. Its siblings are collected
+  because a LAG fault often sits on a neighbouring link, but they are listed as
+  context: a dirty or uncollectable sibling never changes this port's category.
+
 The member breakdown appears in all three reports. Cost: one extra SSH
-connection per device holding a Po case.
+connection per device holding such a case.
+
+The port-channel summary itself is the one conditional command. On EOS and
+NX-OS a physical port's own `show interfaces` names its bundle (`Member of
+Port-Channel195`, `Belongs to Po21`), so the summary is only sent when a case
+on that device turns out to be relevant — worth having on an Arista chassis
+carrying hundreds of channels. IOS-XE never names the channel-group there, so
+`show etherchannel summary` is always sent: it is the only way to learn
+membership at all.
 
 ## Supported platforms
 

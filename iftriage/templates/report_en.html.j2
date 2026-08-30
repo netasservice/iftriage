@@ -64,7 +64,9 @@
   verdict uses the first sample only, no delta.</p>
   {% endif %}
   {% if r.verdict and r.verdict.member_findings %}
-  <p class="muted">Member interfaces:</p>
+  <p class="muted">{% if r.parent_portchannel %}Other members of
+    {{ r.parent_portchannel }} (context — the verdict above is for
+    {{ r.case.interface }} itself):{% else %}Member interfaces:{% endif %}</p>
   <ul class="muted">
     {% for member, finding in r.verdict.member_findings.items() %}
     <li><strong>{{ member }}</strong>: {{ finding }}</li>

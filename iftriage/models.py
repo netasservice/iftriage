@@ -98,6 +98,10 @@ class NormalizedInterfaceStats:
     port_channel_members: dict[str, list[str]] | None = (
         None  # Po name -> member interfaces
     )
+    # Parent port-channel as the device names it, when `show interfaces` says
+    # so (EOS "Member of Port-Channel195", NX-OS "Belongs to Po21"). Optional:
+    # its absence only means "not known from this output", never an error.
+    member_of_portchannel: str | None = None
     flap_count: int | None = None
     # Corroborative only (e.g. %CDP-4-DUPLEX_MISMATCH in logging); never a
     # required field, so its absence cannot cause PARSE_ERROR.
@@ -137,6 +141,10 @@ class CaseResult:
     # the first sample stays valid, only the delta answer is missing.
     repoll_skip_reason: str | None = None
     parse_errors: list[str] = field(default_factory=list)
+    # Set when the case interface is itself a member of a port-channel; then
+    # member_stats holds its sibling members as context, not the case's own
+    # members, and the verdict stays about the reported interface.
+    parent_portchannel: str | None = None
     # Port-channel cases: per-member samples keyed by canonical member name,
     # and the reason any discovered member has no sample (fail closed).
     member_stats: dict[str, NormalizedInterfaceStats] = field(default_factory=dict)

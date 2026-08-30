@@ -340,3 +340,67 @@ def test_po_without_member_data_matches_the_single_interface_verdict():
 
     assert with_empty_members.category is plain.category
     assert with_empty_members.reason == plain.reason
+
+
+# ---- a case that is itself a member of a bundle ----------------------------
+
+
+def member_case(counter="Rcv-Err"):
+    case = make_case(counter=counter)
+    case.interface = "Et4/15"
+    return case
+
+
+def run_member(case, stats, siblings, member_errors=None):
+    return evaluate_case(
+        case,
+        stats,
+        None,
+        None,
+        T,
+        member_stats=siblings,
+        member_errors=member_errors or {},
+        parent_portchannel="Po195",
+    )
+
+
+def test_member_case_keeps_its_own_verdict_and_lists_siblings():
+    """The CSV asked about Et4/15: a dirty sibling is context, not the answer."""
+    own = make_stats(input_packets=100_000_000)
+    dirty_sibling = make_stats(
+        input_errors=1000, crc_errors=1000, input_packets=1_000_000
+    )
+
+    verdict = run_member(member_case(), own, {"Ethernet4/16": dirty_sibling})
+
+    assert verdict.category is VerdictCategory.IGNORE
+    assert "Ethernet4/16" not in verdict.reason
+    assert verdict.member_findings["Ethernet4/16"].startswith("PHYSICAL_MEDIA")
+    assert any("member of port-channel Po195" in d for d in verdict.details)
+
+
+def test_member_case_verdict_matches_the_plain_single_interface_path():
+    own = make_stats(input_errors=1000, crc_errors=1000, input_packets=1_000_000)
+    case = member_case()
+
+    plain = evaluate_case(case, own, None, None, T)
+    with_siblings = run_member(case, own, {"Ethernet4/16": make_stats()})
+
+    assert with_siblings.category is plain.category
+    assert with_siblings.reason == plain.reason
+
+
+def test_uncollectable_sibling_does_not_fail_a_member_case_closed():
+    """Contrast with the bundle path, where an unevaluable member is fatal:
+    here the reported interface was collected, so it keeps its own answer."""
+    own = make_stats(input_packets=100_000_000)
+
+    verdict = run_member(
+        member_case(),
+        own,
+        {},
+        member_errors={"Ethernet4/16": "member collection failed: timed out"},
+    )
+
+    assert verdict.category is VerdictCategory.IGNORE
+    assert verdict.member_findings["Ethernet4/16"].startswith("not evaluated:")

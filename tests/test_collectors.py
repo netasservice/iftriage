@@ -9,7 +9,7 @@ from iftriage.collectors import (
     _AaaBreaker,
     _bounded_evidence,
     _collect_device,
-    _discover_members,
+    _resolve_portchannel_group,
     _run_pass,
     abort_if_nothing_collected,
     collect_members,
@@ -521,6 +521,118 @@ def test_repoll_pass_cpu_skip_preserves_the_first_sample(tmp_path, monkeypatch):
     assert "CPU utilization 92%" in result.repoll_skip_reason
 
 
+# ---- port-channel summary gate ---------------------------------------------
+
+
+def _quiet_config():
+    config = Config()
+    config.connection.jitter_min = 0.0
+    config.connection.jitter_max = 0.0
+    return config
+
+
+HEALTHY_CPU_EOS = "%Cpu(s):  3.1 us,  1.2 sy,  0.0 ni, 94.2 id"
+
+EOS_PLAIN_PORT = """Ethernet4/15 is up, line protocol is up (connected)
+  Full-duplex, 10Gb/s, auto negotiation: off
+"""
+
+EOS_MEMBER_PORT = """Ethernet4/15 is up, line protocol is up (connected)
+  Member of Port-Channel195
+  Full-duplex, 10Gb/s, auto negotiation: off
+"""
+
+EOS_DENSE = """   Port-Channel       Protocol       Ports
+   Po195(U)           LACP(a)        Et4/15(PG+) Et4/16(PG+)
+"""
+
+
+def _gate_device(tmp_path, monkeypatch, platform, interface, interface_output=""):
+    """Run a first pass against a fake device; returns (result, commands)."""
+    commands: list[str] = []
+
+    class GateSession:
+        def __init__(self, **kwargs):
+            pass
+
+        def connect(self):
+            pass
+
+        def get(self, command):
+            commands.append(command)
+            if "processes cpu" in command or "processes top" in command:
+                return HEALTHY_CPU if platform == "ios_xe" else HEALTHY_CPU_EOS
+            if "port-channel dense" in command or "etherchannel summary" in command:
+                return EOS_DENSE
+            if command.startswith(("show interfaces ", "show interface ")) and (
+                command.count(" ") == 2
+            ):
+                return interface_output
+            return ""
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setattr("iftriage.collectors.ReadOnlySession", GateSession)
+    config = _quiet_config()
+    config.platform_overrides = {"10.0.0.1": platform}
+    result = CaseResult(case=_case("sw-a", interface))
+
+    _collect_device(
+        mgmt_ip="10.0.0.1",
+        device_cases=[result],
+        config=config,
+        credentials=Credentials(username="ops", password="pw"),
+        audit=AuditLog(tmp_path / "audit.log"),
+        history=None,
+        breaker=_AaaBreaker(limit=2),
+        keys=COMMAND_KEYS,
+    )
+    return result, commands
+
+
+def test_portchannel_summary_is_skipped_for_an_unrelated_interface(
+    tmp_path, monkeypatch
+):
+    result, commands = _gate_device(
+        tmp_path, monkeypatch, "eos", "Et4/15", EOS_PLAIN_PORT
+    )
+
+    assert "show port-channel dense" not in commands
+    assert result.stats is not None
+    assert result.stats.port_channel_members is None
+
+
+def test_portchannel_summary_runs_when_the_interface_is_a_member(tmp_path, monkeypatch):
+    result, commands = _gate_device(
+        tmp_path, monkeypatch, "eos", "Et4/15", EOS_MEMBER_PORT
+    )
+
+    assert commands.count("show port-channel dense") == 1
+    assert result.stats is not None
+    assert result.stats.member_of_portchannel == "Port-Channel195"
+    assert result.stats.port_channel_members == {"Po195": ["Et4/15", "Et4/16"]}
+    assert "portchannel" in result.raw_outputs
+
+
+def test_portchannel_summary_runs_when_the_case_is_a_bundle(tmp_path, monkeypatch):
+    _result, commands = _gate_device(tmp_path, monkeypatch, "eos", "Po195")
+
+    assert commands.count("show port-channel dense") == 1
+
+
+def test_ios_xe_always_sends_the_etherchannel_summary(tmp_path, monkeypatch):
+    """IOS-XE `show interfaces` never names the channel-group, so the summary
+    is the only way to learn membership and cannot be gated away."""
+    result, commands = _gate_device(
+        tmp_path, monkeypatch, "ios_xe", "Gi1/0/1", "GigabitEthernet1/0/1 is up\n"
+    )
+
+    assert commands.count("show etherchannel summary") == 1
+    assert result.stats is not None
+    assert result.stats.member_of_portchannel is None
+
+
 # ---- port-channel member pass ----------------------------------------------
 
 
@@ -534,17 +646,33 @@ def _po_result(platform=Platform.IOS_XE, members=("Gi3/0/23", "Gi3/0/24")):
     return result
 
 
-def test_discover_members_validates_and_records_rejects():
+def test_resolve_group_validates_and_records_rejects():
     profile = get_profile(Platform.IOS_XE)
     result = _po_result(members=("Gi3/0/23", "Gi3/0/24", "bogus; reload"))
 
-    members = _discover_members(result, profile)
+    parent, members = _resolve_portchannel_group(result, profile)
 
+    assert parent is None  # the case IS the bundle
     assert members == ["GigabitEthernet3/0/23", "GigabitEthernet3/0/24"]
     assert "rejected" in result.member_errors["bogus; reload"]
 
 
-def test_discover_members_is_empty_for_non_po_cases():
+def test_resolve_group_finds_the_parent_of_a_member_case():
+    profile = get_profile(Platform.IOS_XE)
+    result = CaseResult(case=_case("sw-a", "Gi3/0/23"))
+    result.canonical_interface = "GigabitEthernet3/0/23"
+    result.stats = NormalizedInterfaceStats(
+        port_channel_members={"Po214": ["Gi3/0/23", "Gi3/0/24", "Gi3/0/25"]}
+    )
+
+    parent, members = _resolve_portchannel_group(result, profile)
+
+    assert parent == "Po214"
+    # Siblings only: the case itself was already sampled on pass 1.
+    assert members == ["GigabitEthernet3/0/24", "GigabitEthernet3/0/25"]
+
+
+def test_resolve_group_is_empty_for_unrelated_interfaces():
     profile = get_profile(Platform.IOS_XE)
     result = CaseResult(case=_case("sw-a", "Gi1/0/1"))
     result.canonical_interface = "GigabitEthernet1/0/1"
@@ -552,7 +680,7 @@ def test_discover_members_is_empty_for_non_po_cases():
         port_channel_members={"Po214": ["Gi3/0/23"]}
     )
 
-    assert _discover_members(result, profile) == []
+    assert _resolve_portchannel_group(result, profile) == (None, [])
 
 
 def _member_pass_session(monkeypatch, connect_error=None):
@@ -575,13 +703,6 @@ def _member_pass_session(monkeypatch, connect_error=None):
 
     monkeypatch.setattr("iftriage.collectors.ReadOnlySession", FakeSession)
     return commands
-
-
-def _quiet_config():
-    config = Config()
-    config.connection.jitter_min = 0.0
-    config.connection.jitter_max = 0.0
-    return config
 
 
 def test_collect_members_samples_each_validated_member(tmp_path, monkeypatch):
@@ -609,6 +730,99 @@ def test_collect_members_samples_each_validated_member(tmp_path, monkeypatch):
     assert "show etherchannel summary" not in commands
     # Evidence is keyed per member.
     assert "GigabitEthernet3/0/23:interface" in result.raw_outputs
+
+
+def test_member_case_samples_its_siblings_not_itself(tmp_path, monkeypatch):
+    commands = _member_pass_session(monkeypatch)
+    result = CaseResult(case=_case("sw-a", "Gi3/0/23"))
+    result.platform = Platform.IOS_XE
+    result.canonical_interface = "GigabitEthernet3/0/23"
+    result.stats = NormalizedInterfaceStats(
+        port_channel_members={"Po214": ["Gi3/0/23", "Gi3/0/24", "Gi3/0/25"]}
+    )
+
+    covered = collect_members(
+        [result],
+        _quiet_config(),
+        Credentials(username="ops", password="pw"),
+        AuditLog(tmp_path / "audit.log"),
+        None,
+    )
+
+    assert covered == 1
+    assert result.parent_portchannel == "Po214"
+    assert set(result.member_stats) == {
+        "GigabitEthernet3/0/24",
+        "GigabitEthernet3/0/25",
+    }
+    # Pass 1 already sampled the reported port; the member pass must not redo it.
+    assert "show interfaces GigabitEthernet3/0/23" not in commands
+
+
+def test_member_case_with_only_rejected_siblings_is_still_marked_a_member(
+    tmp_path, monkeypatch
+):
+    """Resolving records rejected member names even when nothing is left to
+    sample. rules.py must still see this as a member case, or it would judge
+    the port as if it were the bundle."""
+    commands = _member_pass_session(monkeypatch)
+    result = CaseResult(case=_case("sw-a", "Gi3/0/23"))
+    result.platform = Platform.IOS_XE
+    result.canonical_interface = "GigabitEthernet3/0/23"
+    result.stats = NormalizedInterfaceStats(
+        port_channel_members={"Po214": ["Gi3/0/23", "bogus; reload"]}
+    )
+
+    covered = collect_members(
+        [result],
+        _quiet_config(),
+        Credentials(username="ops", password="pw"),
+        AuditLog(tmp_path / "audit.log"),
+        None,
+    )
+
+    assert covered == 0
+    assert commands == []  # nothing worth a second connection
+    assert result.parent_portchannel == "Po214"
+    assert "rejected" in result.member_errors["bogus; reload"]
+
+    verdict = evaluate_case(
+        case=result.case,
+        stats=result.stats,
+        repoll_stats=None,
+        repoll_minutes=None,
+        thresholds=Config().thresholds,
+        member_errors=result.member_errors,
+        parent_portchannel=result.parent_portchannel,
+    )
+    assert "port-channel Gi3/0/23" not in verdict.reason
+
+
+def test_sibling_cases_of_one_bundle_sample_each_member_once(tmp_path, monkeypatch):
+    commands = _member_pass_session(monkeypatch)
+    members = ["Gi3/0/23", "Gi3/0/24", "Gi3/0/25"]
+    results = []
+    for name in ("Gi3/0/23", "Gi3/0/24"):
+        result = CaseResult(case=_case("sw-a", name))
+        result.platform = Platform.IOS_XE
+        result.canonical_interface = f"GigabitEthernet{name[2:]}"
+        result.stats = NormalizedInterfaceStats(
+            port_channel_members={"Po214": list(members)}
+        )
+        results.append(result)
+
+    collect_members(
+        results,
+        _quiet_config(),
+        Credentials(username="ops", password="pw"),
+        AuditLog(tmp_path / "audit.log"),
+        None,
+    )
+
+    # Gi3/0/25 is a sibling of both cases but is only polled once.
+    assert commands.count("show interfaces GigabitEthernet3/0/25") == 1
+    for result in results:
+        assert "GigabitEthernet3/0/25" in result.member_stats
 
 
 def test_collect_members_skips_cases_without_member_data(tmp_path, monkeypatch):
