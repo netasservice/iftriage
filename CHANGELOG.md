@@ -4,20 +4,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Removed
-- **The re-poll is gone, and with it the wait.** `--repoll`, `--no-repoll` and
-  the `repoll` section of `config.yaml` no longer exist. A run used to contact
-  every device, sleep for ten minutes and contact them all again; the terminal
-  was frozen for the whole interval and the answer it bought — is this counter
-  still incrementing? — was measured over ten minutes. It is now measured
-  against a previous run, over hours or days, and nothing blocks. Each device
-  is contacted once instead of twice, so the audit log is shorter too.
-- **A `config.yaml` still carrying `repoll:` fails the run** rather than being
-  ignored, for the same reason the retired `thresholds` keys do: the file would
-  describe behavior that no longer exists, and the operator would go on
-  believing the tool waits.
+## [0.6.0] - 2026-08-30
 
 ### Added
 - **Runs now compare against the newest earlier sample stored for each
@@ -45,6 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   against, how long the window was, and which run it came from — plus the
   matching `baseline_taken_at` and `baseline_window` columns in the enriched
   CSV.
+
+- **`--from-history` rebuilds the report from the collection already stored**,
+  contacting no device and asking for no credentials. Collection is the
+  expensive half of a run and the analysis is the cheap half; this replays the
+  first so the second can be iterated on — a template tweak, a threshold
+  change, a new rule — without asking the fleet again. Verdicts are re-derived
+  from the stored counters rather than replayed, so `rules.py` and
+  `config.yaml` edits show up too. It writes nothing back: re-archiving the
+  same CSV would inflate every recurrence count. If any row of the CSV has no
+  stored collection, the whole rebuild fails with exit code 2 and names the
+  rows to collect.
+- `case_results` now also stores `canonical_interface` and `parent_portchannel`
+  — fields a faithful rebuild needs and the schema used to drop. Added in place
+  to existing databases, like `members_json` before them.
+- `runs.replay_schema` marks a run as written with the full column set. Runs
+  recorded by 0.5.0 and earlier are missing fields the verdict depends on, so
+  `--from-history` refuses them rather than replaying a report that looks
+  faithful while quietly answering a different question.
 
 ### Changed
 - **The delta now runs from the stored sample to the fresh one**, the opposite
@@ -86,24 +91,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   rate above the floor that the earlier sample shows flat is reported as
   historical; only a rate under the floor is reported as below it.
 
-### Added
-- **`--from-history` rebuilds the report from the collection already stored**,
-  contacting no device and asking for no credentials. Collection is the
-  expensive half of a run and the analysis is the cheap half; this replays the
-  first so the second can be iterated on — a template tweak, a threshold
-  change, a new rule — without asking the fleet again. Verdicts are re-derived
-  from the stored counters rather than replayed, so `rules.py` and
-  `config.yaml` edits show up too. It writes nothing back: re-archiving the
-  same CSV would inflate every recurrence count. If any row of the CSV has no
-  stored collection, the whole rebuild fails with exit code 2 and names the
-  rows to collect.
-- `case_results` now also stores `canonical_interface` and `parent_portchannel`
-  — fields a faithful rebuild needs and the schema used to drop. Added in place
-  to existing databases, like `members_json` before them.
-- `runs.replay_schema` marks a run as written with the full column set. Runs
-  recorded by 0.5.0 and earlier are missing fields the verdict depends on, so
-  `--from-history` refuses them rather than replaying a report that looks
-  faithful while quietly answering a different question.
+### Removed
+- **The re-poll is gone, and with it the wait.** `--repoll`, `--no-repoll` and
+  the `repoll` section of `config.yaml` no longer exist. A run used to contact
+  every device, sleep for ten minutes and contact them all again; the terminal
+  was frozen for the whole interval and the answer it bought — is this counter
+  still incrementing? — was measured over ten minutes. It is now measured
+  against a previous run, over hours or days, and nothing blocks. Each device
+  is contacted once instead of twice, so the audit log is shorter too.
+- **A `config.yaml` still carrying `repoll:` fails the run** rather than being
+  ignored, for the same reason the retired `thresholds` keys do: the file would
+  describe behavior that no longer exists, and the operator would go on
+  believing the tool waits.
 
 ## [0.5.0] - 2026-08-29
 
