@@ -1,4 +1,4 @@
-"""Command-line interface: `iftriage run top20.csv [--repoll 10] [--dry-run]`."""
+"""Command-line interface: `iftriage run top20.csv [--baseline] [--dry-run]`."""
 
 from __future__ import annotations
 
@@ -6,22 +6,18 @@ import argparse
 import getpass
 import os
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 from . import __version__
+from .baseline import BaselineSelection, attach_baselines, select_baselines
 from .collectors import (
     RunAborted,
     abort_if_nothing_collected,
     collect,
     collect_members,
     mark_portchannel_duplicates,
-    repoll_eligible,
     resolve_platform,
-)
-from .collectors import (
-    repoll as repoll_pass,
 )
 from .config import load_config
 from .history import History, HistoryError
@@ -32,7 +28,7 @@ from .platforms import get_profile
 from .platforms.base import PORTCHANNEL_KEY
 from .replay import ReplayError, load_results
 from .report import build_summary, render_report
-from .rules import evaluate_case
+from .rules import evaluate_case, format_window
 from .session import AuditLog
 
 
@@ -48,15 +44,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="Triage every case in a top-N CSV")
     run.add_argument("csv", help="Path to the Splunk top-N CSV export")
-    run.add_argument(
-        "--repoll",
-        type=float,
-        default=None,
-        metavar="MINUTES",
-        help="Re-poll counters after N minutes (default: config value)",
+    baseline = run.add_mutually_exclusive_group()
+    baseline.add_argument(
+        "--baseline",
+        action="store_true",
+        help="Compare each interface against the newest earlier sample stored "
+        "for it, without asking (default when a terminal answers yes).",
     )
-    run.add_argument(
-        "--no-repoll", action="store_true", help="Skip the re-poll pass entirely"
+    baseline.add_argument(
+        "--no-baseline",
+        action="store_true",
+        help="Judge on this run's single sample only; ignore stored samples.",
     )
     run.add_argument(
         "--dry-run",
@@ -108,6 +106,67 @@ def _ask(label: str, *, secret: bool) -> str:
             "pass --user and set IFTRIAGE_PASS (and IFTRIAGE_ENABLE if the "
             "fleet needs enable)"
         ) from exc
+
+
+def _confirm(question: str, *, default: bool) -> bool:
+    """A yes/no question that can never hang a non-interactive run.
+
+    Deliberately not _ask(): a missing terminal here is not an error, it is a
+    cron job, and it should take the documented default instead of exiting.
+    """
+    try:
+        answer = input(question).strip().lower()
+    except (EOFError, OSError, ValueError):
+        # EOFError: piped or empty stdin. ValueError: a caller that closed it
+        # outright. Neither is an error here -- both are "nobody is watching".
+        return default
+    except KeyboardInterrupt:
+        return False  # a deliberate Ctrl-C is never a yes
+    if not answer:
+        return default
+    return answer in {"y", "yes"}
+
+
+def _decide_baselines(args, selection) -> bool:
+    """Whether to use the stored samples, printing what was decided and why.
+
+    Without an explicit flag and without a terminal the answer is no: a
+    baseline can only narrow a verdict (a flat counter vetoes escalation), so
+    it is never applied to a run nobody is watching.
+    """
+    if args.no_baseline:
+        print("Single-sample run: no delta will be computed.")
+        return False
+    if selection.matched == 0:
+        print(
+            "No earlier sample stored for any of these interfaces. This run "
+            "records the first one; run again later for a delta."
+        )
+        return False
+
+    newest = format_window(_minutes_since(selection.newest_taken_at))
+    oldest = format_window(_minutes_since(selection.oldest_taken_at))
+    print(
+        f"Stored earlier samples found for {selection.matched} of "
+        f"{selection.total_cases} case(s) (newest {newest} ago, "
+        f"oldest {oldest} ago)."
+    )
+    if args.baseline:
+        return True
+    if _confirm(
+        "Compare against them, so the report can say whether each counter is "
+        "still incrementing? [Y/n]: ",
+        default=False,
+    ):
+        return True
+    print("Single-sample run: no delta will be computed.")
+    return False
+
+
+def _minutes_since(moment: datetime | None) -> float | None:
+    if moment is None:
+        return None
+    return (datetime.now(UTC) - moment).total_seconds() / 60
 
 
 def _resolve_credentials(username_arg: str | None) -> Credentials:
@@ -202,13 +261,13 @@ def _evaluate_all(results, config, history: History) -> None:
         result.verdict = evaluate_case(
             case=result.case,
             stats=result.stats,
-            repoll_stats=result.repoll_stats,
-            repoll_minutes=result.repoll_minutes,
+            baseline_stats=result.baseline_stats,
+            baseline_minutes=result.baseline_minutes,
             thresholds=config.thresholds,
             collection_error=result.collection_error,
             parse_errors=result.parse_errors,
             member_stats=result.member_stats,
-            member_repoll_stats=result.member_repoll_stats,
+            member_baseline_stats=result.member_baseline_stats,
             member_errors=result.member_errors,
             parent_portchannel=result.parent_portchannel,
         )
@@ -244,8 +303,8 @@ def _from_history(args, config, cases, findings, output_dir) -> int:
     ignored = [
         name
         for name, given in (
-            ("--repoll", args.repoll is not None),
-            ("--no-repoll", args.no_repoll),
+            ("--baseline", args.baseline),
+            ("--no-baseline", args.no_baseline),
             ("--user", args.user is not None),
         )
         if given
@@ -274,19 +333,14 @@ def _from_history(args, config, cases, findings, output_dir) -> int:
     finally:
         history.close()
 
-    # Every replayed result carries the re-poll window of the run that produced
-    # it; a run made with --no-repoll leaves them all None.
-    repoll_minutes = next(
-        (
-            result.repoll_minutes
-            for result in results
-            if result.repoll_minutes is not None
-        ),
-        None,
-    )
+    # Each stored row already carries the earlier sample it was judged
+    # against, so the rebuilt report states the same coverage as the original.
     meta = {
         "csv_file": args.csv,
-        "repoll_minutes": repoll_minutes,
+        "baseline": {
+            "matched": sum(1 for r in results if r.baseline_stats is not None),
+            "total": len(results),
+        },
         "from_history": True,
         "collected_from": source.describe(),
     }
@@ -344,16 +398,25 @@ def _cmd_run(args) -> int:
     if args.from_history:
         return _from_history(args, config, cases, findings, output_dir)
 
-    repoll_minutes: float | None
-    if args.no_repoll:
-        repoll_minutes = None
-    else:
-        repoll_minutes = (
-            args.repoll if args.repoll is not None else config.repoll_default_minutes
-        )
+    # The baseline question is answered before a single device is contacted,
+    # so the operator answers it now instead of after a long collect. `started`
+    # is also the cutoff that makes this run incapable of being its own
+    # baseline. An absent database simply has nothing to offer.
+    started = datetime.now(UTC)
+    selection = BaselineSelection(total_cases=len(cases))
+    if Path(config.db_path).exists():
+        reader = History(config.db_path)
+        try:
+            selection = select_baselines(cases, reader, config.baseline, started)
+        except HistoryError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        finally:
+            reader.close()
+    use_baselines = _decide_baselines(args, selection)
 
-    # Resolved before the history database is opened so that abandoning a
-    # prompt does not leave an orphan run row behind.
+    # Resolved before the history database is opened for writing, so that
+    # abandoning a prompt does not leave an orphan run row behind.
     try:
         credentials = _resolve_credentials(args.user)
     except CredentialError as exc:
@@ -363,7 +426,7 @@ def _cmd_run(args) -> int:
     history = History(config.db_path)
     try:
         history.archive_ingest(args.csv, Path(args.csv).read_text(), cases)
-        run_id = history.start_run(args.csv, repoll_minutes)
+        run_id, _ = history.start_run(args.csv)
 
         stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         audit = AuditLog(output_dir / f"iftriage_audit_{stamp}.log")
@@ -389,25 +452,12 @@ def _cmd_run(args) -> int:
                     "port-channel case(s)."
                 )
 
-            if repoll_minutes and not repoll_eligible(results):
-                # Every device was deliberately skipped (the abort gate above
-                # already handled outright failures): nothing to re-sample.
-                print("Skipping re-poll wait: no collected interfaces to re-sample.")
-                repoll_minutes = None
-            if repoll_minutes:
+            compared = 0
+            if use_baselines:
+                compared = attach_baselines(results, selection, datetime.now(UTC))
                 print(
-                    f"Waiting {repoll_minutes:g} min before re-poll "
-                    "(answers: is it still incrementing NOW?) ..."
-                )
-                time.sleep(repoll_minutes * 60)
-                repoll_pass(
-                    results,
-                    config,
-                    credentials,
-                    audit,
-                    history,
-                    repoll_minutes,
-                    args.workers,
+                    f"Compared {compared} of {len(results)} case(s) against an "
+                    "earlier stored sample."
                 )
         except RunAborted as exc:
             print(f"\nRUN ABORTED: {exc}", file=sys.stderr)
@@ -424,7 +474,7 @@ def _cmd_run(args) -> int:
 
     meta = {
         "csv_file": args.csv,
-        "repoll_minutes": repoll_minutes,
+        "baseline": {"matched": compared, "total": len(results)},
         "audit_log": str(audit.path),
     }
     _render_and_print(results, findings, meta, config, output_dir)

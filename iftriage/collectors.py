@@ -38,7 +38,6 @@ from .platforms.base import (
     DEVICE_LEVEL_KEYS,
     MEMBER_KEYS,
     PORTCHANNEL_KEY,
-    REPOLL_KEYS,
     PlatformProfile,
 )
 from .session import AuditLog, EnableRequired, ReadOnlySession, SafetyViolation
@@ -375,11 +374,6 @@ def _collect_device(
         result.canonical_interface for result in targets if result.canonical_interface
     ]
     allowed = profile.allowed_commands(canonicals)
-    if keys == REPOLL_KEYS:
-        # Port-channel members sampled in the member pass get their delta too.
-        member_names = sorted({m for result in targets for m in result.member_stats})
-        if member_names:
-            allowed |= profile.allowed_commands(member_names, keys=REPOLL_KEYS)
     session = ReadOnlySession(
         host=mgmt_ip,
         device_type=profile.netmiko_device_type,
@@ -410,17 +404,13 @@ def _collect_device(
     device_level_raw: dict[str, str] = {}
     try:
         cpu_skip_reason, cpu_raw = _check_cpu(session, profile, config)
-        if keys != REPOLL_KEYS and cpu_raw:
+        if cpu_raw:
             bounded_cpu = _bounded_evidence(cpu_raw, config.limits.evidence_max_lines)
             for result in targets:
                 result.raw_outputs["cpu"] = bounded_cpu
         if cpu_skip_reason is not None:
             for result in targets:
-                if keys == REPOLL_KEYS:
-                    # The first sample is already good; only the delta is lost.
-                    result.repoll_skip_reason = cpu_skip_reason
-                else:
-                    result.collection_error = f"device skipped: {cpu_skip_reason}"
+                result.collection_error = f"device skipped: {cpu_skip_reason}"
             return
         for result in targets:
             canonical = result.canonical_interface
@@ -437,23 +427,7 @@ def _collect_device(
                 result.parse_errors.append,
                 device_level_raw,
             )
-            if keys == REPOLL_KEYS:
-                result.repoll_stats = stats
-                # Members without a first sample are not re-polled.
-                for member in result.member_stats:
-                    result.member_repoll_stats[member] = _collect_one_interface(
-                        session,
-                        profile,
-                        member,
-                        REPOLL_KEYS,
-                        config,
-                        result.raw_outputs,
-                        f"{member}:",
-                        result.parse_errors.append,
-                        device_level_raw,
-                    )
-            else:
-                result.stats = stats
+            result.stats = stats
         if keys == COMMAND_KEYS:
             _collect_portchannel(session, profile, targets, config)
     finally:
@@ -719,7 +693,7 @@ def collect_members(
     port-channel — as the bundle or as one of its members — and sample every
     other member of that bundle. Returns the number of cases covered."""
     eligible: list[CaseResult] = []
-    for result in repoll_eligible(results):
+    for result in collected_results(results):
         if (
             result.platform is None
             or result.canonical_interface is None
@@ -755,8 +729,8 @@ def collect_members(
     return len(eligible)
 
 
-def repoll_eligible(results: list[CaseResult]) -> list[CaseResult]:
-    """Results whose interface was actually collected in the first pass."""
+def collected_results(results: list[CaseResult]) -> list[CaseResult]:
+    """Results whose interface was actually collected."""
     return [
         result
         for result in results
@@ -770,13 +744,13 @@ def abort_if_nothing_collected(results: list[CaseResult]) -> None:
     """Fail fast when the first pass collected nothing at all.
 
     Wrong credentials on a run too small to trip the AAA breaker (a single
-    device) would otherwise sit out the full repoll interval for a report
+    device) would otherwise reconnect for the member pass and write a report
     that is already decided. Deliberate skips ("device skipped: ...") mean
     the device was reached and intentionally left alone — that outcome
     belongs in the report, so it never triggers the abort.
     """
     live = [result for result in results if not result.case.excluded]
-    if not live or repoll_eligible(results):
+    if not live or collected_results(results):
         return
     if any(
         result.collection_error is not None
@@ -796,24 +770,6 @@ def abort_if_nothing_collected(results: list[CaseResult]) -> None:
         f"no device could be collected: all {len(devices)} device(s) failed "
         f"(first error: {first_error}). Verify credentials/reachability and re-run."
     )
-
-
-def repoll(
-    results: list[CaseResult],
-    config: Config,
-    credentials: Credentials,
-    audit: AuditLog,
-    history: History | None,
-    minutes: float,
-    workers: int = 1,
-) -> None:
-    """Second sample of the same interface counters (caller waits in between)."""
-    eligible = repoll_eligible(results)
-    by_ip: dict[str, list[CaseResult]] = {}
-    for result in eligible:
-        by_ip.setdefault(result.case.mgmt_ip, []).append(result)
-        result.repoll_minutes = minutes
-    _run_pass(by_ip, config, credentials, audit, history, REPOLL_KEYS, workers)
 
 
 def mark_portchannel_duplicates(results: list[CaseResult]) -> None:

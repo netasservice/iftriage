@@ -93,8 +93,16 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 
 1. Ingest CSV → `InterfaceCase` list + data-quality findings (bad rows are
    surfaced and excluded, not analyzed).
-2. Archive the raw CSV to SQLite **before** analysis.
-3. Collection pass: group cases by management IP, resolve platform
+2. Baseline selection (`baseline.py`): each case looks up the newest sample
+   already stored for its `(switch, interface, counter)`, bounded by the
+   configured minimum and maximum window. This happens **before** anything is
+   collected, so the operator answers the yes/no offer immediately instead of
+   after a long collect, and the run's own start instant is the cutoff that
+   makes it incapable of being its own baseline. Without an explicit flag and
+   without a terminal the answer is no (fail closed: a flat counter vetoes
+   escalation).
+3. Archive the raw CSV to SQLite **before** analysis.
+4. Collection pass: group cases by management IP, resolve platform
    (override → cache → SSHDetect), open one `ReadOnlySession` per device, check
    the CPU guard (a device above `cpu_skip_threshold_percent` — or one whose
    CPU cannot be read — is skipped, fail closed), then run the per-interface
@@ -105,10 +113,10 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
    interface output is in hand and one of them proves relevant (a port-channel
    by name, or a port that named its parent bundle). IOS-XE cannot answer that
    from `show interfaces`, so it always sends the summary.
-4. Abort gate: if the first pass collected nothing at all (every live case
+5. Abort gate: if the collection pass got nothing at all (every live case
    failed, none deliberately skipped), the run aborts here — exit code 3, no
-   re-poll wait, no report.
-5. Member pass: for each case that touches a port-channel — as the bundle or
+   member pass, no report.
+6. Member pass: for each case that touches a port-channel — as the bundle or
    as one of its members, resolved in both directions from the pass-1 summary —
    reconnect to the device and run the per-interface command set on every
    member of that bundle (member names are validated by `normalize.py` before
@@ -116,22 +124,23 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
    commands). A member case skips itself; a member shared by two cases on one
    device is sampled once. Failures land in `member_errors`, never on the
    pass-1 sample.
-6. Optional re-poll pass after N minutes re-runs the counter commands (for the
-   case interface and for every sampled member) to answer: still incrementing
-   NOW, or historical?
-7. `rules.py` produces one `Verdict` per case — a port-channel with member
+7. Baseline attachment (`baseline.py`): each collected case is paired with the
+   earlier sample chosen before collection started, and so is each sampled
+   member. Pure SQLite reads — no device is contacted — and a case with no
+   usable earlier sample carries the reason instead.
+8. `rules.py` produces one `Verdict` per case — a port-channel with member
    data is judged member by member and the verdict names the culpable member,
    while a case that is itself a member keeps its own single-interface verdict
    and carries its siblings as context only; port-channel members listed
    alongside their Po are marked duplicates; recurrence counts come from
    history.
-8. Results persist to SQLite; Jinja2 renders the HTML + text report and the
+9. Results persist to SQLite; Jinja2 renders the HTML + text report and the
    enriched CSV echoes the input table with the analysis columns appended (in
    the original row order); the audit log holds every command sent.
 
-`iftriage run <csv> --from-history` short-circuits steps 2–6: `replay.py` pairs
+`iftriage run <csv> --from-history` short-circuits steps 2–7: `replay.py` pairs
 every case ingested at step 1 with its newest stored collection and hands the
-rebuilt `CaseResult`s straight to step 7. Analysis re-runs in full, so a rules
+rebuilt `CaseResult`s straight to step 8. Analysis re-runs in full, so a rules
 or threshold change is visible; collection does not happen at all. Nothing is
 recorded — no run row, and no second archive of the CSV, which would inflate
 every recurrence count. A case with no

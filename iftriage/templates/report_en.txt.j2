@@ -1,6 +1,6 @@
 INTERFACE ERROR TRIAGE — TOP-{{ summary.total }} VERIFICATION
 Generated {{ generated_at }} | source: {{ meta.csv_file }}
-{% if meta.repoll_minutes %}Re-poll window: {{ meta.repoll_minutes }} min
+{% if meta.baseline %}Baseline: {{ meta.baseline.matched }} of {{ meta.baseline.total }} case(s) compared against an earlier stored sample.
 {% endif %}
 {% if meta.error_rate_percent %}Thresholds: errors {{ "%g"|format(meta.error_rate_percent) }}% / discards {{ "%g"|format(meta.discard_rate_percent) }}% of frames
 {% endif %}{% if meta.from_history %}REBUILT FROM STORED COLLECTION — no device was contacted.
@@ -25,8 +25,11 @@ CASES
 {% if r.duplicate_of %}
   Note: member of {{ r.duplicate_of }} (also in this report) — same physical issue counted twice.
 {% endif %}
-{% if r.repoll_skip_reason %}
-  Note: re-poll skipped ({{ r.repoll_skip_reason }}); verdict uses the first sample only, no delta.
+{% set judged_on_counters = r.stats and (not r.verdict or r.verdict.category != VerdictCategory.PARSE_ERROR) %}
+{% if judged_on_counters and r.baseline_taken_at %}
+  Compared against the sample from {{ r.baseline_taken_at.strftime('%Y-%m-%d %H:%M UTC') }} ({{ window(r.baseline_minutes) }} earlier, run #{{ r.baseline_run_id }}).
+{% elif judged_on_counters %}
+  Single-sample verdict: no earlier sample for this interface{% if r.baseline_note %} ({{ r.baseline_note }}){% endif %}. This report cannot say whether the counter is moving now; run again later for a delta.
 {% endif %}
 {% if r.verdict and r.verdict.member_findings %}
   {% if r.parent_portchannel %}Other members of {{ r.parent_portchannel }} (context — the verdict above is for {{ r.case.interface }} itself):{% else %}Member interfaces:{% endif %}

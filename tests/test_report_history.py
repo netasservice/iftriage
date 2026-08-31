@@ -1,6 +1,7 @@
 """Smoke tests: report rendering and SQLite history round-trip."""
 
 import csv
+from datetime import UTC, datetime
 from importlib.resources import files
 
 from conftest import FIXTURES
@@ -45,7 +46,7 @@ def test_render_report_html_and_txt(tmp_path):
     results, findings = _results()
     meta = {
         "csv_file": "sample_top20.csv",
-        "repoll_minutes": 10,
+        "baseline": {"matched": 1, "total": 9},
         "audit_log": "audit.log",
     }
     paths = render_report(results, findings, meta, "report_en", tmp_path)
@@ -62,7 +63,7 @@ def test_render_report_enriched_csv(tmp_path):
     results, findings = _results()
     meta = {
         "csv_file": "sample_top20.csv",
-        "repoll_minutes": 10,
+        "baseline": {"matched": 1, "total": 9},
         "audit_log": "audit.log",
     }
     paths = render_report(results, findings, meta, "report_en", tmp_path)
@@ -93,6 +94,8 @@ def test_render_report_enriched_csv(tmp_path):
         "dq_flags",
         "duplicate_of",
         "recurrence",
+        "baseline_taken_at",
+        "baseline_window",
         "member_summary",
     ]
     assert len(rows) == 9
@@ -135,7 +138,7 @@ def test_history_roundtrip(tmp_path):
     assert history.recurrence_count("sw-a", "Gi3/0/20") == 2
     assert history.recurrence_count("nope", "Gi0/0") == 0
 
-    run_id = history.start_run("sample_top20.csv", 10)
+    run_id, _ = history.start_run("sample_top20.csv")
     results, _ = _results()
     history.save_results(run_id, results)
     history.finish_run(run_id, build_summary(results))
@@ -158,7 +161,7 @@ def _po_result_with_members():
     result.member_stats = {
         "GigabitEthernet3/0/23": NormalizedInterfaceStats(link_status="up")
     }
-    result.member_repoll_stats = {
+    result.member_baseline_stats = {
         "GigabitEthernet3/0/23": NormalizedInterfaceStats(link_status="up")
     }
     result.member_errors = {"GigabitEthernet3/0/24": "member collection failed: x"}
@@ -201,7 +204,11 @@ def test_reports_label_siblings_as_context_for_a_member_case(tmp_path):
     reported port's siblings, not the culprits behind its verdict."""
     results, findings = _results()
     results.append(_member_result_with_siblings())
-    meta = {"csv_file": "x.csv", "repoll_minutes": 10, "audit_log": "a.log"}
+    meta = {
+        "csv_file": "x.csv",
+        "baseline": {"matched": 0, "total": 9},
+        "audit_log": "a.log",
+    }
 
     paths = render_report(results, findings, meta, "report_en", tmp_path)
 
@@ -215,7 +222,11 @@ def test_reports_label_siblings_as_context_for_a_member_case(tmp_path):
 def test_reports_render_the_member_breakdown(tmp_path):
     results, findings = _results()
     results.append(_po_result_with_members())
-    meta = {"csv_file": "x.csv", "repoll_minutes": 10, "audit_log": "a.log"}
+    meta = {
+        "csv_file": "x.csv",
+        "baseline": {"matched": 0, "total": 9},
+        "audit_log": "a.log",
+    }
 
     paths = render_report(results, findings, meta, "report_en", tmp_path)
 
@@ -258,7 +269,7 @@ def test_members_json_roundtrips_and_migrates_old_databases(tmp_path):
     conn.close()
 
     history = History(db)  # migration adds the missing column in place
-    run_id = history.start_run("x.csv", 10)
+    run_id, _ = history.start_run("x.csv")
     history.save_results(run_id, [_po_result_with_members()])
 
     row = history._conn.execute(
@@ -266,13 +277,17 @@ def test_members_json_roundtrips_and_migrates_old_databases(tmp_path):
     ).fetchone()
     payload = json.loads(row[0])
     assert payload["stats"]["GigabitEthernet3/0/23"]["link_status"] == "up"
-    assert payload["repoll_stats"]["GigabitEthernet3/0/23"]["link_status"] == "up"
+    assert payload["baseline_stats"]["GigabitEthernet3/0/23"]["link_status"] == "up"
     assert payload["errors"] == {"GigabitEthernet3/0/24": "member collection failed: x"}
     history.close()
 
 
-def test_replay_columns_are_added_to_an_existing_database(tmp_path):
-    """A 0.5.0 database gains the columns --from-history needs, in place."""
+def test_baseline_columns_are_added_to_an_existing_database(tmp_path):
+    """A pre-0.6.0 database gains the columns the comparison needs, in place.
+
+    The retired repoll_* columns are left exactly where they are: dropping a
+    column rewrites the table for no gain, and their data stays auditable.
+    """
     import sqlite3
 
     db = tmp_path / "history.db"
@@ -287,22 +302,31 @@ def test_replay_columns_are_added_to_an_existing_database(tmp_path):
         "run_id INTEGER NOT NULL, switch TEXT, mgmt_ip TEXT, interface TEXT, "
         "counter TEXT, platform TEXT, verdict TEXT, reason TEXT, "
         "stats_json TEXT, repoll_stats_json TEXT, raw_outputs_json TEXT, "
-        "collection_error TEXT, parse_errors_json TEXT, members_json TEXT)"
+        "collection_error TEXT, parse_errors_json TEXT, members_json TEXT, "
+        "repoll_minutes REAL)"
     )
     conn.execute("INSERT INTO runs (started_at, csv_file) VALUES ('old', 'old.csv')")
     conn.commit()
     conn.close()
 
     history = History(db)
-    run_id = history.start_run("x.csv", 10)
+    run_id, _ = history.start_run("x.csv")
     history.save_results(run_id, [_po_result_with_members()])
 
     row = history._conn.execute(
-        "SELECT canonical_interface, parent_portchannel, repoll_skip_reason, "
-        "repoll_minutes FROM case_results WHERE run_id=?",
+        "SELECT canonical_interface, parent_portchannel, baseline_stats_json, "
+        "baseline_minutes, baseline_taken_at, baseline_run_id, baseline_note "
+        "FROM case_results WHERE run_id=?",
         (run_id,),
     ).fetchone()
     assert row[0] == "Port-channel214"
+    assert len(row) == 7  # every baseline column exists on the migrated table
+    # The retired columns survive untouched and are simply never written.
+    legacy = history._conn.execute(
+        "SELECT repoll_stats_json, repoll_minutes FROM case_results WHERE run_id=?",
+        (run_id,),
+    ).fetchone()
+    assert legacy == (None, None)
     # The pre-existing run keeps a NULL stamp and is therefore never replayed.
     stamps = history._conn.execute("SELECT replay_schema FROM runs ORDER BY id")
     assert [value for (value,) in stamps] == [None, REPLAY_SCHEMA]
@@ -311,10 +335,9 @@ def test_replay_columns_are_added_to_an_existing_database(tmp_path):
 
 def test_provenance_block_appears_only_when_rebuilt_from_history(tmp_path):
     results, findings = _results()
-    live = {"csv_file": "x.csv", "repoll_minutes": 10, "audit_log": "audit.log"}
+    live = {"csv_file": "x.csv", "audit_log": "audit.log"}
     replayed = {
         "csv_file": "x.csv",
-        "repoll_minutes": 10,
         "from_history": True,
         "collected_from": "run #7, collected 2026-08-29T20:29:21+00:00",
     }
@@ -331,3 +354,34 @@ def test_provenance_block_appears_only_when_rebuilt_from_history(tmp_path):
         assert "run #7" in rebuilt
     assert "audit.log" in live_paths["html"].read_text()
     assert "audit" not in replay_paths["html"].read_text().lower()
+
+
+def test_reports_say_per_case_what_was_compared_and_what_was_not(tmp_path):
+    """Coverage is partial by design — the CSV changes from week to week — so a
+    case that was never compared must never read like one that was."""
+    results, findings = _results()
+    compared = [
+        r for r in results if r.verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    ]
+    compared[0].baseline_stats = NormalizedInterfaceStats(crc_errors=1)
+    compared[0].baseline_minutes = 1080.0
+    compared[0].baseline_taken_at = datetime(2026, 8, 29, 14, 2, tzinfo=UTC)
+    compared[0].baseline_run_id = 7
+    compared[1].baseline_note = "no earlier sample stored for this interface"
+    meta = {"csv_file": "x.csv", "baseline": {"matched": 1, "total": 9}}
+
+    paths = render_report(results, findings, meta, "report_en", tmp_path)
+
+    for kind in ("txt", "html"):
+        # The HTML wraps mid-sentence; the claim is what matters, not the fill.
+        text = " ".join(paths[kind].read_text().split())
+        assert "Compared against the sample from 2026-08-29 14:02 UTC" in text
+        assert "18.0 h earlier, run #7" in text
+        assert "no earlier sample stored for this interface" in text
+        assert "1 of 9 case(s) compared" in text
+
+    with paths["csv"].open(newline="") as handle:
+        header, *rows = list(csv.reader(handle))
+    column = {name: index for index, name in enumerate(header)}
+    windows = {row[column["baseline_window"]] for row in rows}
+    assert windows == {"", "18.0 h"}

@@ -1,9 +1,10 @@
 Ingested 8 cases from docs/examples/input.csv; 2 data-quality finding(s).
   [dq:negative_delta] sw-acc-02 Gi3/0/20 Late-Col: negative delta (-154073) — counter reset or device reload during the window. Delta is not meaningful; live verification decides.
   [dq:time_misalignment] Poll timestamps span 2026-08-28T02:10:00 .. 2026-08-28T05:20:00: the 24h windows are NOT aligned across rows. Deltas are not directly comparable between rows.
+Stored earlier samples found for 7 of 8 case(s) (newest 18.0 h ago, oldest 18.0 h ago).
 Audit log: reports/iftriage_audit_20260829_202921.log
 Collecting from 7 device(s), one session at a time ...
-Waiting 10 min before re-poll (answers: is it still incrementing NOW?) ...
+Compared 7 of 8 case(s) against an earlier stored sample.
 
 8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
 Report (HTML): reports/iftriage_report_20260829_202921.html

@@ -13,8 +13,8 @@ from iftriage.collectors import (
     _run_pass,
     abort_if_nothing_collected,
     collect_members,
+    collected_results,
     mark_portchannel_duplicates,
-    repoll_eligible,
 )
 from iftriage.config import Config
 from iftriage.models import (
@@ -26,7 +26,7 @@ from iftriage.models import (
     VerdictCategory,
 )
 from iftriage.platforms import get_profile
-from iftriage.platforms.base import COMMAND_KEYS, REPOLL_KEYS
+from iftriage.platforms.base import COMMAND_KEYS
 from iftriage.rules import evaluate_case
 from iftriage.session import AuditLog, EnableRequired
 
@@ -65,7 +65,7 @@ def _case(switch, interface):
     )
 
 
-def test_repoll_eligible_filters_excluded_failed_and_uncollected():
+def test_collected_results_filters_excluded_failed_and_uncollected():
     collected = CaseResult(case=_case("sw-a", "Gi1/0/1"))
     collected.stats = NormalizedInterfaceStats()
     failed = CaseResult(case=_case("sw-a", "Gi1/0/2"))
@@ -75,7 +75,7 @@ def test_repoll_eligible_filters_excluded_failed_and_uncollected():
     excluded.case.excluded = True
     excluded.stats = NormalizedInterfaceStats()
 
-    eligible = repoll_eligible([collected, failed, uncollected, excluded])
+    eligible = collected_results([collected, failed, uncollected, excluded])
 
     assert eligible == [collected]
 
@@ -189,8 +189,8 @@ def test_device_requiring_enable_without_a_secret_is_skipped_not_failed(
     verdict = evaluate_case(
         case=result.case,
         stats=result.stats,
-        repoll_stats=result.repoll_stats,
-        repoll_minutes=result.repoll_minutes,
+        baseline_stats=result.baseline_stats,
+        baseline_minutes=result.baseline_minutes,
         thresholds=config.thresholds,
         collection_error=result.collection_error,
         parse_errors=result.parse_errors,
@@ -510,17 +510,6 @@ def test_failing_cpu_command_skips_the_device_fail_closed(tmp_path, monkeypatch)
     assert breaker.consecutive_failures == 0
 
 
-def test_repoll_pass_cpu_skip_preserves_the_first_sample(tmp_path, monkeypatch):
-    result, _commands, _breaker = _cpu_gated_device(
-        tmp_path, monkeypatch, BUSY_CPU, keys=REPOLL_KEYS
-    )
-
-    assert result.collection_error is None  # the first sample stays valid
-    assert result.repoll_stats is None
-    assert result.repoll_skip_reason is not None
-    assert "CPU utilization 92%" in result.repoll_skip_reason
-
-
 # ---- port-channel summary gate ---------------------------------------------
 
 
@@ -789,8 +778,8 @@ def test_member_case_with_only_rejected_siblings_is_still_marked_a_member(
     verdict = evaluate_case(
         case=result.case,
         stats=result.stats,
-        repoll_stats=None,
-        repoll_minutes=None,
+        baseline_stats=None,
+        baseline_minutes=None,
         thresholds=Config().thresholds,
         member_errors=result.member_errors,
         parent_portchannel=result.parent_portchannel,
@@ -893,46 +882,3 @@ def test_member_pass_cpu_skip_fails_members_closed(tmp_path, monkeypatch):
     assert result.member_stats == {}
     assert len(commands) == 1  # only the CPU reading was sent
     assert "CPU utilization" in result.member_errors["GigabitEthernet3/0/23"]
-
-
-def test_repoll_pass_samples_members_with_a_first_sample(tmp_path, monkeypatch):
-    commands: list[str] = []
-
-    class FakeSession:
-        def __init__(self, **kwargs):
-            pass
-
-        def connect(self):
-            pass
-
-        def get(self, command):
-            commands.append(command)
-            return HEALTHY_CPU if "processes cpu" in command else ""
-
-        def disconnect(self):
-            pass
-
-    monkeypatch.setattr("iftriage.collectors.ReadOnlySession", FakeSession)
-
-    config = _quiet_config()
-    config.platform_overrides = {"10.0.0.1": "ios_xe"}
-    result = CaseResult(case=_case("sw-a", "Po214"))
-    result.stats = NormalizedInterfaceStats()
-    result.member_stats = {"GigabitEthernet3/0/23": NormalizedInterfaceStats()}
-
-    _collect_device(
-        mgmt_ip="10.0.0.1",
-        device_cases=[result],
-        config=config,
-        credentials=Credentials(username="ops", password="pw"),
-        audit=AuditLog(tmp_path / "audit.log"),
-        history=None,
-        breaker=_AaaBreaker(limit=2),
-        keys=REPOLL_KEYS,
-    )
-
-    assert "GigabitEthernet3/0/23" in result.member_repoll_stats
-    assert "show interfaces GigabitEthernet3/0/23" in commands
-    assert "show interfaces GigabitEthernet3/0/23 counters errors" in commands
-    # Re-poll keys only — no transceiver/neighbors/logging for the member.
-    assert "show interfaces GigabitEthernet3/0/23 transceiver detail" not in commands

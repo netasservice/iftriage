@@ -78,7 +78,7 @@ _REQUIRED_FIELDS: dict[CounterClass, tuple[str, ...]] = {
     CounterClass.GENERIC_ERRORS: ("input_errors", "input_packets", "link_status"),
 }
 
-# Which stats field carries the counter value for each class (repoll deltas).
+# Which stats field carries the counter value for each class (baseline deltas).
 _VALUE_FIELD: dict[CounterClass, str] = {
     CounterClass.LATE_COLLISIONS: "late_collisions",
     CounterClass.RECEIVE_ERRORS: "input_errors",
@@ -105,14 +105,46 @@ def _lifetime_rate(errors: int, packets: int) -> float | None:
     return None
 
 
-def _repoll_delta(
-    stats: NormalizedInterfaceStats, repoll: NormalizedInterfaceStats | None, field: str
+def format_window(minutes: float | None) -> str:
+    """A comparison window in the largest unit that stays readable.
+
+    Windows are now hours or days rather than the ten minutes a second pass
+    used to buy, and "1104 min" is not something an operator can read at a
+    glance. Returns only digits and a unit symbol, so report language stays in
+    the templates.
+    """
+    if minutes is None:
+        return "?"
+    if minutes < 90:
+        return f"{minutes:.0f} min"
+    hours = minutes / 60
+    if hours < 48:
+        return f"{hours:.1f} h"
+    return f"{hours / 24:.1f} d"
+
+
+def _counter_delta(
+    *,
+    earlier: NormalizedInterfaceStats | None,
+    later: NormalizedInterfaceStats,
+    field: str,
 ) -> tuple[int, int] | None:
-    """(counter_delta, packet_delta) between the two samples, or None."""
-    if repoll is None:
+    """(counter_delta, packet_delta) from `earlier` to `later`, or None.
+
+    Keyword-only on purpose. This function used to be called with the fresh
+    sample first and the stored one second; a surviving positional call site
+    would now negate every delta in silence, turning a climbing counter into a
+    discarded one and vice versa.
+
+    None is returned — never a zero delta — when either sample lacks the field
+    and when `later` reads LOWER than `earlier`, which means the device
+    reloaded or the counters were cleared between the two samples. None is not
+    "flat": a discarded baseline must never veto an escalation.
+    """
+    if earlier is None:
         return None
-    first_value, second_value = getattr(stats, field), getattr(repoll, field)
-    first_packets, second_packets = stats.input_packets, repoll.input_packets
+    first_value, second_value = getattr(earlier, field), getattr(later, field)
+    first_packets, second_packets = earlier.input_packets, later.input_packets
     if (
         first_value is None
         or second_value is None
@@ -128,13 +160,13 @@ def _repoll_delta(
 def evaluate_case(
     case: InterfaceCase,
     stats: NormalizedInterfaceStats | None,
-    repoll_stats: NormalizedInterfaceStats | None,
-    repoll_minutes: float | None,
+    baseline_stats: NormalizedInterfaceStats | None,
+    baseline_minutes: float | None,
     thresholds: Thresholds,
     collection_error: str | None = None,
     parse_errors: Sequence[str] = (),
     member_stats: dict[str, NormalizedInterfaceStats] | None = None,
-    member_repoll_stats: dict[str, NormalizedInterfaceStats] | None = None,
+    member_baseline_stats: dict[str, NormalizedInterfaceStats] | None = None,
     member_errors: dict[str, str] | None = None,
     parent_portchannel: str | None = None,
 ) -> Verdict:
@@ -168,32 +200,32 @@ def evaluate_case(
             return _member_case_verdict(
                 case,
                 stats,
-                repoll_stats,
-                repoll_minutes,
+                baseline_stats,
+                baseline_minutes,
                 thresholds,
                 list(parse_errors),
                 parent_portchannel,
                 member_stats or {},
-                member_repoll_stats or {},
+                member_baseline_stats or {},
                 member_errors or {},
             )
         return _portchannel_verdict(
             case,
             stats,
-            repoll_stats,
-            repoll_minutes,
+            baseline_stats,
+            baseline_minutes,
             thresholds,
             list(parse_errors),
             member_stats or {},
-            member_repoll_stats or {},
+            member_baseline_stats or {},
             member_errors or {},
         )
 
     return _evaluate_stats(
         case.counter,
         stats,
-        repoll_stats,
-        repoll_minutes,
+        baseline_stats,
+        baseline_minutes,
         thresholds,
         list(parse_errors),
     )
@@ -202,8 +234,8 @@ def evaluate_case(
 def _evaluate_stats(
     counter_name: str,
     stats: NormalizedInterfaceStats,
-    repoll_stats: NormalizedInterfaceStats | None,
-    repoll_minutes: float | None,
+    baseline_stats: NormalizedInterfaceStats | None,
+    baseline_minutes: float | None,
     thresholds: Thresholds,
     base_details: list[str],
 ) -> Verdict:
@@ -233,9 +265,9 @@ def _evaluate_stats(
         )
 
     details: list[str] = list(base_details)
-    repoll_note = ""
+    delta_note = ""
     value_field = _VALUE_FIELD[cls]
-    delta = _repoll_delta(stats, repoll_stats, value_field)
+    delta = _counter_delta(earlier=baseline_stats, later=stats, field=value_field)
     flat = None
     rate = None
     rate_basis = ""
@@ -243,16 +275,23 @@ def _evaluate_stats(
     if delta is not None:
         counter_delta, packet_delta = delta
         flat = counter_delta == 0
-        mins = f"{repoll_minutes:g}" if repoll_minutes else "?"
+        window = format_window(baseline_minutes)
         if flat:
-            repoll_note = f"counter flat across {mins}-min re-poll"
+            delta_note = f"counter flat over the {window} since the earlier sample"
         else:
-            repoll_note = (
-                f"counter still incrementing (+{counter_delta:,} in {mins} min)"
-            )
+            delta_note = f"counter still incrementing (+{counter_delta:,} in {window})"
         if packet_delta > 0 and counter_delta > 0:
             rate = counter_delta / packet_delta
-            rate_basis = "live re-poll window"
+            rate_basis = f"the {window} since the earlier sample"
+    elif baseline_stats is not None:
+        # A stored sample exists but cannot answer. Leaving `flat` as None —
+        # never False, never True — is what keeps a discarded baseline from
+        # vetoing the PHYSICAL_MEDIA/CAPACITY escalations below.
+        details.append(
+            "earlier sample discarded: its counters cannot be subtracted from "
+            "the current ones (counter reset, device reload, or a field it "
+            "does not carry)"
+        )
 
     if rate is None:
         value = getattr(stats, value_field)
@@ -295,7 +334,7 @@ def _evaluate_stats(
                 f"CONFIG_ISSUE — {lc:,} late collisions on a full-duplex link "
                 "(impossible under CSMA/CD-free operation): duplex mismatch. "
                 f"Fix via CLI, not by touching media.{corroboration}"
-                + (f" {repoll_note.capitalize()}." if repoll_note else ""),
+                + (f" {delta_note.capitalize()}." if delta_note else ""),
                 details=details,
             )
         # Local half-duplex with the far end on full duplex (or the device
@@ -312,7 +351,7 @@ def _evaluate_stats(
                 f"CONFIG_ISSUE — {lc:,} late collisions on a half-duplex link "
                 f"while {evidence}: duplex mismatch confirmed. Fix via CLI "
                 "(align both ends), not by touching media."
-                + (f" {repoll_note.capitalize()}." if repoll_note else ""),
+                + (f" {delta_note.capitalize()}." if delta_note else ""),
                 details=details,
             )
         return Verdict(
@@ -320,7 +359,7 @@ def _evaluate_stats(
             f"PHYSICAL_MEDIA — {lc:,} late collisions on a "
             f"{stats.duplex}-duplex link: cable out of spec or failing NIC "
             "on a legacy segment. Inspect the physical path."
-            + (f" {repoll_note.capitalize()}." if repoll_note else ""),
+            + (f" {delta_note.capitalize()}." if delta_note else ""),
             details=details,
         )
 
@@ -336,7 +375,7 @@ def _evaluate_stats(
                 f"of range ({thresholds.dom_rx_low_dbm:g}.."
                 f"{thresholds.dom_rx_high_dbm:g} dBm): degraded optical path "
                 "(fiber, connector, or transceiver). Inspect the optical "
-                "path." + (f" {repoll_note.capitalize()}." if repoll_note else ""),
+                "path." + (f" {delta_note.capitalize()}." if delta_note else ""),
                 details=details,
             )
 
@@ -358,7 +397,7 @@ def _evaluate_stats(
                 VerdictCategory.IGNORE,
                 "IGNORE — zero errors relative to traffic on the live device "
                 "(counter likely reset or historical event)."
-                + (f" {repoll_note.capitalize()}." if repoll_note else "")
+                + (f" {delta_note.capitalize()}." if delta_note else "")
                 + dom_note,
                 details=details,
             )
@@ -368,23 +407,23 @@ def _evaluate_stats(
                 f"PHYSICAL_MEDIA — error rate {_fmt_rate(rate)} over "
                 f"{rate_basis}: real receive errors at meaningful rate."
                 f"{crc_note} Inspect cable/transceiver/path."
-                + (f" {repoll_note.capitalize()}." if repoll_note else ""),
+                + (f" {delta_note.capitalize()}." if delta_note else ""),
                 details=details,
             )
         # Two different reasons to ignore, and the report must not confuse
         # them: a rate under the floor is noise, while a rate over it that the
-        # re-poll shows flat is a historical event that has already stopped.
+        # earlier sample shows flat is an event that has already stopped.
         if rate < thresholds.error_rate:
             reason_bits = [
                 f"error rate {_fmt_rate(rate)} over {rate_basis} is below the "
                 f"{_fmt_threshold(thresholds.error_rate_percent)} threshold"
             ]
-            if repoll_note:
-                reason_bits.append(repoll_note)
+            if delta_note:
+                reason_bits.append(delta_note)
         else:
             reason_bits = [
                 f"error rate {_fmt_rate(rate)} over {rate_basis}, "
-                + repoll_note
+                + delta_note
                 + ": historical, not happening now"
             ]
         return Verdict(
@@ -404,7 +443,7 @@ def _evaluate_stats(
                 f"{_fmt_rate(rate)}: frames arrived intact and were dropped "
                 "(buffer congestion, VLAN not allowed on trunk, or ACL). Not "
                 "a physical error — escalate as capacity/config, not media."
-                + (f" {repoll_note.capitalize()}." if repoll_note else ""),
+                + (f" {delta_note.capitalize()}." if delta_note else ""),
                 details=details,
             )
         below_floor = rate is None or rate < thresholds.discard_rate
@@ -418,7 +457,7 @@ def _evaluate_stats(
             VerdictCategory.IGNORE,
             f"IGNORE — {headline}"
             + (f" ({_fmt_rate(rate)})" if rate is not None else "")
-            + (f", {repoll_note}" if repoll_note else "")
+            + (f", {delta_note}" if delta_note else "")
             + ". No action.",
             details=details,
         )
@@ -442,10 +481,10 @@ _ACTIONABLE = (
 
 def _member_findings(
     counter_name: str,
-    repoll_minutes: float | None,
+    baseline_minutes: float | None,
     thresholds: Thresholds,
     member_stats: dict[str, NormalizedInterfaceStats],
-    member_repoll_stats: dict[str, NormalizedInterfaceStats],
+    member_baseline_stats: dict[str, NormalizedInterfaceStats],
     member_errors: dict[str, str],
 ) -> tuple[dict[str, Verdict], dict[str, str]]:
     """Evaluate every sampled member; return their verdicts and one-line
@@ -454,8 +493,8 @@ def _member_findings(
         name: _evaluate_stats(
             counter_name,
             stats,
-            member_repoll_stats.get(name),
-            repoll_minutes,
+            member_baseline_stats.get(name),
+            baseline_minutes,
             thresholds,
             [],
         )
@@ -470,13 +509,13 @@ def _member_findings(
 def _member_case_verdict(
     case: InterfaceCase,
     stats: NormalizedInterfaceStats,
-    repoll_stats: NormalizedInterfaceStats | None,
-    repoll_minutes: float | None,
+    baseline_stats: NormalizedInterfaceStats | None,
+    baseline_minutes: float | None,
     thresholds: Thresholds,
     parse_errors: list[str],
     parent_portchannel: str,
     member_stats: dict[str, NormalizedInterfaceStats],
-    member_repoll_stats: dict[str, NormalizedInterfaceStats],
+    member_baseline_stats: dict[str, NormalizedInterfaceStats],
     member_errors: dict[str, str],
 ) -> Verdict:
     """Judge a case that is a member of a port-channel.
@@ -488,14 +527,14 @@ def _member_case_verdict(
     of the port that was actually reported.
     """
     verdict = _evaluate_stats(
-        case.counter, stats, repoll_stats, repoll_minutes, thresholds, parse_errors
+        case.counter, stats, baseline_stats, baseline_minutes, thresholds, parse_errors
     )
     _, findings = _member_findings(
         case.counter,
-        repoll_minutes,
+        baseline_minutes,
         thresholds,
         member_stats,
-        member_repoll_stats,
+        member_baseline_stats,
         member_errors,
     )
     verdict.details.append(
@@ -509,12 +548,12 @@ def _member_case_verdict(
 def _portchannel_verdict(
     case: InterfaceCase,
     stats: NormalizedInterfaceStats,
-    repoll_stats: NormalizedInterfaceStats | None,
-    repoll_minutes: float | None,
+    baseline_stats: NormalizedInterfaceStats | None,
+    baseline_minutes: float | None,
     thresholds: Thresholds,
     parse_errors: list[str],
     member_stats: dict[str, NormalizedInterfaceStats],
-    member_repoll_stats: dict[str, NormalizedInterfaceStats],
+    member_baseline_stats: dict[str, NormalizedInterfaceStats],
     member_errors: dict[str, str],
 ) -> Verdict:
     """Judge a port-channel through its members.
@@ -527,18 +566,18 @@ def _portchannel_verdict(
     """
     member_verdicts, findings = _member_findings(
         case.counter,
-        repoll_minutes,
+        baseline_minutes,
         thresholds,
         member_stats,
-        member_repoll_stats,
+        member_baseline_stats,
         member_errors,
     )
 
     bundle = _evaluate_stats(
         case.counter,
         stats,
-        repoll_stats,
-        repoll_minutes,
+        baseline_stats,
+        baseline_minutes,
         thresholds,
         list(parse_errors),
     )

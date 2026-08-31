@@ -1,6 +1,7 @@
 """Rebuilding a run's results from the history database (--from-history)."""
 
 import sqlite3
+from datetime import UTC, datetime
 
 import pytest
 from conftest import FIXTURES
@@ -35,19 +36,21 @@ def _collected(case) -> CaseResult:
         dom_rx_power_dbm=-7.5,
         port_channel_members={"Port-channel214": ["GigabitEthernet3/0/23"]},
     )
-    result.repoll_stats = NormalizedInterfaceStats(crc_errors=99)
-    result.repoll_minutes = 10.0
+    result.baseline_stats = NormalizedInterfaceStats(crc_errors=21)
+    result.baseline_minutes = 1080.0
+    result.baseline_taken_at = datetime(2026, 8, 29, 14, 2, tzinfo=UTC)
+    result.baseline_run_id = 7
     result.raw_outputs = {"interface": "GigabitEthernet3/0/20 is up ..."}
     result.parse_errors = ["transceiver: no DOM table"]
     result.parent_portchannel = "Port-channel214"
-    result.repoll_skip_reason = "device CPU at 91%"
+    result.baseline_note = None
     result.member_stats = {
         "GigabitEthernet3/0/23": NormalizedInterfaceStats(
             link_status="up", crc_errors=7
         )
     }
-    result.member_repoll_stats = {
-        "GigabitEthernet3/0/23": NormalizedInterfaceStats(crc_errors=9)
+    result.member_baseline_stats = {
+        "GigabitEthernet3/0/23": NormalizedInterfaceStats(crc_errors=3)
     }
     result.member_errors = {"GigabitEthernet3/0/24": "member collection failed"}
     result.verdict = Verdict(VerdictCategory.PHYSICAL_MEDIA, "PHYSICAL_MEDIA — test.")
@@ -61,10 +64,10 @@ def _unverified(case) -> CaseResult:
     return result
 
 
-def _store(db, cases, results, repoll_minutes=10.0) -> History:
+def _store(db, cases, results) -> History:
     history = History(db)
     history.archive_ingest("sample_top20.csv", "raw,csv", cases)
-    run_id = history.start_run("sample_top20.csv", repoll_minutes)
+    run_id, _ = history.start_run("sample_top20.csv")
     history.save_results(run_id, results)
     history.finish_run(run_id, {"line": "stored"})
     return history
@@ -90,14 +93,15 @@ def test_every_field_survives_the_round_trip(tmp_path):
     assert rebuilt.platform is Platform.IOS_XE
     assert rebuilt.canonical_interface == "GigabitEthernet3/0/20"
     assert rebuilt.stats == original.stats
-    assert rebuilt.repoll_stats == original.repoll_stats
-    assert rebuilt.repoll_minutes == 10.0
+    assert rebuilt.baseline_stats == original.baseline_stats
+    assert rebuilt.baseline_minutes == 1080.0
+    assert rebuilt.baseline_taken_at == original.baseline_taken_at
+    assert rebuilt.baseline_run_id == 7
     assert rebuilt.raw_outputs == original.raw_outputs
     assert rebuilt.parse_errors == original.parse_errors
     assert rebuilt.parent_portchannel == "Port-channel214"
-    assert rebuilt.repoll_skip_reason == "device CPU at 91%"
     assert rebuilt.member_stats == original.member_stats
-    assert rebuilt.member_repoll_stats == original.member_repoll_stats
+    assert rebuilt.member_baseline_stats == original.member_baseline_stats
     assert rebuilt.member_errors == original.member_errors
     # Verdicts are re-derived by the caller, never replayed.
     assert rebuilt.verdict is None
@@ -138,7 +142,7 @@ def test_the_newest_run_wins(tmp_path):
     newer = [_collected(case) for case in cases]
     for result in newer:
         result.stats = NormalizedInterfaceStats(crc_errors=1234)
-    run_id = history.start_run("sample_top20.csv", 5.0)
+    run_id, _ = history.start_run("sample_top20.csv")
     history.save_results(run_id, newer)
 
     results, source = load_results(cases, history)

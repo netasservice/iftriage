@@ -34,9 +34,6 @@ COMMAND_KEYS = (
     "logging",
 )
 
-# Commands re-run during the optional re-poll pass.
-REPOLL_KEYS = ("interface", "counters")
-
 # Per-device commands (not per-interface): run once per device.
 DEVICE_LEVEL_KEYS = ("version",)
 

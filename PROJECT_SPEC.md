@@ -80,7 +80,7 @@ entire project. Diagnostic tool only — it must NEVER modify device state.
   `show logging | include <intf>` can return thousands of lines on a noisy port. The command
   set itself is unchanged — see section 5, which remains the allow-list of record.
 - Per-device try/except: one failed device never kills the run; it becomes `UNVERIFIED`.
-- NO `clear counters`, ever (deltas come from re-polling, not clearing). No `debug`, no
+- NO `clear counters`, ever (deltas come from comparing runs, not clearing). No `debug`, no
   `show tech`, no config mode under any circumstance.
 - Credentials: username from `--user`, else `IFTRIAGE_USER`, else an interactive prompt.
   Secrets from `IFTRIAGE_PASS` / `IFTRIAGE_ENABLE`, else interactive getpass. Passwords are
@@ -174,8 +174,6 @@ The first command on each platform is the CPU guard: right after login, the
 device's current CPU utilization is read and the device is skipped entirely
 (cases become UNVERIFIED) when it exceeds `connection.cpu_skip_threshold_percent`
 (default 80). The guard fails closed — an unreadable CPU reading also skips.
-During the re-poll pass a busy device keeps its first sample; only the delta is
-given up.
 
 The port-channel summary is the one **conditional** command: it is sent only
 when a case on the device is a port-channel by name, or when a case's own
@@ -206,9 +204,16 @@ members of the one bundle, never full-chassis.
    - Duplicate interface entries (same device+interface listed twice with different values).
    - Data-quality anomalies get their own report section; they are surfaced, not analyzed.
 2. **Collect**: per row, connect to `mgmt_ip`, run the platform's command set for the interface.
-3. **Re-poll (optional, `--repoll <minutes>`, default 10)**: second sample of the same interface
-   counters in the same run (tool waits in between). Answers THE key question: is the counter
-   still incrementing NOW (live problem) or flat (historical event)?
+3. **Baseline comparison (`baseline.py`, offered before collection)**: a run takes ONE sample.
+   The second half of the delta is the newest sample already stored for the same
+   `(switch, interface, counter)` — from any previous run, any previous CSV. That answers THE
+   key question (is the counter still incrementing NOW, or flat?) over hours or days instead
+   of ten minutes of a frozen terminal. The key is the interface, never the CSV, so partial
+   coverage is normal and the report says per case what it was compared against. Two bounds in
+   `config.yaml` guard the claim, not the arithmetic: `baseline.min_window_minutes` (samples
+   too close read as flat, and a false flat SUPPRESSES escalation) and
+   `baseline.max_window_days` ("still incrementing" stops meaning now). A sample whose counters
+   read lower than today's is discarded as a reload — reported as unknown, never as flat.
 4. **Verdict (`rules.py` — pure functions, no I/O)**: apply rules to canonical stats.
 5. **Persist (`history.py`)**: original CSV rows + collected data + verdicts → SQLite.
 6. **Report (`report.py`)**: render the email-ready report.
@@ -232,7 +237,8 @@ members of the one bundle, never full-chassis.
   counted twice. Whenever a case touches a bundle, collect the per-interface command set for
   every member of it (a second connection to the device; member names are validated by
   `normalize.py` before any template substitution — this widens the interface set, never the
-  command set). Members are re-polled too. The two directions differ in what they conclude:
+  command set). Members carry their own baseline from the same stored run. The two directions
+  differ in what they conclude:
   - **The case IS the port-channel** → the verdict is member-driven: a member with an
     actionable finding names the culprit (`fault isolated to member X`); a member that could
     not be collected fails the bundle closed to PARSE_ERROR; bundle-only errors with clean
@@ -253,7 +259,7 @@ members of the one bundle, never full-chassis.
     generic error counters at or above it are `PHYSICAL_MEDIA`.
   - `discard_rate_percent` (default 1%) → `InDiscards`/`OutDiscards` at or above it are
     `CAPACITY`; below it they are operational noise.
-  - Either way the re-poll can still veto: a counter that is flat across the window is a
+  - Either way the baseline can still veto: a counter that is flat across the window is a
     historical event, reported as `IGNORE` and named as such.
 
 ### Verdict categories (final output vocabulary)
@@ -264,7 +270,8 @@ members of the one bundle, never full-chassis.
   neighbor). Fixed via CLI, not by touching media.
 - `CAPACITY` — InDiscards at or above the configured discard threshold. Not media, not
   config: saturation.
-- `IGNORE` — negligible normalized rate, counter flat on re-poll, and/or chronic known noise.
+- `IGNORE` — negligible normalized rate, counter flat across the baseline window, and/or
+  chronic known noise.
 - `UNVERIFIED` — device unreachable / auth failed / SSH timeout. Report with CSV data only,
   clearly marked unconfirmed.
 - `PARSE_ERROR` — command output did not parse or critical fields missing.
@@ -289,7 +296,7 @@ the worst failure mode of this tool. Missing data ⇒ `PARSE_ERROR`/`UNVERIFIED`
   - Data-quality section (duplicates, resets, window misalignment) — separate from verdicts.
   - One section per case: verdict, one-line justification written in DECISION language, not data
     language (e.g. "IGNORE — 0.003% error rate over 109M frames, counter flat across 12-min
-    re-poll, DOM within range. No action."), then raw evidence (relevant show outputs) collapsed
+    the earlier sample, DOM within range. No action."), then raw evidence (relevant show outputs) collapsed
     or attached.
 - When SQLite history accumulates: add per-case recurrence line ("this interface appeared in the
   top-20 for 4 consecutive weeks at a constant rate") — turns IGNORE verdicts into
@@ -300,13 +307,21 @@ the worst failure mode of this tool. Missing data ⇒ `PARSE_ERROR`/`UNVERIFIED`
 - Archive every ingested CSV (raw rows + received timestamp) BEFORE analysis. Each received
   table is free historical feed.
 - Store every run: collected stats, verdicts, evidence references, and every
-  remaining `CaseResult` field (`canonical_interface`, `parent_portchannel`,
-  `repoll_skip_reason`, per-case `repoll_minutes`) — a stored run must be enough
-  to rebuild the report it produced.
+  remaining `CaseResult` field (`canonical_interface`, `parent_portchannel`, and
+  the baseline it was judged against — `baseline_stats_json`, `baseline_minutes`,
+  `baseline_taken_at`, `baseline_run_id`, `baseline_note`) — a stored run must be
+  enough to rebuild the report it produced.
 - `runs.replay_schema` marks a run as written with that full column set. A run
   missing fields the verdict depends on is never replayed: partial history is
   refused, not silently filled with defaults (fail closed, section 3's principle
-  applied to storage).
+  applied to storage). It is `2` since 0.6.0, because the second stored sample
+  changed sides: a schema-1 row held the NEWER sample where a schema-2 row holds
+  the OLDER one, and replaying it under the new direction would look faithful
+  while answering a different question.
+- A **baseline** read is deliberately not gated on that stamp: it consumes one
+  column, `stats_json`, whose meaning never changed, so a run from before the
+  upgrade can still serve as yesterday's sample even though it can no longer be
+  replayed.
 - Replay (`replay.py`, `iftriage run <csv> --from-history`) rebuilds the results
   from storage and re-runs the rules: zero device egress, and no run recorded.
   The ingest is deliberately not re-archived — a second row for the same CSV
@@ -322,14 +337,15 @@ the worst failure mode of this tool. Missing data ⇒ `PARSE_ERROR`/`UNVERIFIED`
 ```
 iftriage/
 ├── pyproject.toml            # installable: pip install ., entry point `iftriage`
-├── config.yaml               # thresholds, timeouts, repoll default,
+├── config.yaml               # thresholds, timeouts, baseline window bounds,
 │                             # platform_overrides, report options
 ├── iftriage/
-│   ├── cli.py                # `iftriage run top20.csv [--repoll 10] [--dry-run] ...`
+│   ├── cli.py                # `iftriage run top20.csv [--baseline] [--dry-run] ...`
 │   ├── ingest.py             # CSV parser + data-quality checks
 │   ├── models.py             # dataclasses: Device, InterfaceCase, NormalizedInterfaceStats,
 │   │                         # Verdict, Finding
 │   ├── session.py            # ReadOnlySession (safety layers 1–3 + audit log live here)
+│   ├── baseline.py           # picks each case's earlier sample; explains rejections
 │   ├── collectors.py         # per-platform collection orchestration
 │   ├── normalize.py          # interface-name expansion + canonical counter schema mapping
 │   ├── platforms/

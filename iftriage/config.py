@@ -52,6 +52,21 @@ class ConnectionSettings:
 
 
 @dataclass
+class BaselineSettings:
+    """Bounds on the comparison window.
+
+    Both exist because the verdict claims to answer "is this counter moving
+    NOW". Too close together and a counter looks flat because nothing had time
+    to move -- and a false "flat" VETOES escalation to PHYSICAL_MEDIA or
+    CAPACITY. Too far apart and "still incrementing" stops meaning now: errors
+    accumulated a month ago would read as a live fault.
+    """
+
+    min_window_minutes: float = 5.0
+    max_window_days: float = 14.0
+
+
+@dataclass
 class Limits:
     """Bounds on command output, so one noisy interface cannot inflate the
     history DB or make the HTML report unusable. `show logging | include ...`
@@ -66,7 +81,7 @@ class Config:
     thresholds: Thresholds = field(default_factory=Thresholds)
     connection: ConnectionSettings = field(default_factory=ConnectionSettings)
     limits: Limits = field(default_factory=Limits)
-    repoll_default_minutes: float = 10.0
+    baseline: BaselineSettings = field(default_factory=BaselineSettings)
     platform_overrides: dict[str, str] = field(default_factory=dict)
     db_path: str = "iftriage_history.db"
     template: str = "report_en"
@@ -76,28 +91,43 @@ class Config:
 _PERCENT_KEYS = ("error_rate_percent", "discard_rate_percent")
 
 
-def _load_thresholds(thresholds: Thresholds, data: dict) -> None:
-    """Apply the `thresholds` section, refusing anything unrecognized.
+def _load_strict_section(target, data: dict, section: str) -> None:
+    """Apply a section of floats, refusing anything unrecognized.
 
-    Unlike the other sections, an unknown key here is an error rather than
-    something to skip: a config file still carrying the pre-0.6 `rate_high` /
-    `rate_warn` would otherwise be accepted in silence and the run would judge
-    every interface by the built-in defaults instead.
+    Unlike `connection` and `limits`, an unknown key in these sections is an
+    error rather than something to skip: a config file still carrying the
+    pre-0.6 `thresholds.rate_high` or the `repoll` block would otherwise be
+    accepted in silence, and the run would quietly judge every interface by
+    the built-in defaults -- or quietly stop comparing at all.
     """
-    accepted = tuple(field.name for field in fields(thresholds))
+    accepted = tuple(field.name for field in fields(target))
     for key, raw in data.items():
         if key not in accepted:
             raise ValueError(
-                f"unknown key 'thresholds.{key}'; accepted keys are "
+                f"unknown key '{section}.{key}'; accepted keys are "
                 f"{', '.join(accepted)}"
             )
         value = float(raw)
         if key in _PERCENT_KEYS and not 0 < value <= 100:
             raise ValueError(
-                f"'thresholds.{key}' is a percentage of the frames: it must be "
+                f"'{section}.{key}' is a percentage of the frames: it must be "
                 f"greater than 0 and at most 100 (got {value})"
             )
-        setattr(thresholds, key, value)
+        setattr(target, key, value)
+
+
+def _validate_baseline(baseline: BaselineSettings) -> None:
+    if baseline.min_window_minutes <= 0 or baseline.max_window_days <= 0:
+        raise ValueError(
+            "'baseline.min_window_minutes' and 'baseline.max_window_days' must "
+            "both be greater than zero"
+        )
+    if baseline.max_window_days * 1440 <= baseline.min_window_minutes:
+        raise ValueError(
+            "'baseline.max_window_days' must be longer than "
+            "'baseline.min_window_minutes'; crossed bounds can never produce a "
+            "comparison"
+        )
 
 
 def load_config(path: str | Path | None = None) -> Config:
@@ -111,7 +141,17 @@ def load_config(path: str | Path | None = None) -> Config:
 
     data = yaml.safe_load(Path(path).read_text()) or {}
 
-    _load_thresholds(cfg.thresholds, data.get("thresholds") or {})
+    if "repoll" in data:
+        raise ValueError(
+            "the 'repoll' section was removed in 0.6.0: runs no longer wait and "
+            "re-poll, they compare against the newest earlier sample stored for "
+            "each interface. Replace it with a 'baseline' section "
+            "(min_window_minutes / max_window_days)"
+        )
+
+    _load_strict_section(cfg.thresholds, data.get("thresholds") or {}, "thresholds")
+    _load_strict_section(cfg.baseline, data.get("baseline") or {}, "baseline")
+    _validate_baseline(cfg.baseline)
     for key, value in (data.get("connection") or {}).items():
         if hasattr(cfg.connection, key):
             current = getattr(cfg.connection, key)
@@ -119,9 +159,6 @@ def load_config(path: str | Path | None = None) -> Config:
     for key, value in (data.get("limits") or {}).items():
         if hasattr(cfg.limits, key):
             setattr(cfg.limits, key, int(value))
-    repoll = data.get("repoll") or {}
-    if "default_minutes" in repoll:
-        cfg.repoll_default_minutes = float(repoll["default_minutes"])
     cfg.platform_overrides = {
         str(k): str(v) for k, v in (data.get("platform_overrides") or {}).items()
     }
