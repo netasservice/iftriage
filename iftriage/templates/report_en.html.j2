@@ -32,8 +32,37 @@ FCS-Err is only {{ '{:,}'.format(s.values.fcs_errors) }} of {{ '{:,}'.format(s.v
 {{ s.values.interface_resets }} interface resets.
 {%- elif s.kind.value == 'errors_stopped_after_clear' -%}
 If the errors stop advancing after a coordinated manual counter clear and a repoll, with the port otherwise untouched, reclassify HISTORIC_NOT_ACTIVE.
+{%- elif s.kind.value == 'errors_resumed' -%}
+If the counter advances again on a future run, the case reopens and is reclassified.
 {%- else -%}
 {{ s.kind.value }}: {{ s.values }}
+{%- endif -%}
+{%- endmacro -%}
+{#- Remediation is derived from the observed media type: a copper port is
+    never told to check a transceiver, and DOM absence on copper is expected.
+    Every action here is performed by a human; the tool never executes any. -#}
+{%- macro next_steps(r) -%}
+{%- set media = ((r.stats.media_type if r.stats else '') or '') | lower | replace('-', '') -%}
+{%- set copper = 'baset' in media -%}
+{%- set fiber = r.stats and r.stats.dom_rx_power_dbm is not none -%}
+{%- set category = r.verdict.category.value -%}
+{%- if category == 'PHYSICAL_MEDIA' -%}
+{%- if copper -%}
+<p class="muted"><strong>Next steps — non-disruptive:</strong> identify the attached device and its native speed; inspect the patch cord and the jack; correlate the error history with the interface resets. DOM is not implemented on this copper port — expected, not a finding.</p>
+<p class="muted"><strong>Disruptive, coordinate first:</strong> TDR (<code>test cable-diagnostics tdr</code>) on {{ r.case.interface }}; a manual counter clear on this interface and a repoll at 24&nbsp;h to establish a clean baseline.</p>
+{%- elif fiber -%}
+<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect and clean the fiber connectors and patch panel; check the transceiver's DOM receive-power trend; verify the optic is seated.</p>
+<p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear and a repoll at 24&nbsp;h; replace the transceiver if DOM stays out of range.</p>
+{%- else -%}
+<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect the physical path.</p>
+<p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear on this interface and a repoll at 24&nbsp;h.</p>
+{%- endif -%}
+{%- elif category == 'LINK_NEGOTIATION' -%}
+<p class="muted"><strong>Next steps:</strong> fix via CLI — align speed/duplex (and MTU where giants dominate) on both ends. Not a media dispatch.</p>
+{%- elif category == 'CONGESTION_BUFFER' -%}
+<p class="muted"><strong>Next steps:</strong> review oversubscription, policers, and buffer/ring sizing on this path. Not a media dispatch.</p>
+{%- elif category == 'HISTORIC_NOT_ACTIVE' -%}
+<p class="muted"><strong>Next steps:</strong> coordinate a manual counter clear, then requeue for a future run. Do not dispatch anyone.</p>
 {%- endif -%}
 {%- endmacro -%}
 {%- macro dq_text(f) -%}
@@ -151,6 +180,7 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
   {% if r.verdict and r.verdict.what_would_change %}
   <p class="muted"><strong>What would change this:</strong> {{ signal_text(r.verdict.what_would_change) }}</p>
   {% endif %}
+  {% if r.verdict %}{{ next_steps(r) }}{% endif %}
   {% if r.duplicate_of %}
   <p class="muted">Note: member of {{ r.duplicate_of }}, which is also in this
   report — same physical issue counted twice.</p>

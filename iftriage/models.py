@@ -61,6 +61,7 @@ class SignalKind(StrEnum):
     LOW_FCS_DOES_NOT_CLEAR_MEDIA = "low_fcs_does_not_clear_media"
     INTERFACE_RESETS = "interface_resets"
     ERRORS_STOPPED_AFTER_CLEAR = "errors_stopped_after_clear"
+    ERRORS_RESUMED = "errors_resumed"
 
 
 class DataQualityKind(StrEnum):

@@ -19,11 +19,21 @@ _CSV_STATS_FIELDS = (
     "protocol_status",
     "duplex",
     "speed",
+    "media_type",
+    "mtu",
     "input_errors",
     "crc_errors",
+    "fcs_errors",
+    "rcv_err",
+    "runts",
+    "giants",
+    "overrun",
+    "ignored",
+    "no_buffer",
     "late_collisions",
     "discards_in",
     "discards_out",
+    "interface_resets",
     "dom_rx_power_dbm",
     "dom_tx_power_dbm",
     "neighbor_name",
@@ -33,9 +43,14 @@ _CSV_STATS_FIELDS = (
 
 _CSV_ANALYSIS_COLUMNS = (
     "verdict",
+    "confidence",
     "reason",
     "platform",
     *_CSV_STATS_FIELDS,
+    "delta_tool",  # the tool's own run-to-run delta of the flagged counter
+    "delta_csv",  # the CSV `change` column, echoed with its label
+    "interval_source",  # where the delta's window length came from
+    "data_quality",  # semicolon-joined data-quality flag kinds
     "dq_flags",
     "duplicate_of",
     "recurrence",
@@ -69,6 +84,7 @@ def _analysis_cells(result: CaseResult) -> list[str]:
     stats = result.stats
     cells = [
         verdict.category.value if verdict else "",
+        verdict.confidence.value if verdict and verdict.confidence else "",
         verdict.reason if verdict else "",
         result.platform.value if result.platform else "",
     ]
@@ -76,6 +92,17 @@ def _analysis_cells(result: CaseResult) -> list[str]:
         # None means "unknown / not parsed": render an empty cell, never 0.
         value = getattr(stats, field_name) if stats else None
         cells.append("" if value is None else str(value))
+    metrics = verdict.metrics if verdict else None
+    cells.append(
+        "" if metrics is None or metrics.delta_tool is None else str(metrics.delta_tool)
+    )
+    cells.append(
+        "" if metrics is None or metrics.delta_csv is None else str(metrics.delta_csv)
+    )
+    cells.append(metrics.interval_source or "" if metrics else "")
+    cells.append(
+        ";".join(flag.kind.value for flag in verdict.data_quality) if verdict else ""
+    )
     cells.append(";".join(result.case.dq_flags))
     cells.append(result.duplicate_of or "")
     cells.append(str(result.recurrence))

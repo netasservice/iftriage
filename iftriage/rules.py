@@ -69,6 +69,10 @@ RECONCILIATION_LOW_CAP_FRACTION = 0.01  # residual above 1% caps LOW
 
 _CONFIDENCE_RANK = {Confidence.LOW: 0, Confidence.MEDIUM: 1, Confidence.HIGH: 2}
 
+# The falsifiability line for HISTORIC_NOT_ACTIVE: movement on a future run
+# reopens the case and the ladder reclassifies it.
+_WHAT_HISTORIC = Signal(kind=SignalKind.ERRORS_RESUMED, weight=Confidence.HIGH)
+
 
 class CounterClass(Enum):
     LATE_COLLISIONS = "late_collisions"
@@ -569,6 +573,7 @@ def _late_collisions_verdict(
                     values={"late_collisions": lc},
                 )
             ],
+            what=_WHAT_HISTORIC,
         )
     duplex = (stats.duplex or "").lower()
     neighbor_duplex = (stats.neighbor_duplex or "").lower()
@@ -671,6 +676,7 @@ def _discards_verdict(
                     values={"discards": lifetime_value or 0},
                 )
             ],
+            what=_WHAT_HISTORIC,
         )
     if rate is not None and rate >= thresholds.discard_rate:
         return verdict(
@@ -749,6 +755,7 @@ def _receive_errors_verdict(
                             values={"input_errors": lifetime_errors},
                         )
                     ],
+                    what=_WHAT_HISTORIC,
                 )
             return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "clean")
 

@@ -42,6 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   faking values.
 
 ### Added
+- Media-aware remediation in the reports: next steps are derived from the
+  observed media type (a copper port is told about jacks, patch cords and
+  TDR, never transceivers — and DOM absence on copper is rendered as
+  expected, not a finding; optical ports get connector/DOM/transceiver
+  language). Disruptive actions (TDR, manual counter clearing) are labeled
+  apart and framed as human-coordinated — the tool still never executes
+  them. HISTORIC_NOT_ACTIVE verdicts carry their own "what would change
+  this" line.
+- The enriched CSV gains `confidence`, the error-decomposition buckets
+  (`fcs_errors`, `rcv_err`, `runts`, `giants`, `overrun`, `ignored`,
+  `no_buffer`, `interface_resets`, `media_type`, `mtu`), both labeled deltas
+  (`delta_tool`, `delta_csv`), `interval_source`, and the per-case
+  `data_quality` flag kinds.
 - Structured verdict data model (not yet produced by the engine): verdicts
   can now carry a confidence level (HIGH/MEDIUM/LOW), typed evidence signals
   with named counter values (including explicit "evidence against"), typed

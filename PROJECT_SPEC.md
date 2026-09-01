@@ -296,7 +296,9 @@ the worst failure mode of this tool. Missing data ⇒ `PARSE_ERROR`/`UNVERIFIED`
   text file, zero code changes).
 - Enriched CSV alongside the HTML/text: the input table echoed verbatim (original columns —
   including ones iftriage does not parse — and original row order) with a curated set of
-  analysis columns appended: verdict, reason, platform, the stats fields the rules consult,
+  analysis columns appended: verdict, confidence, reason, platform, the stats fields the
+  rules consult (including the error decomposition buckets), both labeled deltas with the
+  interval's source, the data-quality flag kinds,
   dq_flags, duplicate_of, recurrence. Written with the stdlib csv module; unknown values stay
   empty cells (fail closed), never zero.
 - Structure:
