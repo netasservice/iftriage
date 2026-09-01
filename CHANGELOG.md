@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- New pure modules `metrics.py` and `timebase.py` (not yet wired into the
+  verdict engine): population-safe delta/ratio math that refuses to mix
+  lifetime, tool-delta, and CSV-delta counters in one ratio (an out-of-range
+  ratio becomes a data-quality flag, never a printed percentage), input-error
+  reconciliation (`input errors == runts + Rcv-Err`) with its unattributed
+  residual, the zero-traffic test, the byte-per-frame MTU sanity check, and
+  interval derivation that always labels its source (device uptime → counter
+  epoch → CSV poll time → host clocks) with staleness detection.
 - The canonical interface model now captures the full receive-error
   decomposition (runts, giants, undersize, FCS, alignment, symbol, overrun,
   ignored, no buffer, and the platform's aggregate `Rcv-Err` column kept as
