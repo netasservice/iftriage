@@ -39,7 +39,7 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 |---|---|---|
 | `cli.py` | Argument parsing, run orchestration, credential resolution (flag → env → prompt) | no (delegates) |
 | `ingest.py` | CSV parsing + data-quality checks | no |
-| `models.py` | Shared dataclasses; `None` always means "unknown" | no |
+| `models.py` | Shared dataclasses; `None` always means "unknown". Verdicts carry typed signals/flags/confidence (enum kinds + named values, zero prose — sentences live in templates) | no |
 | `session.py` | `ReadOnlySession`: safety layers 1–4, audit log | **only module allowed** |
 | `collectors.py` | Concurrency, platform resolution, per-device collection, AAA breaker | via `session.py` only |
 | `normalize.py` | Short→canonical interface names, safe-substitution validation | no |

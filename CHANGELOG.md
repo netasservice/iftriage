@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Structured verdict data model (not yet produced by the engine): verdicts
+  can now carry a confidence level (HIGH/MEDIUM/LOW), typed evidence signals
+  with named counter values (including explicit "evidence against"), typed
+  data-quality flags, labeled metrics (both delta sources, interval length
+  and its provenance, staleness), and a "what would change this verdict"
+  signal. Rules emit enum kinds plus values — zero prose — so report
+  sentences live entirely in the templates and a new report language remains
+  a template-only change. Stored per case as a new `verdict_json` column
+  (added in place to existing databases).
 - New pure modules `metrics.py` and `timebase.py` (not yet wired into the
   verdict engine): population-safe delta/ratio math that refuses to mix
   lifetime, tool-delta, and CSV-delta counters in one ratio (an out-of-range

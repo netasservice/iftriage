@@ -22,6 +22,51 @@ class VerdictCategory(StrEnum):
     PARSE_ERROR = "PARSE_ERROR"
 
 
+class Confidence(StrEnum):
+    """How much a verdict may claim. Caps are hard limits applied by the
+    rules layer (no second observation, stale poll, reconciliation residual,
+    None among a rule's inputs), never suggestions."""
+
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
+class SignalKind(StrEnum):
+    """Closed vocabulary of evidence the engine can emit. Rules produce kinds
+    plus named counter values — zero prose; the sentences live in the report
+    templates, keyed on the kind, so a new report language is a new template
+    file with no code change."""
+
+    ZERO_TRAFFIC_ERRORS = "zero_traffic_errors"
+    UNATTRIBUTED_RX_DOMINANT = "unattributed_rx_dominant"
+    RUNTS_DOMINANT_NO_COLLISIONS = "runts_dominant_no_collisions"
+    FCS_FRACTION_ACTIVE = "fcs_fraction_active"
+    BUFFER_GROUP_DOMINANT = "buffer_group_dominant"
+    LATE_COLLISIONS_FULL_DUPLEX = "late_collisions_full_duplex"
+    GIANTS_WITH_MTU_MISMATCH = "giants_with_mtu_mismatch"
+    SPEED_BELOW_CAPABILITY = "speed_below_capability"
+    BYTES_PER_FRAME_ABOVE_MTU = "bytes_per_frame_above_mtu"
+    DOM_RX_OUT_OF_RANGE = "dom_rx_out_of_range"
+    ZERO_DELTA_NONZERO_LIFETIME = "zero_delta_nonzero_lifetime"
+    LOW_FCS_DOES_NOT_CLEAR_MEDIA = "low_fcs_does_not_clear_media"
+    INTERFACE_RESETS = "interface_resets"
+    ERRORS_STOPPED_AFTER_CLEAR = "errors_stopped_after_clear"
+
+
+class DataQualityKind(StrEnum):
+    """Closed vocabulary of reasons the data itself limits the verdict."""
+
+    RATIO_OUT_OF_RANGE = "ratio_out_of_range"
+    COUNTER_RECONCILIATION_FAILED = "counter_reconciliation_failed"
+    DELTA_SOURCE_DISAGREEMENT = "delta_source_disagreement"
+    STALE_POLL_TIMESTAMP = "stale_poll_timestamp"
+    INTERVAL_FROM_INGEST_TIME = "interval_from_ingest_time"
+    NULL_RULE_INPUT = "null_rule_input"
+    NO_SECOND_OBSERVATION = "no_second_observation"
+    POLL_TIMEZONE_ASSUMED_UTC = "poll_timezone_assumed_utc"
+
+
 # Report ordering: most actionable first.
 VERDICT_ORDER = [
     VerdictCategory.PHYSICAL_MEDIA,
@@ -154,6 +199,42 @@ class NormalizedInterfaceStats:
     collected_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class Signal:
+    """One piece of evidence: a kind, its weight, and the NAMED counter
+    values that produced it. `contradicts=True` marks evidence that points
+    away from the chosen verdict — rendered under "Evidence against" with the
+    reason it did not change the outcome, never silently dropped."""
+
+    kind: SignalKind
+    weight: Confidence
+    values: dict[str, int | float | str] = field(default_factory=dict)
+    supports: VerdictCategory | None = None
+    contradicts: bool = False
+
+
+@dataclass(frozen=True)
+class DataQualityFlag:
+    kind: DataQualityKind
+    values: dict[str, int | float | str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class VerdictMetrics:
+    """The numbers the report prints next to a verdict, with their
+    provenance. Both delta sources appear labeled; the interval always names
+    where its length came from."""
+
+    errors_per_second: float | None = None
+    errors_per_hour: float | None = None
+    error_ratio: float | None = None  # only ever a value inside [0, 1]
+    delta_tool_input_errors: int | None = None
+    delta_csv_change: int | None = None
+    interval_minutes: float | None = None
+    interval_source: str | None = None
+    staleness_minutes: float | None = None
+
+
 @dataclass
 class Verdict:
     category: VerdictCategory
@@ -161,6 +242,14 @@ class Verdict:
     details: list[str] = field(default_factory=list)
     # Port-channel cases only: one-line finding per member interface.
     member_findings: dict[str, str] = field(default_factory=dict)
+    # v2 engine fields; all default so existing constructor calls stay valid.
+    confidence: Confidence | None = None
+    signals: list[Signal] = field(default_factory=list)
+    data_quality: list[DataQualityFlag] = field(default_factory=list)
+    metrics: VerdictMetrics | None = None
+    # One line of falsifiability: the observation that would flip the
+    # verdict, as a signal kind plus named values (prose lives in templates).
+    what_would_change: Signal | None = None
 
 
 @dataclass

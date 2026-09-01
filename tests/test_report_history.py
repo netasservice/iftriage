@@ -10,10 +10,16 @@ from iftriage.history import REPLAY_SCHEMA, History
 from iftriage.ingest import ingest_csv
 from iftriage.models import (
     CaseResult,
+    Confidence,
+    DataQualityFlag,
+    DataQualityKind,
     NormalizedInterfaceStats,
     Platform,
+    Signal,
+    SignalKind,
     Verdict,
     VerdictCategory,
+    VerdictMetrics,
 )
 from iftriage.report import build_summary, render_report
 
@@ -385,3 +391,122 @@ def test_reports_say_per_case_what_was_compared_and_what_was_not(tmp_path):
     column = {name: index for index, name in enumerate(header)}
     windows = {row[column["baseline_window"]] for row in rows}
     assert windows == {"", "18.0 h"}
+
+
+# ---- structured verdicts (v2 engine data model) ----------------------------
+
+
+def _structured_verdict() -> Verdict:
+    return Verdict(
+        VerdictCategory.PHYSICAL_MEDIA,
+        "PHYSICAL_MEDIA/HIGH zero_traffic_errors",
+        confidence=Confidence.HIGH,
+        signals=[
+            Signal(
+                kind=SignalKind.ZERO_TRAFFIC_ERRORS,
+                weight=Confidence.HIGH,
+                values={"errors_per_second": 9.26, "input_rate_pps": 0},
+                supports=VerdictCategory.PHYSICAL_MEDIA,
+            ),
+            Signal(
+                kind=SignalKind.LOW_FCS_DOES_NOT_CLEAR_MEDIA,
+                weight=Confidence.LOW,
+                values={"fcs_errors": 185},
+                contradicts=True,
+            ),
+        ],
+        data_quality=[
+            DataQualityFlag(
+                kind=DataQualityKind.STALE_POLL_TIMESTAMP,
+                values={"staleness_minutes": 37548},
+            )
+        ],
+        metrics=VerdictMetrics(
+            errors_per_second=9.26,
+            delta_tool_input_errors=1326250,
+            delta_csv_change=112905,
+            interval_minutes=2388.0,
+            interval_source="host-side timestamps",
+        ),
+        what_would_change=Signal(
+            kind=SignalKind.ERRORS_STOPPED_AFTER_CLEAR,
+            weight=Confidence.HIGH,
+        ),
+    )
+
+
+def test_structured_verdict_roundtrips():
+    from iftriage.history import _verdict_from_json, _verdict_json
+
+    verdict = _structured_verdict()
+    restored = _verdict_from_json(_verdict_json(verdict))
+    assert restored == verdict
+
+
+def test_plain_verdict_roundtrips_with_v2_fields_at_defaults():
+    from iftriage.history import _verdict_from_json, _verdict_json
+
+    verdict = Verdict(VerdictCategory.IGNORE, "IGNORE — below threshold.")
+    restored = _verdict_from_json(_verdict_json(verdict))
+    assert restored == verdict
+    assert restored is not None
+    assert restored.confidence is None
+    assert restored.signals == []
+
+
+def test_unknown_signal_kinds_are_dropped_not_fatal():
+    """A row written by a newer iftriage with a signal kind this reader does
+    not know must still load — minus that signal, never with a crash."""
+    import json
+
+    from iftriage.history import _verdict_from_json, _verdict_json
+
+    data = json.loads(_verdict_json(_structured_verdict()) or "{}")
+    data["signals"].append({"kind": "from_the_future", "weight": "HIGH"})
+    data["data_quality"].append({"kind": "also_new"})
+    restored = _verdict_from_json(json.dumps(data))
+    assert restored is not None
+    assert len(restored.signals) == 2
+    assert len(restored.data_quality) == 1
+
+
+def test_save_results_persists_verdict_json(tmp_path):
+    db = tmp_path / "history.db"
+    history = History(db)
+    run_id, _ = history.start_run("x.csv")
+    result = _po_result_with_members()
+    result.verdict = _structured_verdict()
+    history.save_results(run_id, [result])
+
+    from iftriage.history import _verdict_from_json
+
+    (stored,) = history._conn.execute(
+        "SELECT verdict_json FROM case_results WHERE run_id=?", (run_id,)
+    ).fetchone()
+    assert _verdict_from_json(stored) == result.verdict
+    history.close()
+
+
+def test_verdict_json_column_is_added_to_an_existing_database(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "history.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE case_results ("
+        "run_id INTEGER NOT NULL, switch TEXT, mgmt_ip TEXT, interface TEXT, "
+        "counter TEXT, platform TEXT, verdict TEXT, reason TEXT, "
+        "stats_json TEXT, raw_outputs_json TEXT, collection_error TEXT, "
+        "parse_errors_json TEXT, members_json TEXT)"
+    )
+    conn.commit()
+    conn.close()
+
+    history = History(db)
+    run_id, _ = history.start_run("x.csv")
+    history.save_results(run_id, [_po_result_with_members()])
+    row = history._conn.execute(
+        "SELECT verdict_json FROM case_results WHERE run_id=?", (run_id,)
+    ).fetchone()
+    assert row is not None  # column exists on the migrated table
+    history.close()

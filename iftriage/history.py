@@ -11,9 +11,17 @@ from pathlib import Path
 
 from .models import (
     CaseResult,
+    Confidence,
+    DataQualityFlag,
+    DataQualityKind,
     InterfaceCase,
     NormalizedInterfaceStats,
     Platform,
+    Signal,
+    SignalKind,
+    Verdict,
+    VerdictCategory,
+    VerdictMetrics,
 )
 
 # Marks a run whose case_results rows carry every field `--from-history` needs
@@ -59,7 +67,7 @@ CREATE TABLE IF NOT EXISTS case_results (
     collection_error TEXT, parse_errors_json TEXT, members_json TEXT,
     canonical_interface TEXT, parent_portchannel TEXT,
     baseline_stats_json TEXT, baseline_minutes REAL, baseline_taken_at TEXT,
-    baseline_run_id INTEGER, baseline_note TEXT
+    baseline_run_id INTEGER, baseline_note TEXT, verdict_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_case_results_target
     ON case_results (switch, interface, counter);
@@ -84,6 +92,7 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "baseline_taken_at": "TEXT",
         "baseline_run_id": "INTEGER",
         "baseline_note": "TEXT",
+        "verdict_json": "TEXT",
     },
 }
 
@@ -114,6 +123,7 @@ _CASE_RESULT_COLUMNS = (
     "baseline_taken_at",
     "baseline_run_id",
     "baseline_note",
+    "verdict_json",
 )
 
 _STATS_FIELDS = {stats_field.name for stats_field in fields(NormalizedInterfaceStats)}
@@ -161,6 +171,78 @@ def _stats_from_json(text: str | None) -> NormalizedInterfaceStats | None:
     if not text:
         return None
     return _stats_from_dict(json.loads(text))
+
+
+def _verdict_json(verdict: Verdict | None) -> str | None:
+    """Serialize the full structured verdict (signals, data-quality flags,
+    metrics). StrEnums serialize as their plain string values."""
+    if verdict is None:
+        return None
+    return json.dumps(asdict(verdict))
+
+
+def _kept_fields(cls: type, data: dict) -> dict:
+    """Keep only the keys a dataclass declares, like `_stats_from_dict`: a
+    field an old row does not carry stays at its default, and a field a newer
+    writer added is dropped rather than crashing the read."""
+    names = {stored_field.name for stored_field in fields(cls)}
+    return {key: value for key, value in data.items() if key in names}
+
+
+def _signal_from_dict(data: dict) -> Signal | None:
+    try:
+        kind = SignalKind(data["kind"])
+        weight = Confidence(data["weight"])
+    except (KeyError, ValueError):
+        return None  # a kind this reader does not know: drop, don't crash
+    supports = data.get("supports")
+    return Signal(
+        kind=kind,
+        weight=weight,
+        values=data.get("values") or {},
+        supports=VerdictCategory(supports) if supports else None,
+        contradicts=bool(data.get("contradicts", False)),
+    )
+
+
+def _verdict_from_json(text: str | None) -> Verdict | None:
+    if not text:
+        return None
+    data = json.loads(text)
+    try:
+        category = VerdictCategory(data["category"])
+    except (KeyError, ValueError):
+        return None
+    confidence = data.get("confidence")
+    signals = [
+        signal
+        for signal in (_signal_from_dict(item) for item in data.get("signals", []))
+        if signal is not None
+    ]
+    flags: list[DataQualityFlag] = []
+    for item in data.get("data_quality", []):
+        try:
+            flag_kind = DataQualityKind(item["kind"])
+        except (KeyError, ValueError):
+            continue
+        flags.append(DataQualityFlag(kind=flag_kind, values=item.get("values") or {}))
+    metrics_data = data.get("metrics")
+    what_would_change = data.get("what_would_change")
+    return Verdict(
+        category=category,
+        reason=data.get("reason", ""),
+        details=list(data.get("details", [])),
+        member_findings=dict(data.get("member_findings", {})),
+        confidence=Confidence(confidence) if confidence else None,
+        signals=signals,
+        data_quality=flags,
+        metrics=VerdictMetrics(**_kept_fields(VerdictMetrics, metrics_data))
+        if metrics_data
+        else None,
+        what_would_change=_signal_from_dict(what_would_change)
+        if what_would_change
+        else None,
+    )
 
 
 def _members_json(result: CaseResult) -> str | None:
@@ -356,6 +438,7 @@ class History:
                         else None,
                         result.baseline_run_id,
                         result.baseline_note,
+                        _verdict_json(result.verdict),
                     )
                     for result in results
                 ],
