@@ -35,7 +35,14 @@ from .models import (
 # look faithful while answering a different question, so those runs are barred
 # from replay — `latest_sample` deliberately still accepts them as baselines,
 # for the reasons in its docstring.
-REPLAY_SCHEMA = 2
+#
+# 3 (0.7.0): the v2 engine. Schema-2 rows lack the per-bucket error counters
+# (runts, Rcv-Err, buffer group, media type, counter epoch) the v2 verdicts
+# and report are built from; replaying them would render a v2 report from v1
+# evidence. `latest_sample` still accepts them as baselines: their missing
+# fields deserialize as None, and a None among a rule's inputs caps the
+# verdict's confidence instead of faking a value.
+REPLAY_SCHEMA = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS ingests (

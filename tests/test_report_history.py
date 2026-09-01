@@ -423,8 +423,8 @@ def _structured_verdict() -> Verdict:
         ],
         metrics=VerdictMetrics(
             errors_per_second=9.26,
-            delta_tool_input_errors=1326250,
-            delta_csv_change=112905,
+            delta_tool=1326250,
+            delta_csv=112905,
             interval_minutes=2388.0,
             interval_source="host-side timestamps",
         ),

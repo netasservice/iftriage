@@ -1,5 +1,62 @@
 <!doctype html>
 <html lang="en">
+{#- Sentence catalog: the engine emits signal/flag KINDS plus named counter
+    values; every sentence an operator reads lives here. A new report
+    language is a copy of this file with translated macro bodies. -#}
+{%- macro signal_text(s) -%}
+{%- if s.kind.value == 'zero_traffic_errors' -%}
+Receive errors advanced {{ '{:,}'.format(s.values.delta_input_errors) }} (~{{ s.values.errors_per_second }}/s) while the device-reported input rate was {{ s.values.input_rate_pps if s.values.input_rate_pps != -1 else '?' }} pps{% if s.values.last_input_minutes != -1 %} and last input was {{ window(s.values.last_input_minutes) }} prior{% endif %}. Errors are accumulating without valid traffic, which places the fault at the link, not in the traffic.
+{%- elif s.kind.value == 'unattributed_rx_dominant' -%}
+{{ '{:,}'.format(s.values.unattributed_rx) }} of {{ '{:,}'.format(s.values.input_errors) }} input errors ({{ '%.1f'|format(100 * s.values.unattributed_rx / s.values.input_errors) }}%) fall in no named bucket, consistent with symbol-level corruption{% if s.values.runts != -1 %}. runts/UnderSize: {{ '{:,}'.format(s.values.runts) }}{% endif %}.
+{%- elif s.kind.value == 'runts_dominant_no_collisions' -%}
+Runts dominate the input-error total with zero collision activity: frames are not surviving to the MAC.
+{%- elif s.kind.value == 'fcs_fraction_active' -%}
+FCS errors are {{ '%.1f'|format(100 * s.values.fcs_fraction) }}% of input errors: frames are arriving but corrupted — marginal signal rather than link-level corruption.
+{%- elif s.kind.value == 'buffer_group_dominant' -%}
+{% if s.values.buffer_group is defined %}Overrun/ignored/no-buffer/input-queue drops account for {{ '{:,}'.format(s.values.buffer_group) }} of {{ '{:,}'.format(s.values.input_errors) }} input errors in the window: congestion or buffer pressure, not a media problem.{% else %}{{ '{:,}'.format(s.values.discards) }} {{ s.values.direction }} discards at meaningful rate: frames arrived intact and were dropped — oversubscription, policer, or ring sizing, not media.{% endif %}
+{%- elif s.kind.value == 'late_collisions_full_duplex' -%}
+{{ '{:,}'.format(s.values.late_collisions) }} late collisions on a {{ s.values.duplex }}-duplex link{% if s.values.neighbor_duplex is defined and s.values.neighbor_duplex not in ('?', '') %} (neighbor {{ s.values.neighbor_name }} reports {{ s.values.neighbor_duplex }}){% endif %}: negotiation/duplex mismatch — fixed via CLI, not by touching media.
+{%- elif s.kind.value == 'giants_with_mtu_mismatch' -%}
+Giants dominate the error profile ({{ '{:,}'.format(s.values.giants) }}, local MTU {{ s.values.mtu }}): consistent with an MTU mismatch between ends. The far end's MTU is not known to this tool — unresolved.
+{%- elif s.kind.value == 'speed_below_capability' -%}
+Link negotiated {{ s.values.speed }} on a {{ s.values.media_type }} port. Consistent with damaged pairs forcing a fallback, but equally consistent with a genuinely 100M endpoint — unresolved.
+{%- elif s.kind.value == 'bytes_per_frame_above_mtu' -%}
+Byte counter implies ~{{ '{:,}'.format(s.values.bytes_per_frame) }} B/frame against MTU {{ s.values.mtu }}, indicating errored octets are being counted — weak corroboration of PHY-level errors.
+{%- elif s.kind.value == 'dom_rx_out_of_range' -%}
+DOM receive power {{ '%.1f'|format(s.values.dom_rx_power_dbm) }} dBm is outside {{ '%g'|format(s.values.dom_rx_low_dbm) }}..{{ '%g'|format(s.values.dom_rx_high_dbm) }} dBm: degraded optical path.
+{%- elif s.kind.value == 'zero_delta_nonzero_lifetime' -%}
+The lifetime counter is large ({{ '{:,}'.format(s.values.values() | first) }}) but did not move between this tool's two observations: an old event, not an incident. Nobody needs to be dispatched.
+{%- elif s.kind.value == 'low_fcs_does_not_clear_media' -%}
+FCS-Err is only {{ '{:,}'.format(s.values.fcs_errors) }} of {{ '{:,}'.format(s.values.input_errors) }}. Low FCS does not rule out media faults: symbol corruption and short frames are discarded before the FCS check, so severe link damage can present with near-zero FCS. Verdict retained.
+{%- elif s.kind.value == 'interface_resets' -%}
+{{ s.values.interface_resets }} interface resets.
+{%- elif s.kind.value == 'errors_stopped_after_clear' -%}
+If the errors stop advancing after a coordinated manual counter clear and a repoll, with the port otherwise untouched, reclassify HISTORIC_NOT_ACTIVE.
+{%- else -%}
+{{ s.kind.value }}: {{ s.values }}
+{%- endif -%}
+{%- endmacro -%}
+{%- macro dq_text(f) -%}
+{%- if f.kind.value == 'stale_poll_timestamp' -%}
+CSV poll timestamp is {{ window(f.values.staleness_minutes) }} old at report time; the CSV's rates describe that period, not the present.
+{%- elif f.kind.value == 'interval_from_ingest_time' -%}
+Interval ({{ window(f.values.interval_minutes) }}) derived from host-side timestamps, not device time.
+{%- elif f.kind.value == 'delta_source_disagreement' -%}
+Δ sources disagree: iftriage run-to-run {{ '{:,}'.format(f.values.delta_tool) }} vs CSV change {{ '{:,}'.format(f.values.delta_csv) }}. The tool's own observation is used for rate math because its interval is measured.
+{%- elif f.kind.value == 'counter_reconciliation_failed' -%}
+Input-error reconciliation does not balance: residual {{ '{:,}'.format(f.values.residual) }} ({{ '%.1f'|format(100 * f.values.residual_fraction) }}% of the total).
+{%- elif f.kind.value == 'no_second_observation' -%}
+Single observation: no earlier sample could be subtracted, so this report cannot say whether the counter is moving now.
+{%- elif f.kind.value == 'ratio_out_of_range' -%}
+A ratio fell outside 0..100% and was suppressed ({{ f.values.detail }}): its operands come from different populations.
+{%- elif f.kind.value == 'null_rule_input' -%}
+Unknown input(s) to a fired rule: {{ f.values.fields }}. Confidence capped.
+{%- elif f.kind.value == 'poll_timezone_assumed_utc' -%}
+The CSV `_time` column carries no timezone; UTC was assumed.
+{%- else -%}
+{{ f.kind.value }}: {{ f.values }}
+{%- endif -%}
+{%- endmacro -%}
 <head>
 <meta charset="utf-8">
 <title>Interface Error Triage — {{ generated_at }}</title>
@@ -15,16 +72,21 @@
           margin: 0.8em 0; }
   .verdict { font-weight: 700; padding: 0.1em 0.5em; border-radius: 4px;
              display: inline-block; }
-  .v-PHYSICAL_MEDIA { background: #fde3e3; color: #8f1d1d; }
-  .v-CONFIG_ISSUE  { background: #fdefd8; color: #8a5a00; }
-  .v-CAPACITY      { background: #e3ecfd; color: #1d3f8f; }
-  .v-IGNORE        { background: #e5f5e6; color: #1e6b2a; }
-  .v-UNVERIFIED    { background: #ececec; color: #555; }
-  .v-PARSE_ERROR   { background: #f3e3fd; color: #5d1d8f; }
+  .confidence { font-weight: 600; color: #444; }
+  .v-PHYSICAL_MEDIA       { background: #fde3e3; color: #8f1d1d; }
+  .v-LINK_NEGOTIATION     { background: #fdefd8; color: #8a5a00; }
+  .v-CONGESTION_BUFFER    { background: #e3ecfd; color: #1d3f8f; }
+  .v-HISTORIC_NOT_ACTIVE  { background: #eef2e5; color: #4a5c1e; }
+  .v-INSUFFICIENT_DATA    { background: #f0ecec; color: #6b4a4a; }
+  .v-IGNORE               { background: #e5f5e6; color: #1e6b2a; }
+  .v-UNVERIFIED           { background: #ececec; color: #555; }
+  .v-PARSE_ERROR          { background: #f3e3fd; color: #5d1d8f; }
   details { margin-top: 0.6em; }
   pre { background: #0f1720; color: #d8e1ea; padding: 0.8em; border-radius: 6px;
         overflow-x: auto; font-size: 0.8em; }
   .muted { color: #667; font-size: 0.9em; }
+  .evidence, .against { margin: 0.4em 0 0.4em 0; }
+  .against { border-left: 3px solid #c9a; padding-left: 0.8em; }
   table.kv td { padding: 0.05em 0.9em 0.05em 0; }
 </style>
 </head>
@@ -55,11 +117,40 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
   <div>
     <span class="verdict v-{{ r.verdict.category.value if r.verdict else 'UNVERIFIED' }}">
       {{ r.verdict.category.value if r.verdict else 'UNVERIFIED' }}</span>
+    {% if r.verdict and r.verdict.confidence %}<span class="confidence">confidence {{ r.verdict.confidence.value }}</span>{% endif %}
     &nbsp;<strong>{{ r.case.switch }}</strong> — {{ r.case.interface }}
-    ({{ r.case.counter }}, Δ24h={{ r.case.change }})
+    ({{ r.case.counter }})
   </div>
   {% if r.case.description %}<div class="muted">{{ r.case.description }}</div>{% endif %}
   <p>{{ r.verdict.reason if r.verdict else 'No verdict.' }}</p>
+  {% if r.verdict and r.verdict.signals %}
+  {% set supporting = r.verdict.signals | rejectattr('contradicts') | list %}
+  {% set against = r.verdict.signals | selectattr('contradicts') | list %}
+  {% if supporting %}
+  <div class="evidence"><strong>Evidence</strong>
+  <ul>{% for s in supporting %}<li>{{ signal_text(s) }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% if against %}
+  <div class="against"><strong>Evidence against</strong>
+  <ul>{% for s in against %}<li>{{ signal_text(s) }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% endif %}
+  {% if r.verdict and r.verdict.metrics %}
+  {% set m = r.verdict.metrics %}
+  <table class="kv muted">
+    {% if m.delta_tool is not none %}<tr><td>Δ (iftriage, run-to-run)</td><td>{{ '{:,}'.format(m.delta_tool) }}{% if m.interval_minutes %} over {{ window(m.interval_minutes) }} ({{ m.interval_source }}){% endif %}</td></tr>{% endif %}
+    {% if m.delta_csv is not none %}<tr><td>Δ (CSV, Splunk window)</td><td>{{ '{:,}'.format(m.delta_csv) }}</td></tr>{% endif %}
+    {% if m.errors_per_second is not none %}<tr><td>Error rate</td><td>{{ '%.2f'|format(m.errors_per_second) }}/s ({{ '{:,.0f}'.format(m.errors_per_hour) }}/h)</td></tr>{% endif %}
+    {% if m.error_ratio is not none %}<tr><td>Error ratio</td><td>{{ '%.4f'|format(100 * m.error_ratio) }}% of received frames</td></tr>{% endif %}
+  </table>
+  {% endif %}
+  {% if r.verdict and r.verdict.data_quality %}
+  <p class="muted"><strong>Data quality:</strong></p>
+  <ul class="muted">{% for f in r.verdict.data_quality %}<li>{{ dq_text(f) }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if r.verdict and r.verdict.what_would_change %}
+  <p class="muted"><strong>What would change this:</strong> {{ signal_text(r.verdict.what_would_change) }}</p>
+  {% endif %}
   {% if r.duplicate_of %}
   <p class="muted">Note: member of {{ r.duplicate_of }}, which is also in this
   report — same physical issue counted twice.</p>

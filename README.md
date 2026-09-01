@@ -13,7 +13,7 @@ polls the full fleet — only the devices in the CSV.
 |---|---|
 | **Input** | one CSV export, 11 columns ([format](#input-the-splunk-csv)) |
 | **Output** | HTML + text + enriched CSV report, session audit log, SQLite history ([example](#what-you-get)) |
-| **Verdicts** | `PHYSICAL_MEDIA` · `CONFIG_ISSUE` · `CAPACITY` · `IGNORE` · `UNVERIFIED` · `PARSE_ERROR` |
+| **Verdicts** | `PHYSICAL_MEDIA` · `LINK_NEGOTIATION` · `CONGESTION_BUFFER` · `HISTORIC_NOT_ACTIVE` · `INSUFFICIENT_DATA` · `IGNORE` · `UNVERIFIED` · `PARSE_ERROR`, each with a confidence level |
 | **Platforms** | Cisco IOS-XE, Cisco NX-OS, Arista EOS |
 | **Writes to devices** | none, ever — [read-only by design](#safety-model-non-negotiable) |
 
@@ -90,7 +90,7 @@ Audit log: reports/iftriage_audit_20260829_202921.log
 Collecting from 7 device(s), one session at a time ...
 Compared 7 of 8 case(s) against an earlier stored sample.
 
-8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
+8 cases: 2 PHYSICAL_MEDIA, 1 LINK_NEGOTIATION, 1 CONGESTION_BUFFER, 1 PARSE_ERROR, 1 UNVERIFIED, 1 HISTORIC_NOT_ACTIVE, 1 IGNORE
 Report (HTML): reports/iftriage_report_20260829_202921.html
 Report (text): reports/iftriage_report_20260829_202921.txt
 Report (CSV):  reports/iftriage_report_20260829_202921.csv
@@ -111,27 +111,36 @@ Generated 2026-08-29 20:29 UTC | source: docs/examples/input.csv
 Baseline: 7 of 8 case(s) compared against an earlier stored sample.
 
 EXECUTIVE SUMMARY
-  8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
+  8 cases: 2 PHYSICAL_MEDIA, 1 LINK_NEGOTIATION, 1 CONGESTION_BUFFER, 1 PARSE_ERROR, 1 UNVERIFIED, 1 HISTORIC_NOT_ACTIVE, 1 IGNORE
 
 CASES
 --------------------------------------------------------------------------------
-[PHYSICAL_MEDIA] sw-acc-01 Gi3/0/20 (Rcv-Err, delta24h=2123)
-  PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over the 18.0 h
-  since the earlier sample: real receive errors at meaningful rate. CRC/FCS
-  accounts for 3,683 of 3,683 input errors. Inspect cable/transceiver/path.
-  Counter still incrementing (+412 in 18.0 h).
+[PHYSICAL_MEDIA — confidence MEDIUM] sw-acc-01 Gi3/0/20 (Rcv-Err)
+  PHYSICAL_MEDIA — confidence MEDIUM (fcs_fraction_active).
+  Evidence:
+    - FCS errors are 100.0% of input errors: frames arriving but corrupted
+      (marginal signal).
+    - 2 interface resets.
+  Delta (iftriage, run-to-run): 412 over 18.0 h (host-side timestamps)
+  Delta (CSV, Splunk window): 2,123
+  Error ratio: 0.0298% of received frames
+  Data quality:
+    - Delta sources disagree: iftriage run-to-run 412 vs CSV change 2,123; the
+      tool's own delta is used for rate math.
+  What would change this: If errors stop advancing after a coordinated manual
+  counter clear and repoll, reclassify HISTORIC_NOT_ACTIVE.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
-  Recurrence: appeared in 2 ingested top-20 lists.
 --------------------------------------------------------------------------------
-[CONFIG_ISSUE] sw-acc-02 Gi3/0/20 (Late-Col, delta24h=-154073)
-  CONFIG_ISSUE — 38,449,023 late collisions on a half-duplex link while neighbor
-  SEP001122AABB99 reports full duplex: duplex mismatch confirmed. Fix via CLI
-  (align both ends), not by touching media. Counter still incrementing (+3,096
-  in 18.0 h).
+[LINK_NEGOTIATION — confidence HIGH] sw-acc-02 Gi3/0/20 (Late-Col)
+  LINK_NEGOTIATION — confidence HIGH (duplex_mismatch_confirmed).
+  Evidence:
+    - 38,449,023 late collisions on a half-duplex link (neighbor
+      SEP001122AABB99 reports full): negotiation/duplex mismatch, fixed via CLI.
+  Delta (iftriage, run-to-run): 3,096 over 18.0 h (host-side timestamps)
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Data-quality flags: negative_delta
 --------------------------------------------------------------------------------
-[PARSE_ERROR] sw-acc-01 Gi1/0/47 (Rcv-Err, delta24h=918)
+[PARSE_ERROR] sw-acc-01 Gi1/0/47 (Rcv-Err)
   PARSE_ERROR — critical field(s) input_errors, crc_errors, input_packets,
   link_status could not be parsed from device output. Refusing to guess (fail
   closed).
@@ -277,7 +286,8 @@ in `config.yaml` guard the *claim*, not the arithmetic:
 
 - `baseline.min_window_minutes` (default 5) — samples closer together than this
   are refused. Nothing had time to move, the counter would read as flat, and a
-  false "flat" **suppresses** escalation to `PHYSICAL_MEDIA` or `CAPACITY`.
+  false "flat" turns a live fault into `HISTORIC_NOT_ACTIVE` instead of an
+  escalation to `PHYSICAL_MEDIA` or `CONGESTION_BUFFER`.
 - `baseline.max_window_days` (default 14) — older samples are not offered.
   "Still incrementing" stops meaning *now* once the window is a month wide.
 
@@ -494,19 +504,32 @@ report:
 
 | Verdict | Meaning |
 |---|---|
-| `PHYSICAL_MEDIA` | CRC/FCS at or above the configured error threshold and still incrementing, DOM out of range, late-col on legacy half-duplex — inspect cable/transceiver/path |
-| `CONFIG_ISSUE` | Duplex mismatch confirmed (late-col against a full-duplex end) — fixed via CLI |
-| `CAPACITY` | Discards at or above the configured discard threshold — saturation or policy, not media |
-| `IGNORE` | Rate below its family's threshold / counter flat across the baseline window (historical) / not an error counter |
+| `PHYSICAL_MEDIA` | Errors placed at the physical layer: the zero-traffic test (errors advancing with no valid frames arriving), a dominant unattributed/symbol/runts profile with no collision activity, a high FCS fraction on an active counter, DOM out of range, late-col on a legacy half-duplex segment |
+| `LINK_NEGOTIATION` | Negotiation/duplex/MTU problems: late collisions on full duplex (duplex mismatch, fixed via CLI), a dominant giants profile |
+| `CONGESTION_BUFFER` | Overrun/ignored/no-buffer/queue-drop dominance or discards at rate: frames arrived intact and were dropped — oversubscription, policer, or ring sizing, not media |
+| `HISTORIC_NOT_ACTIVE` | The lifetime counter is large but did not move between the tool's own two observations — an old event, not an incident |
+| `INSUFFICIENT_DATA` | The data parsed fine but cannot support a judgement: a never-cleared lifetime counter with no second observation supports no rate at all |
+| `IGNORE` | Activity below the configured threshold / not an error counter |
 | `UNVERIFIED` | Device unreachable / auth failed / required an enable secret that was not provided — CSV data only |
 | `PARSE_ERROR` | Output did not parse or critical fields missing (fail closed) |
 
-Cases are reported most-actionable-first: `PHYSICAL_MEDIA` → `CONFIG_ISSUE` →
-`CAPACITY` → `PARSE_ERROR` → `UNVERIFIED` → `IGNORE`.
+Every judged verdict carries a **confidence** (`HIGH`/`MEDIUM`/`LOW`) with
+hard caps: a single observation or an unknown rule input caps `MEDIUM`; an
+input-error reconciliation residual above 1% caps `LOW`. The caps' reasons
+appear in the report's per-case data-quality list. `UNVERIFIED`, `PARSE_ERROR`
+and `INSUFFICIENT_DATA` carry none — they are refusals, not judgements.
 
-Rates are normalized: `error_delta / packet_delta` over the baseline window, or
-lifetime errors/packets as fallback — a raw 24h delta on its own means nothing.
-Thresholds live in `config.yaml` (default: ≥1e-4 high, ≥1e-5 warn).
+Cases are reported most-actionable-first: `PHYSICAL_MEDIA` →
+`LINK_NEGOTIATION` → `CONGESTION_BUFFER` → `PARSE_ERROR` → `UNVERIFIED` →
+`INSUFFICIENT_DATA` → `HISTORIC_NOT_ACTIVE` → `IGNORE`.
+
+Rates never mix counter populations: the tool's own run-to-run delta is
+divided by delta received frames (`packets input` + `input errors`, since
+errored frames are not in `packets input`), lifetime values only by lifetime
+frames over a device-anchored window, and the CSV's `change` column is
+displayed but never used for rate math. A ratio that falls outside 0–100% is
+suppressed and flagged, never printed. Thresholds live in `config.yaml`
+(defaults: errors ≥ 0.001% of frames, discards ≥ 1%).
 
 **Port-channels pull in the whole bundle.** Whenever a case touches a
 port-channel — as the bundle or as one of its members — iftriage reconnects to

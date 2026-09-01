@@ -14,9 +14,18 @@ class Platform(StrEnum):
 
 
 class VerdictCategory(StrEnum):
+    """v2 vocabulary. PHYSICAL_MEDIA/LINK_NEGOTIATION/CONGESTION_BUFFER say
+    what kind of fault is active; HISTORIC_NOT_ACTIVE says the lifetime
+    counters are old news; INSUFFICIENT_DATA says the data parsed fine but
+    cannot support a judgement (distinct from PARSE_ERROR, which is a failed
+    parse, and UNVERIFIED, which is a failed collection — both fail-closed
+    guarantees that predate v2 and stay untouched)."""
+
     PHYSICAL_MEDIA = "PHYSICAL_MEDIA"
-    CONFIG_ISSUE = "CONFIG_ISSUE"
-    CAPACITY = "CAPACITY"
+    LINK_NEGOTIATION = "LINK_NEGOTIATION"
+    CONGESTION_BUFFER = "CONGESTION_BUFFER"
+    HISTORIC_NOT_ACTIVE = "HISTORIC_NOT_ACTIVE"
+    INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
     IGNORE = "IGNORE"
     UNVERIFIED = "UNVERIFIED"
     PARSE_ERROR = "PARSE_ERROR"
@@ -70,10 +79,12 @@ class DataQualityKind(StrEnum):
 # Report ordering: most actionable first.
 VERDICT_ORDER = [
     VerdictCategory.PHYSICAL_MEDIA,
-    VerdictCategory.CONFIG_ISSUE,
-    VerdictCategory.CAPACITY,
+    VerdictCategory.LINK_NEGOTIATION,
+    VerdictCategory.CONGESTION_BUFFER,
     VerdictCategory.PARSE_ERROR,
     VerdictCategory.UNVERIFIED,
+    VerdictCategory.INSUFFICIENT_DATA,
+    VerdictCategory.HISTORIC_NOT_ACTIVE,
     VerdictCategory.IGNORE,
 ]
 
@@ -228,8 +239,8 @@ class VerdictMetrics:
     errors_per_second: float | None = None
     errors_per_hour: float | None = None
     error_ratio: float | None = None  # only ever a value inside [0, 1]
-    delta_tool_input_errors: int | None = None
-    delta_csv_change: int | None = None
+    delta_tool: int | None = None  # the CSV-flagged counter, run-to-run
+    delta_csv: int | None = None  # the CSV `change` column, as supplied
     interval_minutes: float | None = None
     interval_source: str | None = None
     staleness_minutes: float | None = None

@@ -1,3 +1,57 @@
+{%- macro signal_text(s) -%}
+{%- if s.kind.value == 'zero_traffic_errors' -%}
+Receive errors advanced {{ '{:,}'.format(s.values.delta_input_errors) }} (~{{ s.values.errors_per_second }}/s) while the device-reported input rate was {{ s.values.input_rate_pps if s.values.input_rate_pps != -1 else '?' }} pps{% if s.values.last_input_minutes != -1 %} and last input was {{ window(s.values.last_input_minutes) }} prior{% endif %}. Errors are accumulating without valid traffic: the fault is at the link, not in the traffic.
+{%- elif s.kind.value == 'unattributed_rx_dominant' -%}
+{{ '{:,}'.format(s.values.unattributed_rx) }} of {{ '{:,}'.format(s.values.input_errors) }} input errors ({{ '%.1f'|format(100 * s.values.unattributed_rx / s.values.input_errors) }}%) fall in no named bucket, consistent with symbol-level corruption{% if s.values.runts != -1 %}. runts/UnderSize: {{ '{:,}'.format(s.values.runts) }}{% endif %}.
+{%- elif s.kind.value == 'runts_dominant_no_collisions' -%}
+Runts dominate the input-error total with zero collision activity: frames are not surviving to the MAC.
+{%- elif s.kind.value == 'fcs_fraction_active' -%}
+FCS errors are {{ '%.1f'|format(100 * s.values.fcs_fraction) }}% of input errors: frames arriving but corrupted (marginal signal).
+{%- elif s.kind.value == 'buffer_group_dominant' -%}
+{% if s.values.buffer_group is defined %}Overrun/ignored/no-buffer/input-queue drops account for {{ '{:,}'.format(s.values.buffer_group) }} of {{ '{:,}'.format(s.values.input_errors) }} input errors in the window: congestion, not media.{% else %}{{ '{:,}'.format(s.values.discards) }} {{ s.values.direction }} discards at meaningful rate: frames arrived intact and were dropped (oversubscription, policer, or ring sizing), not media.{% endif %}
+{%- elif s.kind.value == 'late_collisions_full_duplex' -%}
+{{ '{:,}'.format(s.values.late_collisions) }} late collisions on a {{ s.values.duplex }}-duplex link{% if s.values.neighbor_duplex is defined and s.values.neighbor_duplex not in ('?', '') %} (neighbor {{ s.values.neighbor_name }} reports {{ s.values.neighbor_duplex }}){% endif %}: negotiation/duplex mismatch, fixed via CLI.
+{%- elif s.kind.value == 'giants_with_mtu_mismatch' -%}
+Giants dominate ({{ '{:,}'.format(s.values.giants) }}, local MTU {{ s.values.mtu }}): consistent with an MTU mismatch between ends; far-end MTU unknown.
+{%- elif s.kind.value == 'speed_below_capability' -%}
+Link negotiated {{ s.values.speed }} on a {{ s.values.media_type }} port. Consistent with damaged pairs, but also consistent with a 100M endpoint — unresolved.
+{%- elif s.kind.value == 'bytes_per_frame_above_mtu' -%}
+Byte counter implies ~{{ '{:,}'.format(s.values.bytes_per_frame) }} B/frame against MTU {{ s.values.mtu }}: errored octets are being counted.
+{%- elif s.kind.value == 'dom_rx_out_of_range' -%}
+DOM receive power {{ '%.1f'|format(s.values.dom_rx_power_dbm) }} dBm outside {{ '%g'|format(s.values.dom_rx_low_dbm) }}..{{ '%g'|format(s.values.dom_rx_high_dbm) }} dBm: degraded optical path.
+{%- elif s.kind.value == 'zero_delta_nonzero_lifetime' -%}
+The lifetime counter is large ({{ '{:,}'.format(s.values.values() | first) }}) but did not move between this tool's two observations: old event, not an incident.
+{%- elif s.kind.value == 'low_fcs_does_not_clear_media' -%}
+FCS-Err is only {{ '{:,}'.format(s.values.fcs_errors) }} of {{ '{:,}'.format(s.values.input_errors) }}. Low FCS does not rule out media faults: symbol corruption and short frames are discarded before the FCS check. Verdict retained.
+{%- elif s.kind.value == 'interface_resets' -%}
+{{ s.values.interface_resets }} interface resets.
+{%- elif s.kind.value == 'errors_stopped_after_clear' -%}
+If errors stop advancing after a coordinated manual counter clear and repoll, reclassify HISTORIC_NOT_ACTIVE.
+{%- else -%}
+{{ s.kind.value }}: {{ s.values }}
+{%- endif -%}
+{%- endmacro -%}
+{%- macro dq_text(f) -%}
+{%- if f.kind.value == 'stale_poll_timestamp' -%}
+CSV poll timestamp is {{ window(f.values.staleness_minutes) }} old at report time; its rates describe that period.
+{%- elif f.kind.value == 'interval_from_ingest_time' -%}
+Interval ({{ window(f.values.interval_minutes) }}) derived from host-side timestamps, not device time.
+{%- elif f.kind.value == 'delta_source_disagreement' -%}
+Delta sources disagree: iftriage run-to-run {{ '{:,}'.format(f.values.delta_tool) }} vs CSV change {{ '{:,}'.format(f.values.delta_csv) }}; the tool's own delta is used for rate math.
+{%- elif f.kind.value == 'counter_reconciliation_failed' -%}
+Input-error reconciliation does not balance: residual {{ '{:,}'.format(f.values.residual) }} ({{ '%.1f'|format(100 * f.values.residual_fraction) }}%).
+{%- elif f.kind.value == 'no_second_observation' -%}
+Single observation: no earlier sample could be subtracted.
+{%- elif f.kind.value == 'ratio_out_of_range' -%}
+A ratio fell outside 0..100% and was suppressed ({{ f.values.detail }}).
+{%- elif f.kind.value == 'null_rule_input' -%}
+Unknown input(s) to a fired rule: {{ f.values.fields }}. Confidence capped.
+{%- elif f.kind.value == 'poll_timezone_assumed_utc' -%}
+The CSV _time column carries no timezone; UTC was assumed.
+{%- else -%}
+{{ f.kind.value }}: {{ f.values }}
+{%- endif -%}
+{%- endmacro -%}
 INTERFACE ERROR TRIAGE — TOP-{{ summary.total }} VERIFICATION
 Generated {{ generated_at }} | source: {{ meta.csv_file }}
 {% if meta.baseline %}Baseline: {{ meta.baseline.matched }} of {{ meta.baseline.total }} case(s) compared against an earlier stored sample.
@@ -20,8 +74,45 @@ DATA QUALITY (surfaced, not analyzed)
 CASES
 {% for r in results %}
 --------------------------------------------------------------------------------
-[{{ r.verdict.category.value if r.verdict else 'UNVERIFIED' }}] {{ r.case.switch }} {{ r.case.interface }} ({{ r.case.counter }}, delta24h={{ r.case.change }})
+[{{ r.verdict.category.value if r.verdict else 'UNVERIFIED' }}{% if r.verdict and r.verdict.confidence %} — confidence {{ r.verdict.confidence.value }}{% endif %}] {{ r.case.switch }} {{ r.case.interface }} ({{ r.case.counter }})
   {{ r.verdict.reason if r.verdict else 'No verdict.' }}
+{% if r.verdict and r.verdict.signals %}
+{% set supporting = r.verdict.signals | rejectattr('contradicts') | list %}
+{% set against = r.verdict.signals | selectattr('contradicts') | list %}
+{% if supporting %}
+  Evidence:
+{% for s in supporting %}
+    - {{ signal_text(s) }}
+{% endfor %}
+{% endif %}
+{% if against %}
+  Evidence against:
+{% for s in against %}
+    - {{ signal_text(s) }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if r.verdict and r.verdict.metrics %}
+{% set m = r.verdict.metrics %}
+{% if m.delta_tool is not none %}  Delta (iftriage, run-to-run): {{ '{:,}'.format(m.delta_tool) }}{% if m.interval_minutes %} over {{ window(m.interval_minutes) }} ({{ m.interval_source }}){% endif %}
+
+{% endif %}
+{% if m.delta_csv is not none %}  Delta (CSV, Splunk window): {{ '{:,}'.format(m.delta_csv) }}
+{% endif %}
+{% if m.errors_per_second is not none %}  Error rate: {{ '%.2f'|format(m.errors_per_second) }}/s ({{ '{:,.0f}'.format(m.errors_per_hour) }}/h)
+{% endif %}
+{% if m.error_ratio is not none %}  Error ratio: {{ '%.4f'|format(100 * m.error_ratio) }}% of received frames
+{% endif %}
+{% endif %}
+{% if r.verdict and r.verdict.data_quality %}
+  Data quality:
+{% for f in r.verdict.data_quality %}
+    - {{ dq_text(f) }}
+{% endfor %}
+{% endif %}
+{% if r.verdict and r.verdict.what_would_change %}
+  What would change this: {{ signal_text(r.verdict.what_would_change) }}
+{% endif %}
 {% if r.duplicate_of %}
   Note: member of {{ r.duplicate_of }} (also in this report) — same physical issue counted twice.
 {% endif %}

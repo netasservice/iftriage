@@ -223,7 +223,7 @@ members of the one bundle, never full-chassis.
 - `Late-Col` (late collisions): on a full-duplex link these must be ZERO (no CSMA/CD). Late
   collisions + full duplex ⇒ duplex mismatch (verify far end via CDP/LLDP neighbor if reachable).
   On half-duplex: if the far end reports FULL duplex (CDP `Duplex: full (Mismatch)`) or the
-  device log records `%CDP-4-DUPLEX_MISMATCH`, it is a confirmed duplex mismatch (CONFIG_ISSUE),
+  device log records `%CDP-4-DUPLEX_MISMATCH`, it is a confirmed duplex mismatch (LINK_NEGOTIATION),
   not a legacy segment — real fleet case validated in Phase 2. Only an uncorroborated legacy
   half-duplex link points to cable out of spec / failing NIC.
 - `Rcv-Err`: aggregate receive errors. Use `counters errors` to split CRC/FCS (physical: cable,
@@ -258,23 +258,32 @@ members of the one bundle, never full-chassis.
   - `error_rate_percent` (default 0.001% = 10/M packets) → CRC/FCS/alignment/runts and
     generic error counters at or above it are `PHYSICAL_MEDIA`.
   - `discard_rate_percent` (default 1%) → `InDiscards`/`OutDiscards` at or above it are
-    `CAPACITY`; below it they are operational noise.
-  - Either way the baseline can still veto: a counter that is flat across the window is a
-    historical event, reported as `IGNORE` and named as such.
+    `CONGESTION_BUFFER`; below it they are operational noise.
+  - Either way the comparison against the earlier stored sample decides activity: a counter
+    that is flat across the window is a historical event, reported as `HISTORIC_NOT_ACTIVE`.
 
 ### Verdict categories (final output vocabulary)
 
-- `PHYSICAL_MEDIA` — real CRC/FCS at meaningful rate, DOM out of range, late-col on legacy
-  half-duplex. Action: inspect cable/transceiver/path.
-- `CONFIG_ISSUE` — duplex mismatch confirmed (late-col on full-duplex, ideally corroborated by
-  neighbor). Fixed via CLI, not by touching media.
-- `CAPACITY` — InDiscards at or above the configured discard threshold. Not media, not
-  config: saturation.
-- `IGNORE` — negligible normalized rate, counter flat across the baseline window, and/or
-  chronic known noise.
+- `PHYSICAL_MEDIA` — errors placed at the physical layer: the zero-traffic test, a dominant
+  unattributed/symbol/runts profile with no collision activity, a high FCS fraction on an
+  active counter, DOM out of range, late-col on a legacy half-duplex segment.
+- `LINK_NEGOTIATION` — negotiation/duplex/MTU problems: late collisions on full duplex
+  (duplex mismatch, fixed via CLI, not by touching media), a dominant giants profile.
+- `CONGESTION_BUFFER` — overrun/ignored/no-buffer/queue-drop dominance, or discards at or
+  above the configured discard threshold. Not media: saturation or policy.
+- `HISTORIC_NOT_ACTIVE` — a large lifetime counter with zero movement between the tool's own
+  two observations. An old event; nobody is dispatched.
+- `INSUFFICIENT_DATA` — parsed fine but cannot support a judgement (e.g. a never-cleared
+  lifetime counter with no second observation).
+- `IGNORE` — activity below the configured threshold, or not an error counter.
 - `UNVERIFIED` — device unreachable / auth failed / SSH timeout. Report with CSV data only,
   clearly marked unconfirmed.
 - `PARSE_ERROR` — command output did not parse or critical fields missing.
+
+Every judged verdict also carries a confidence level (`HIGH`/`MEDIUM`/`LOW`) with hard caps
+(single observation or unknown rule input → at most `MEDIUM`; input-error reconciliation
+residual above 1% → at most `LOW`), plus typed evidence signals — including evidence AGAINST
+the verdict, printed and explained rather than dropped.
 
 **Fail-closed analysis rule (critical):** a failed parse or missing critical field NEVER yields a
 clean verdict with empty/zero data. A silent misparse (crc=None → treated as 0 → false IGNORE) is
@@ -291,8 +300,8 @@ the worst failure mode of this tool. Missing data ⇒ `PARSE_ERROR`/`UNVERIFIED`
   dq_flags, duplicate_of, recurrence. Written with the stdlib csv module; unknown values stay
   empty cells (fail closed), never zero.
 - Structure:
-  - Executive summary: "20 cases: 3 PHYSICAL_MEDIA, 2 CONFIG_ISSUE, 1 CAPACITY, 13 IGNORE,
-    1 UNVERIFIED".
+  - Executive summary: "20 cases: 3 PHYSICAL_MEDIA, 2 LINK_NEGOTIATION,
+    1 CONGESTION_BUFFER, 12 IGNORE, 1 HISTORIC_NOT_ACTIVE, 1 UNVERIFIED".
   - Data-quality section (duplicates, resets, window misalignment) — separate from verdicts.
   - One section per case: verdict, one-line justification written in DECISION language, not data
     language (e.g. "IGNORE — 0.003% error rate over 109M frames, counter flat across 12-min

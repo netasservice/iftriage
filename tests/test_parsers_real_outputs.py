@@ -54,7 +54,8 @@ def test_real_ios_xe_counters_late_col():
         "GigabitEthernet3/0/20",
     )
     assert parsed["late_collisions"] == 38445927
-    assert parsed["input_errors"] == 0
+    assert parsed["rcv_err"] == 0
+    assert "input_errors" not in parsed  # Rcv-Err is its own series
     assert parsed["crc_errors"] == 0
     assert parsed["discards_out"] == 223462
 
@@ -100,7 +101,7 @@ def test_real_ios_xe_logging_flags_duplex_mismatch():
 
 def test_real_ios_xe_case_end_to_end_is_config_issue():
     """The full real case: Late-Col delta on a half-duplex port whose phone
-    neighbor reports full duplex must come out as CONFIG_ISSUE."""
+    neighbor reports full duplex must come out as LINK_NEGOTIATION."""
     fixtures = {
         "interface": "real_show_interfaces_half_duplex.txt",
         "counters": "real_counters_errors_late_col.txt",
@@ -119,8 +120,8 @@ def test_real_ios_xe_case_end_to_end_is_config_issue():
             )
     stats = NormalizedInterfaceStats(**merged)
     verdict = evaluate_case(make_case("Late-Col"), stats, None, None, Thresholds())
-    assert verdict.category is VerdictCategory.CONFIG_ISSUE
-    assert "mismatch confirmed" in verdict.reason.lower()
+    assert verdict.category is VerdictCategory.LINK_NEGOTIATION
+    assert "duplex_mismatch_confirmed" in verdict.reason
 
 
 # ---- NX-OS: port-channel + fiber member, LLDP-only neighbor ----------------

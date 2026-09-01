@@ -3,21 +3,71 @@
 Consumes ONLY the canonical NormalizedInterfaceStats model; never knows the
 platform. Fail-closed rule: a failed parse or missing critical field NEVER
 yields a clean verdict — missing data => PARSE_ERROR / UNVERIFIED, always.
+
+v2 engine: classification is driven by WHICH error bucket is incrementing,
+never by the total alone, and every verdict carries a confidence level plus
+typed evidence signals (enum kinds + named counter values, zero prose — the
+sentences live in the report templates). Population discipline (lifetime vs
+tool-delta vs CSV-delta) is enforced by `metrics.py`; interval provenance by
+`timebase.py`. Confidence caps are hard limits: no second observation, a
+stale poll, an unbalanced reconciliation, or a None among a fired rule's
+inputs each cap what the verdict may claim.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
+from datetime import datetime
 from enum import Enum
 
 from .config import Thresholds
+from .metrics import (
+    DeltaWindow,
+    LifetimeView,
+    RatioResult,
+    buffer_group_delta,
+    bytes_per_frame,
+    bytes_per_frame_exceeds_mtu,
+    compute_delta_window,
+    delta_sources_disagree,
+    reconcile_input_errors,
+    unattributed_rx,
+    zero_traffic_test,
+)
 from .models import (
     VERDICT_ORDER,
+    Confidence,
+    DataQualityFlag,
+    DataQualityKind,
     InterfaceCase,
     NormalizedInterfaceStats,
+    Signal,
+    SignalKind,
     Verdict,
     VerdictCategory,
+    VerdictMetrics,
 )
+from .timebase import (
+    STALENESS_HEADLINE_MINUTES as _STALE_HEADLINE_MINUTES,
+)
+from .timebase import (
+    IntervalEstimate,
+    IntervalSource,
+    lifetime_window,
+    observation_window,
+    parse_poll_time,
+    staleness_minutes,
+)
+
+# Spec-fixed semantics, not operator tunables: these constants define what
+# the verdicts MEAN. The operator-facing floors stay in config.yaml.
+DOMINANT_SHARE = 0.5  # a bucket "dominates" above half of the error total
+FCS_FRACTION_MIN = 0.10  # FCS share that reads as marginal-signal corruption
+FCS_NEGLIGIBLE_FRACTION = 0.01  # below this, FCS neither confirms nor clears
+RECONCILIATION_LOW_CAP_FRACTION = 0.01  # residual above 1% caps LOW
+
+_CONFIDENCE_RANK = {Confidence.LOW: 0, Confidence.MEDIUM: 1, Confidence.HIGH: 2}
 
 
 class CounterClass(Enum):
@@ -78,7 +128,7 @@ _REQUIRED_FIELDS: dict[CounterClass, tuple[str, ...]] = {
     CounterClass.GENERIC_ERRORS: ("input_errors", "input_packets", "link_status"),
 }
 
-# Which stats field carries the counter value for each class (baseline deltas).
+# Which stats field carries the counter value for each class.
 _VALUE_FIELD: dict[CounterClass, str] = {
     CounterClass.LATE_COLLISIONS: "late_collisions",
     CounterClass.RECEIVE_ERRORS: "input_errors",
@@ -89,29 +139,16 @@ _VALUE_FIELD: dict[CounterClass, str] = {
 }
 
 
-def _fmt_rate(rate: float) -> str:
-    per_million = rate * 1_000_000
-    return f"{rate * 100:.4f}% ({per_million:,.0f} per million frames)"
-
-
 def _fmt_threshold(percent: float) -> str:
     """The configured floor, without the trailing zeros of a fixed format."""
     return f"{percent:g}%"
 
 
-def _lifetime_rate(errors: int, packets: int) -> float | None:
-    if packets and packets > 0:
-        return errors / packets
-    return None
-
-
 def format_window(minutes: float | None) -> str:
     """A comparison window in the largest unit that stays readable.
 
-    Windows are now hours or days rather than the ten minutes a second pass
-    used to buy, and "1104 min" is not something an operator can read at a
-    glance. Returns only digits and a unit symbol, so report language stays in
-    the templates.
+    Returns only digits and a unit symbol, so report language stays in the
+    templates.
     """
     if minutes is None:
         return "?"
@@ -123,38 +160,137 @@ def format_window(minutes: float | None) -> str:
     return f"{hours / 24:.1f} d"
 
 
-def _counter_delta(
-    *,
-    earlier: NormalizedInterfaceStats | None,
-    later: NormalizedInterfaceStats,
-    field: str,
-) -> tuple[int, int] | None:
-    """(counter_delta, packet_delta) from `earlier` to `later`, or None.
+def _cap(confidence: Confidence, ceiling: Confidence) -> Confidence:
+    if _CONFIDENCE_RANK[confidence] > _CONFIDENCE_RANK[ceiling]:
+        return ceiling
+    return confidence
 
-    Keyword-only on purpose. This function used to be called with the fresh
-    sample first and the stored one second; a surviving positional call site
-    would now negate every delta in silence, turning a climbing counter into a
-    discarded one and vice versa.
 
-    None is returned — never a zero delta — when either sample lacks the field
-    and when `later` reads LOWER than `earlier`, which means the device
-    reloaded or the counters were cleared between the two samples. None is not
-    "flat": a discarded baseline must never veto an escalation.
+def apply_caps(confidence: Confidence, flags: Sequence[DataQualityFlag]) -> Confidence:
+    """Hard confidence ceilings from data-quality conditions. Applied after
+    the verdict is chosen; each cap's flag is already in the verdict, so the
+    report can explain why confidence is what it is.
+
+    Only conditions that limited the EVIDENCE cap the verdict: a single
+    observation, an unknown rule input, an unbalanced reconciliation. A stale
+    CSV poll or a host-side interval label stay headline data-quality items —
+    verdicts here rest on the tool's own two observations, which the CSV's
+    age does not touch, and the tool's collection interval is measured (by
+    the host's clock) rather than inferred.
     """
-    if earlier is None:
+    for flag in flags:
+        if flag.kind is DataQualityKind.COUNTER_RECONCILIATION_FAILED:
+            fraction = flag.values.get("residual_fraction", 0)
+            if isinstance(fraction, int | float) and (
+                fraction > RECONCILIATION_LOW_CAP_FRACTION
+            ):
+                confidence = _cap(confidence, Confidence.LOW)
+            else:
+                confidence = _cap(confidence, Confidence.MEDIUM)
+        elif flag.kind in (
+            DataQualityKind.NO_SECOND_OBSERVATION,
+            DataQualityKind.NULL_RULE_INPUT,
+        ):
+            confidence = _cap(confidence, Confidence.MEDIUM)
+    return confidence
+
+
+def _share(part: int | None, whole: int | None) -> float | None:
+    if part is None or whole is None or whole <= 0:
         return None
-    first_value, second_value = getattr(earlier, field), getattr(later, field)
-    first_packets, second_packets = earlier.input_packets, later.input_packets
-    if (
-        first_value is None
-        or second_value is None
-        or first_packets is None
-        or second_packets is None
-    ):
+    return part / whole
+
+
+def _speed_below_capability(stats: NormalizedInterfaceStats) -> bool:
+    """100M negotiated on a gigabit-capable copper port. Real signal (cable
+    pair damage forces the fallback) but equally consistent with a genuinely
+    100M endpoint — corroborating only, never a verdict on its own."""
+    speed = (stats.speed or "").replace(" ", "").lower()
+    media = (stats.media_type or "").lower()
+    return bool(
+        re.match(r"100mb?", speed)
+        and not speed.startswith("1000")
+        and "1000base" in media
+    )
+
+
+def _corroborating_signals(stats: NormalizedInterfaceStats) -> list[Signal]:
+    signals: list[Signal] = []
+    if _speed_below_capability(stats):
+        signals.append(
+            Signal(
+                kind=SignalKind.SPEED_BELOW_CAPABILITY,
+                weight=Confidence.LOW,
+                values={
+                    "speed": stats.speed or "?",
+                    "media_type": stats.media_type or "?",
+                },
+                supports=VerdictCategory.PHYSICAL_MEDIA,
+            )
+        )
+    if bytes_per_frame_exceeds_mtu(stats):
+        average = bytes_per_frame(stats)
+        signals.append(
+            Signal(
+                kind=SignalKind.BYTES_PER_FRAME_ABOVE_MTU,
+                weight=Confidence.LOW,
+                values={
+                    "bytes_per_frame": round(average or 0),
+                    "mtu": stats.mtu or 0,
+                    "bytes_input": stats.bytes_input or 0,
+                    "input_packets": stats.input_packets or 0,
+                },
+                supports=VerdictCategory.PHYSICAL_MEDIA,
+            )
+        )
+    if stats.interface_resets:
+        signals.append(
+            Signal(
+                kind=SignalKind.INTERFACE_RESETS,
+                weight=Confidence.LOW,
+                values={"interface_resets": stats.interface_resets},
+                supports=VerdictCategory.PHYSICAL_MEDIA,
+            )
+        )
+    return signals
+
+
+def _fcs_contradiction(stats: NormalizedInterfaceStats) -> Signal | None:
+    """A near-zero FCS count on a port drowning in receive errors. It points
+    away from the media verdict at first sight, but does not clear it: symbol
+    corruption and short frames are discarded before the FCS check, so severe
+    link damage can present with near-zero FCS. Rendered under "Evidence
+    against" with that explanation."""
+    fcs = stats.fcs_errors if stats.fcs_errors is not None else stats.crc_errors
+    fraction = _share(fcs, stats.input_errors)
+    if fcs is None or fraction is None or fraction >= FCS_NEGLIGIBLE_FRACTION:
         return None
-    if second_value < first_value or second_packets < first_packets:
-        return None  # counter reset between samples
-    return (second_value - first_value, second_packets - first_packets)
+    return Signal(
+        kind=SignalKind.LOW_FCS_DOES_NOT_CLEAR_MEDIA,
+        weight=Confidence.LOW,
+        values={"fcs_errors": fcs, "input_errors": stats.input_errors or 0},
+        contradicts=True,
+    )
+
+
+def _build_metrics(
+    window: DeltaWindow | None,
+    value_delta: int | None,
+    csv_change: int | None,
+    ratio: RatioResult | None,
+    stale_minutes: float | None,
+) -> VerdictMetrics:
+    interval = window.interval if window is not None else None
+    return VerdictMetrics(
+        errors_per_second=window.errors_per_second() if window else None,
+        errors_per_hour=window.errors_per_hour() if window else None,
+        error_ratio=ratio.value if ratio else None,
+        delta_tool=value_delta,
+        delta_csv=csv_change,
+        interval_minutes=interval.minutes if interval else None,
+        interval_source=interval.source.value if interval else None,
+        staleness_minutes=stale_minutes,
+    )
 
 
 def evaluate_case(
@@ -169,6 +305,7 @@ def evaluate_case(
     member_baseline_stats: dict[str, NormalizedInterfaceStats] | None = None,
     member_errors: dict[str, str] | None = None,
     parent_portchannel: str | None = None,
+    report_time: datetime | None = None,
 ) -> Verdict:
     """Produce the verdict for one case. Pure function.
 
@@ -208,6 +345,7 @@ def evaluate_case(
                 member_stats or {},
                 member_baseline_stats or {},
                 member_errors or {},
+                report_time,
             )
         return _portchannel_verdict(
             case,
@@ -219,6 +357,7 @@ def evaluate_case(
             member_stats or {},
             member_baseline_stats or {},
             member_errors or {},
+            report_time,
         )
 
     return _evaluate_stats(
@@ -228,6 +367,9 @@ def evaluate_case(
         baseline_minutes,
         thresholds,
         list(parse_errors),
+        csv_change=case.change,
+        poll_time=case.poll_time,
+        report_time=report_time,
     )
 
 
@@ -238,9 +380,17 @@ def _evaluate_stats(
     baseline_minutes: float | None,
     thresholds: Thresholds,
     base_details: list[str],
+    csv_change: int | None = None,
+    poll_time: str | None = None,
+    report_time: datetime | None = None,
 ) -> Verdict:
     """Single-interface verdict logic, shared by plain cases, the bundle-level
-    view of a port-channel, and each of its members."""
+    view of a port-channel, and each of its members.
+
+    Deterministic ladder, first match wins:
+    INSUFFICIENT_DATA -> HISTORIC_NOT_ACTIVE -> CONGESTION_BUFFER ->
+    PHYSICAL_MEDIA -> LINK_NEGOTIATION -> IGNORE.
+    """
 
     cls = classify_counter(counter_name)
 
@@ -265,40 +415,83 @@ def _evaluate_stats(
         )
 
     details: list[str] = list(base_details)
-    delta_note = ""
+    flags: list[DataQualityFlag] = []
+    signals: list[Signal] = []
     value_field = _VALUE_FIELD[cls]
-    delta = _counter_delta(earlier=baseline_stats, later=stats, field=value_field)
-    flat = None
-    rate = None
-    rate_basis = ""
 
-    if delta is not None:
-        counter_delta, packet_delta = delta
-        flat = counter_delta == 0
-        window = format_window(baseline_minutes)
-        if flat:
-            delta_note = f"counter flat over the {window} since the earlier sample"
-        else:
-            delta_note = f"counter still incrementing (+{counter_delta:,} in {window})"
-        if packet_delta > 0 and counter_delta > 0:
-            rate = counter_delta / packet_delta
-            rate_basis = f"the {window} since the earlier sample"
-    elif baseline_stats is not None:
-        # A stored sample exists but cannot answer. Leaving `flat` as None —
-        # never False, never True — is what keeps a discarded baseline from
-        # vetoing the PHYSICAL_MEDIA/CAPACITY escalations below.
-        details.append(
-            "earlier sample discarded: its counters cannot be subtracted from "
-            "the current ones (counter reset, device reload, or a field it "
-            "does not carry)"
+    # --- populations and provenance ------------------------------------------
+    interval: IntervalEstimate | None = None
+    window: DeltaWindow | None = None
+    if baseline_stats is not None:
+        interval = observation_window(baseline_stats, stats, baseline_minutes)
+        window = compute_delta_window(baseline_stats, stats, interval)
+    value_delta = getattr(window, value_field) if window is not None else None
+    flat = value_delta == 0 if value_delta is not None else None
+    life = LifetimeView(stats)
+    life_window = lifetime_window(stats)
+
+    if value_delta is None:
+        flags.append(DataQualityFlag(DataQualityKind.NO_SECOND_OBSERVATION))
+        if baseline_stats is not None:
+            details.append(
+                "earlier sample discarded: its counters cannot be subtracted "
+                "from the current ones (counter reset, device reload, or a "
+                "field it does not carry)"
+            )
+    if interval is not None and interval.source is IntervalSource.HOST_INGEST_TIME:
+        flags.append(
+            DataQualityFlag(
+                DataQualityKind.INTERVAL_FROM_INGEST_TIME,
+                {"interval_minutes": round(interval.minutes, 1)},
+            )
         )
 
-    if rate is None:
-        value = getattr(stats, value_field)
-        lifetime = _lifetime_rate(value, stats.input_packets or 0)
-        if lifetime is not None:
-            rate = lifetime
-            rate_basis = "lifetime counters"
+    stale_minutes: float | None = None
+    if report_time is not None and poll_time:
+        poll = parse_poll_time(poll_time)
+        stale_minutes = staleness_minutes(report_time, poll)
+        if stale_minutes is not None and stale_minutes > _STALE_HEADLINE_MINUTES:
+            flags.append(
+                DataQualityFlag(
+                    DataQualityKind.STALE_POLL_TIMESTAMP,
+                    {"staleness_minutes": round(stale_minutes)},
+                )
+            )
+
+    if (
+        value_delta is not None
+        and csv_change is not None
+        and csv_change >= 0
+        and delta_sources_disagree(value_delta, csv_change)
+    ):
+        flags.append(
+            DataQualityFlag(
+                DataQualityKind.DELTA_SOURCE_DISAGREEMENT,
+                {"delta_tool": value_delta, "delta_csv": csv_change},
+            )
+        )
+
+    if cls in (CounterClass.RECEIVE_ERRORS, CounterClass.GENERIC_ERRORS):
+        reconciliation = reconcile_input_errors(stats)
+        if reconciliation is not None and not reconciliation.balanced:
+            flags.append(
+                DataQualityFlag(
+                    DataQualityKind.COUNTER_RECONCILIATION_FAILED,
+                    {
+                        "residual": reconciliation.residual,
+                        "residual_fraction": round(reconciliation.residual_fraction, 4),
+                    },
+                )
+            )
+
+    ratio = window.ratio_of(value_field) if window is not None else None
+    if ratio is not None and ratio.flag is not None:
+        flags.append(
+            DataQualityFlag(
+                DataQualityKind.RATIO_OUT_OF_RANGE, {"detail": ratio.detail or ""}
+            )
+        )
+    metrics = _build_metrics(window, value_delta, csv_change, ratio, stale_minutes)
 
     link_down = (stats.link_status or "").lower() != "up"
     if link_down:
@@ -306,176 +499,551 @@ def _evaluate_stats(
             f"interface is currently {stats.link_status}/{stats.protocol_status or '?'}"
         )
 
+    def verdict(
+        category: VerdictCategory,
+        base_confidence: Confidence | None,
+        reason_tag: str,
+        extra_signals: Sequence[Signal] = (),
+        what: Signal | None = None,
+    ) -> Verdict:
+        all_signals = [*signals, *extra_signals]
+        confidence = apply_caps(base_confidence, flags) if base_confidence else None
+        headline = f"{category.value}"
+        if confidence:
+            headline += f" — confidence {confidence.value}"
+        if reason_tag:
+            headline += f" ({reason_tag})"
+        return Verdict(
+            category,
+            headline + ".",
+            details=details,
+            confidence=confidence,
+            signals=all_signals,
+            data_quality=flags,
+            metrics=metrics,
+            what_would_change=what,
+        )
+
     # ---- late collisions ---------------------------------------------------
     if cls is CounterClass.LATE_COLLISIONS:
-        lc = stats.late_collisions
-        if lc == 0 and (flat is None or flat):
-            return Verdict(
-                VerdictCategory.IGNORE,
-                "IGNORE — device shows zero late collisions now (counter was "
-                "likely reset since the Splunk sample). Re-flag if it "
-                "reappears in next week's top-20.",
-                details=details,
-            )
-        duplex = (stats.duplex or "").lower()
-        neighbor_duplex = (stats.neighbor_duplex or "").lower()
-        mismatch_logged = bool(stats.duplex_mismatch_logged)
-        if duplex.startswith("full"):
-            corroboration = ""
-            if neighbor_duplex.startswith("half"):
-                corroboration = (
-                    f" Neighbor {stats.neighbor_name or '?'} reports "
-                    "half-duplex — mismatch confirmed on both ends."
-                )
-            elif mismatch_logged:
-                corroboration = " Device log confirms a CDP duplex-mismatch event."
-            return Verdict(
-                VerdictCategory.CONFIG_ISSUE,
-                f"CONFIG_ISSUE — {lc:,} late collisions on a full-duplex link "
-                "(impossible under CSMA/CD-free operation): duplex mismatch. "
-                f"Fix via CLI, not by touching media.{corroboration}"
-                + (f" {delta_note.capitalize()}." if delta_note else ""),
-                details=details,
-            )
-        # Local half-duplex with the far end on full duplex (or the device
-        # logging a duplex-mismatch event) is a confirmed mismatch, not a
-        # legacy half-duplex segment.
-        if neighbor_duplex.startswith("full") or mismatch_logged:
-            evidence = (
-                f"neighbor {stats.neighbor_name or '?'} reports full duplex"
-                if neighbor_duplex.startswith("full")
-                else "the device log records a CDP duplex-mismatch event"
-            )
-            return Verdict(
-                VerdictCategory.CONFIG_ISSUE,
-                f"CONFIG_ISSUE — {lc:,} late collisions on a half-duplex link "
-                f"while {evidence}: duplex mismatch confirmed. Fix via CLI "
-                "(align both ends), not by touching media."
-                + (f" {delta_note.capitalize()}." if delta_note else ""),
-                details=details,
-            )
-        return Verdict(
-            VerdictCategory.PHYSICAL_MEDIA,
-            f"PHYSICAL_MEDIA — {lc:,} late collisions on a "
-            f"{stats.duplex}-duplex link: cable out of spec or failing NIC "
-            "on a legacy segment. Inspect the physical path."
-            + (f" {delta_note.capitalize()}." if delta_note else ""),
-            details=details,
-        )
+        return _late_collisions_verdict(stats, flat, verdict)
 
-    # ---- DOM out of range dominates receive-error analysis -----------------
-    if cls in (CounterClass.RECEIVE_ERRORS, CounterClass.GENERIC_ERRORS):
-        rx_dbm = stats.dom_rx_power_dbm
-        if rx_dbm is not None and not (
-            thresholds.dom_rx_low_dbm <= rx_dbm <= thresholds.dom_rx_high_dbm
-        ):
-            return Verdict(
-                VerdictCategory.PHYSICAL_MEDIA,
-                f"PHYSICAL_MEDIA — DOM receive power {rx_dbm:.1f} dBm is out "
-                f"of range ({thresholds.dom_rx_low_dbm:g}.."
-                f"{thresholds.dom_rx_high_dbm:g} dBm): degraded optical path "
-                "(fiber, connector, or transceiver). Inspect the optical "
-                "path." + (f" {delta_note.capitalize()}." if delta_note else ""),
-                details=details,
-            )
-
-    # ---- rate-driven classes ----------------------------------------------
-    if cls in (CounterClass.RECEIVE_ERRORS, CounterClass.GENERIC_ERRORS):
-        crc = stats.crc_errors
-        crc_note = (
-            f" CRC/FCS accounts for {crc:,} of {stats.input_errors:,} input errors."
-            if crc is not None and stats.input_errors
-            else ""
-        )
-        dom_note = (
-            f" DOM rx power {stats.dom_rx_power_dbm:.1f} dBm within range."
-            if stats.dom_rx_power_dbm is not None
-            else ""
-        )
-        if rate is None:
-            return Verdict(
-                VerdictCategory.IGNORE,
-                "IGNORE — zero errors relative to traffic on the live device "
-                "(counter likely reset or historical event)."
-                + (f" {delta_note.capitalize()}." if delta_note else "")
-                + dom_note,
-                details=details,
-            )
-        if rate >= thresholds.error_rate and flat is not True:
-            return Verdict(
-                VerdictCategory.PHYSICAL_MEDIA,
-                f"PHYSICAL_MEDIA — error rate {_fmt_rate(rate)} over "
-                f"{rate_basis}: real receive errors at meaningful rate."
-                f"{crc_note} Inspect cable/transceiver/path."
-                + (f" {delta_note.capitalize()}." if delta_note else ""),
-                details=details,
-            )
-        # Two different reasons to ignore, and the report must not confuse
-        # them: a rate under the floor is noise, while a rate over it that the
-        # earlier sample shows flat is an event that has already stopped.
-        if rate < thresholds.error_rate:
-            reason_bits = [
-                f"error rate {_fmt_rate(rate)} over {rate_basis} is below the "
-                f"{_fmt_threshold(thresholds.error_rate_percent)} threshold"
-            ]
-            if delta_note:
-                reason_bits.append(delta_note)
-        else:
-            reason_bits = [
-                f"error rate {_fmt_rate(rate)} over {rate_basis}, "
-                + delta_note
-                + ": historical, not happening now"
-            ]
-        return Verdict(
-            VerdictCategory.IGNORE,
-            "IGNORE — " + ", ".join(reason_bits) + f".{dom_note} No action.",
-            details=details,
-        )
-
-    # ---- discards: capacity, not physical ----------------------------------
+    # ---- discards: congestion/buffer, not physical --------------------------
     if cls in (CounterClass.IN_DISCARDS, CounterClass.OUT_DISCARDS):
-        direction = "input" if cls is CounterClass.IN_DISCARDS else "output"
-        value = getattr(stats, value_field)
-        if rate is not None and rate >= thresholds.discard_rate and flat is not True:
-            return Verdict(
-                VerdictCategory.CAPACITY,
-                f"CAPACITY — {value:,} {direction} discards at "
-                f"{_fmt_rate(rate)}: frames arrived intact and were dropped "
-                "(buffer congestion, VLAN not allowed on trunk, or ACL). Not "
-                "a physical error — escalate as capacity/config, not media."
-                + (f" {delta_note.capitalize()}." if delta_note else ""),
-                details=details,
-            )
-        below_floor = rate is None or rate < thresholds.discard_rate
-        headline = (
-            f"{direction} discards below the "
-            f"{_fmt_threshold(thresholds.discard_rate_percent)} threshold"
-            if below_floor
-            else f"{direction} discards are historical, not happening now"
-        )
-        return Verdict(
-            VerdictCategory.IGNORE,
-            f"IGNORE — {headline}"
-            + (f" ({_fmt_rate(rate)})" if rate is not None else "")
-            + (f", {delta_note}" if delta_note else "")
-            + ". No action.",
-            details=details,
+        return _discards_verdict(
+            cls, stats, window, value_delta, flat, life_window, thresholds, verdict
         )
 
-    # Unreachable, but keep fail-closed semantics.
-    return Verdict(
-        VerdictCategory.PARSE_ERROR,
-        f"PARSE_ERROR — counter {counter_name!r} could not be classified. "
-        "Refusing to guess (fail closed).",
-        details=details,
+    # ---- receive errors: the core ladder ------------------------------------
+    return _receive_errors_verdict(
+        stats,
+        window,
+        value_delta,
+        flat,
+        life,
+        life_window,
+        thresholds,
+        signals,
+        flags,
+        verdict,
     )
+
+
+def _late_collisions_verdict(
+    stats: NormalizedInterfaceStats,
+    flat: bool | None,
+    verdict,
+) -> Verdict:
+    lc = stats.late_collisions or 0
+    if lc == 0:
+        return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "no_late_collisions")
+    if flat is True:
+        return verdict(
+            VerdictCategory.HISTORIC_NOT_ACTIVE,
+            Confidence.HIGH,
+            "zero_delta_nonzero_lifetime",
+            extra_signals=[
+                Signal(
+                    kind=SignalKind.ZERO_DELTA_NONZERO_LIFETIME,
+                    weight=Confidence.HIGH,
+                    values={"late_collisions": lc},
+                )
+            ],
+        )
+    duplex = (stats.duplex or "").lower()
+    neighbor_duplex = (stats.neighbor_duplex or "").lower()
+    mismatch_logged = bool(stats.duplex_mismatch_logged)
+    mismatch_signal = Signal(
+        kind=SignalKind.LATE_COLLISIONS_FULL_DUPLEX,
+        weight=Confidence.HIGH,
+        values={
+            "late_collisions": lc,
+            "duplex": stats.duplex or "?",
+            "neighbor_duplex": stats.neighbor_duplex or "?",
+            "neighbor_name": stats.neighbor_name or "?",
+            "mismatch_logged": str(mismatch_logged),
+        },
+        supports=VerdictCategory.LINK_NEGOTIATION,
+    )
+    if duplex.startswith("full"):
+        # Late collisions cannot happen on a true full-duplex link: the far
+        # end is running half duplex. A negotiation problem, fixed via CLI.
+        return verdict(
+            VerdictCategory.LINK_NEGOTIATION,
+            Confidence.HIGH,
+            "late_collisions_full_duplex",
+            extra_signals=[mismatch_signal],
+        )
+    if neighbor_duplex.startswith("full") or mismatch_logged:
+        return verdict(
+            VerdictCategory.LINK_NEGOTIATION,
+            Confidence.HIGH,
+            "duplex_mismatch_confirmed",
+            extra_signals=[mismatch_signal],
+        )
+    # Genuine half-duplex on both ends: late collisions mean the segment is
+    # out of spec (cable too long, failing NIC) — a physical problem.
+    return verdict(
+        VerdictCategory.PHYSICAL_MEDIA,
+        Confidence.MEDIUM,
+        "late_collisions_legacy_half_duplex",
+        extra_signals=[
+            Signal(
+                kind=SignalKind.LATE_COLLISIONS_FULL_DUPLEX,
+                weight=Confidence.MEDIUM,
+                values={"late_collisions": lc, "duplex": stats.duplex or "?"},
+                supports=VerdictCategory.PHYSICAL_MEDIA,
+            )
+        ],
+    )
+
+
+def _discards_verdict(
+    cls: CounterClass,
+    stats: NormalizedInterfaceStats,
+    window: DeltaWindow | None,
+    value_delta: int | None,
+    flat: bool | None,
+    life_window: IntervalEstimate | None,
+    thresholds: Thresholds,
+    verdict,
+) -> Verdict:
+    direction_in = cls is CounterClass.IN_DISCARDS
+    lifetime_value = stats.discards_in if direction_in else stats.discards_out
+    congestion_signal = Signal(
+        kind=SignalKind.BUFFER_GROUP_DOMINANT,
+        weight=Confidence.HIGH,
+        values={
+            "discards": value_delta
+            if value_delta is not None
+            else (lifetime_value or 0),
+            "direction": "input" if direction_in else "output",
+        },
+        supports=VerdictCategory.CONGESTION_BUFFER,
+    )
+
+    rate: float | None = None
+    if window is not None and value_delta is not None:
+        # Same-population denominators: input discards against received
+        # frames, output discards against delta output packets.
+        if direction_in:
+            rate = window.ratio_of("discards_in").value
+        else:
+            # Discarded frames are not in `packets output`, so they are added
+            # back — the quotient is bounded to [0, 1] by construction.
+            delivered = window.output_packets
+            if delivered is not None and delivered + value_delta > 0:
+                rate = value_delta / (delivered + value_delta)
+    elif lifetime_value is not None and life_window is not None:
+        packets = stats.input_packets if direction_in else stats.output_packets
+        if packets and packets > 0:
+            rate = lifetime_value / (packets + lifetime_value)
+
+    if flat is True and (lifetime_value or 0) > 0:
+        return verdict(
+            VerdictCategory.HISTORIC_NOT_ACTIVE,
+            Confidence.HIGH,
+            "zero_delta_nonzero_lifetime",
+            extra_signals=[
+                Signal(
+                    kind=SignalKind.ZERO_DELTA_NONZERO_LIFETIME,
+                    weight=Confidence.HIGH,
+                    values={"discards": lifetime_value or 0},
+                )
+            ],
+        )
+    if rate is not None and rate >= thresholds.discard_rate:
+        return verdict(
+            VerdictCategory.CONGESTION_BUFFER,
+            Confidence.HIGH,
+            "discards_at_rate",
+            extra_signals=[congestion_signal],
+        )
+    if (lifetime_value or 0) == 0:
+        return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "no_discards")
+    if rate is None and window is None and life_window is None:
+        # A lifetime figure with no epoch and no second observation supports
+        # no rate at all.
+        return verdict(VerdictCategory.INSUFFICIENT_DATA, None, "no_usable_window")
+    return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "below_threshold")
+
+
+def _receive_errors_verdict(
+    stats: NormalizedInterfaceStats,
+    window: DeltaWindow | None,
+    value_delta: int | None,
+    flat: bool | None,
+    life: LifetimeView,
+    life_window: IntervalEstimate | None,
+    thresholds: Thresholds,
+    signals: list[Signal],
+    flags: list[DataQualityFlag],
+    verdict,
+) -> Verdict:
+    what_media = Signal(
+        kind=SignalKind.ERRORS_STOPPED_AFTER_CLEAR, weight=Confidence.HIGH
+    )
+
+    # DOM out of range is a direct physical-layer measurement: it needs no
+    # delta and dominates the counter analysis.
+    rx_dbm = stats.dom_rx_power_dbm
+    if rx_dbm is not None and not (
+        thresholds.dom_rx_low_dbm <= rx_dbm <= thresholds.dom_rx_high_dbm
+    ):
+        return verdict(
+            VerdictCategory.PHYSICAL_MEDIA,
+            Confidence.HIGH,
+            "dom_rx_out_of_range",
+            extra_signals=[
+                Signal(
+                    kind=SignalKind.DOM_RX_OUT_OF_RANGE,
+                    weight=Confidence.HIGH,
+                    values={
+                        "dom_rx_power_dbm": rx_dbm,
+                        "dom_rx_low_dbm": thresholds.dom_rx_low_dbm,
+                        "dom_rx_high_dbm": thresholds.dom_rx_high_dbm,
+                    },
+                    supports=VerdictCategory.PHYSICAL_MEDIA,
+                ),
+                *_corroborating_signals(stats),
+            ],
+            what=what_media,
+        )
+
+    lifetime_errors = stats.input_errors or 0
+
+    # ---- with a usable tool delta -------------------------------------------
+    if value_delta is not None:
+        if flat is True:
+            if lifetime_errors > 0:
+                # A never-cleared counter with millions of errors and zero
+                # movement is not an incident, regardless of its size.
+                return verdict(
+                    VerdictCategory.HISTORIC_NOT_ACTIVE,
+                    Confidence.HIGH,
+                    "zero_delta_nonzero_lifetime",
+                    extra_signals=[
+                        Signal(
+                            kind=SignalKind.ZERO_DELTA_NONZERO_LIFETIME,
+                            weight=Confidence.HIGH,
+                            values={"input_errors": lifetime_errors},
+                        )
+                    ],
+                )
+            return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "clean")
+
+        # Active delta. Magnitude first (rate is the primary metric): below
+        # the floor nothing else fires; above it, WHICH bucket is moving
+        # decides the class — never the total alone.
+        assert window is not None
+        zero_traffic = zero_traffic_test(window, stats)
+        error_ratio = window.error_ratio()
+        significant = zero_traffic or (
+            error_ratio.value is not None and error_ratio.value >= thresholds.error_rate
+        )
+        if not significant:
+            return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "below_threshold")
+
+        if zero_traffic:
+            return verdict(
+                VerdictCategory.PHYSICAL_MEDIA,
+                Confidence.HIGH,
+                "zero_traffic_errors",
+                extra_signals=[
+                    Signal(
+                        kind=SignalKind.ZERO_TRAFFIC_ERRORS,
+                        weight=Confidence.HIGH,
+                        values={
+                            "delta_input_errors": window.input_errors or 0,
+                            "errors_per_second": round(
+                                window.errors_per_second() or 0, 2
+                            ),
+                            "input_rate_pps": stats.input_rate_pps
+                            if stats.input_rate_pps is not None
+                            else -1,
+                            "last_input_minutes": round(
+                                stats.last_input_minutes
+                                if stats.last_input_minutes is not None
+                                else -1,
+                                1,
+                            ),
+                        },
+                        supports=VerdictCategory.PHYSICAL_MEDIA,
+                    ),
+                    *_unattributed_signals(stats),
+                    *_corroborating_signals(stats),
+                ],
+                what=what_media,
+            )
+
+        buffer_delta = buffer_group_delta(window)
+        buffer_share = _share(buffer_delta, window.input_errors)
+        if buffer_share is not None and buffer_share > DOMINANT_SHARE:
+            return verdict(
+                VerdictCategory.CONGESTION_BUFFER,
+                Confidence.HIGH,
+                "buffer_group_dominant",
+                extra_signals=[
+                    Signal(
+                        kind=SignalKind.BUFFER_GROUP_DOMINANT,
+                        weight=Confidence.HIGH,
+                        values={
+                            "buffer_group": buffer_delta or 0,
+                            "input_errors": window.input_errors or 0,
+                        },
+                        supports=VerdictCategory.CONGESTION_BUFFER,
+                    )
+                ],
+            )
+
+        media = _media_dominance_verdict(
+            stats, flags, verdict, _corroborating_signals(stats), what_media
+        )
+        if media is not None:
+            return media
+
+        negotiation = _link_negotiation_verdict(stats, window, verdict)
+        if negotiation is not None:
+            return negotiation
+
+        fcs_verdict = _fcs_fraction_verdict(
+            stats, window, verdict, what_media, active=True
+        )
+        if fcs_verdict is not None:
+            return fcs_verdict
+
+        return verdict(
+            VerdictCategory.PHYSICAL_MEDIA,
+            Confidence.MEDIUM,
+            "error_rate_above_threshold",
+            extra_signals=_corroborating_signals(stats),
+            what=what_media,
+        )
+
+    # ---- no usable delta: lifetime-only path --------------------------------
+    if lifetime_errors == 0:
+        return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "clean")
+
+    if stats.counters_never_cleared and life_window is None:
+        # Only a never-cleared lifetime figure and no second observation:
+        # nothing here says whether a single error happened this month.
+        return verdict(VerdictCategory.INSUFFICIENT_DATA, None, "no_usable_window")
+
+    if life_window is None:
+        return verdict(VerdictCategory.INSUFFICIENT_DATA, None, "unknown_epoch")
+
+    if stats.counters_never_cleared:
+        # The lifetime window spans the whole uptime; an average over months
+        # says nothing about NOW without a second observation.
+        return verdict(
+            VerdictCategory.INSUFFICIENT_DATA, None, "never_cleared_single_sample"
+        )
+
+    lifetime_ratio = life.error_ratio()
+    if lifetime_ratio.value is None or lifetime_ratio.value < thresholds.error_rate:
+        return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "below_threshold")
+    media = _media_dominance_verdict(
+        stats, flags, verdict, _corroborating_signals(stats), what_media
+    )
+    if media is not None:
+        return media
+    negotiation = _link_negotiation_verdict(stats, None, verdict)
+    if negotiation is not None:
+        return negotiation
+    fcs_verdict = _fcs_fraction_verdict(stats, None, verdict, what_media, active=False)
+    if fcs_verdict is not None:
+        return fcs_verdict
+    return verdict(
+        VerdictCategory.PHYSICAL_MEDIA,
+        Confidence.HIGH,  # capped MEDIUM by NO_SECOND_OBSERVATION
+        "error_rate_above_threshold",
+        extra_signals=_corroborating_signals(stats),
+        what=what_media,
+    )
+
+
+def _unattributed_signals(stats: NormalizedInterfaceStats) -> list[Signal]:
+    """The decomposition evidence: where the errors fall, and the FCS
+    contradiction when it applies."""
+    signals: list[Signal] = []
+    residual = unattributed_rx(stats)
+    if residual is not None and stats.input_errors:
+        signals.append(
+            Signal(
+                kind=SignalKind.UNATTRIBUTED_RX_DOMINANT,
+                weight=Confidence.HIGH,
+                values={
+                    "unattributed_rx": residual,
+                    "input_errors": stats.input_errors,
+                    "runts": stats.runts if stats.runts is not None else -1,
+                },
+                supports=VerdictCategory.PHYSICAL_MEDIA,
+            )
+        )
+    contradiction = _fcs_contradiction(stats)
+    if contradiction is not None:
+        signals.append(contradiction)
+    return signals
+
+
+def _media_dominance_verdict(
+    stats: NormalizedInterfaceStats,
+    flags: list[DataQualityFlag],
+    verdict,
+    corroborating: list[Signal],
+    what_media: Signal,
+) -> Verdict | None:
+    """PHYSICAL_MEDIA on a dominant unattributed/symbol/runts profile with no
+    collision activity. The buckets accumulate together, so dominance is
+    measured on the lifetime decomposition; activity was already established
+    by the caller's delta (or capped by its absence)."""
+    symbol_or_unattributed = (
+        stats.symbol_errors
+        if stats.symbol_errors is not None
+        else unattributed_rx(stats)
+    )
+    dominant_share = max(
+        _share(symbol_or_unattributed, stats.input_errors) or 0,
+        _share(stats.runts, stats.input_errors) or 0,
+    )
+    if dominant_share <= DOMINANT_SHARE:
+        return None
+    if stats.collisions not in (0, None) or stats.late_collisions not in (0, None):
+        return None  # collision activity points at negotiation, not media
+    if stats.collisions is None or stats.late_collisions is None:
+        flags.append(
+            DataQualityFlag(
+                DataQualityKind.NULL_RULE_INPUT,
+                {"fields": "collisions/late_collisions"},
+            )
+        )
+    kind = (
+        SignalKind.RUNTS_DOMINANT_NO_COLLISIONS
+        if (_share(stats.runts, stats.input_errors) or 0) > DOMINANT_SHARE
+        and (_share(symbol_or_unattributed, stats.input_errors) or 0) <= DOMINANT_SHARE
+        else SignalKind.UNATTRIBUTED_RX_DOMINANT
+    )
+    return verdict(
+        VerdictCategory.PHYSICAL_MEDIA,
+        Confidence.HIGH,
+        kind.value,
+        extra_signals=[
+            *_unattributed_signals(stats),
+            *corroborating,
+        ],
+        what=what_media,
+    )
+
+
+def _fcs_fraction_verdict(
+    stats: NormalizedInterfaceStats,
+    window: DeltaWindow | None,
+    verdict,
+    what_media: Signal,
+    active: bool,
+) -> Verdict | None:
+    """High FCS share with errors moving: frames are arriving but corrupted —
+    marginal signal rather than link-level corruption."""
+    if window is not None:
+        fcs_delta = (
+            window.fcs_errors if window.fcs_errors is not None else window.crc_errors
+        )
+        fraction = _share(fcs_delta, window.input_errors)
+    else:
+        fcs = stats.fcs_errors if stats.fcs_errors is not None else stats.crc_errors
+        fraction = _share(fcs, stats.input_errors)
+    if fraction is None or fraction <= FCS_FRACTION_MIN:
+        return None
+    return verdict(
+        VerdictCategory.PHYSICAL_MEDIA,
+        Confidence.MEDIUM if active else Confidence.HIGH,
+        "fcs_fraction_active",
+        extra_signals=[
+            Signal(
+                kind=SignalKind.FCS_FRACTION_ACTIVE,
+                weight=Confidence.MEDIUM,
+                values={
+                    "fcs_fraction": round(fraction, 4),
+                    "input_errors": stats.input_errors or 0,
+                },
+                supports=VerdictCategory.PHYSICAL_MEDIA,
+            ),
+            *_corroborating_signals(stats),
+        ],
+        what=what_media,
+    )
+
+
+def _link_negotiation_verdict(
+    stats: NormalizedInterfaceStats,
+    window: DeltaWindow | None,
+    verdict,
+) -> Verdict | None:
+    """Within a receive-error case: collision activity on full duplex, or a
+    dominant giants profile, points at negotiation/MTU rather than media."""
+    duplex = (stats.duplex or "").lower()
+    late = window.late_collisions if window is not None else stats.late_collisions
+    if late and duplex.startswith("full"):
+        return verdict(
+            VerdictCategory.LINK_NEGOTIATION,
+            Confidence.HIGH,
+            "late_collisions_full_duplex",
+            extra_signals=[
+                Signal(
+                    kind=SignalKind.LATE_COLLISIONS_FULL_DUPLEX,
+                    weight=Confidence.HIGH,
+                    values={"late_collisions": late, "duplex": stats.duplex or "?"},
+                    supports=VerdictCategory.LINK_NEGOTIATION,
+                )
+            ],
+        )
+    giants = window.giants if window is not None else stats.giants
+    total = window.input_errors if window is not None else stats.input_errors
+    giants_share = _share(giants, total)
+    if giants_share is not None and giants_share > DOMINANT_SHARE:
+        # The far end's MTU is unknown, so this is a giants profile, not a
+        # confirmed mismatch — MEDIUM, and the narrative keeps the ambiguity.
+        return verdict(
+            VerdictCategory.LINK_NEGOTIATION,
+            Confidence.MEDIUM,
+            "giants_with_mtu_mismatch",
+            extra_signals=[
+                Signal(
+                    kind=SignalKind.GIANTS_WITH_MTU_MISMATCH,
+                    weight=Confidence.MEDIUM,
+                    values={"giants": giants or 0, "mtu": stats.mtu or 0},
+                    supports=VerdictCategory.LINK_NEGOTIATION,
+                )
+            ],
+        )
+    return None
 
 
 # Verdicts that demand action; a member showing one is the bundle's culprit.
 _ACTIONABLE = (
     VerdictCategory.PHYSICAL_MEDIA,
-    VerdictCategory.CONFIG_ISSUE,
-    VerdictCategory.CAPACITY,
+    VerdictCategory.LINK_NEGOTIATION,
+    VerdictCategory.CONGESTION_BUFFER,
 )
 
 
@@ -486,6 +1054,7 @@ def _member_findings(
     member_stats: dict[str, NormalizedInterfaceStats],
     member_baseline_stats: dict[str, NormalizedInterfaceStats],
     member_errors: dict[str, str],
+    report_time: datetime | None,
 ) -> tuple[dict[str, Verdict], dict[str, str]]:
     """Evaluate every sampled member; return their verdicts and one-line
     findings, with uncollectable members spelled out rather than omitted."""
@@ -497,6 +1066,7 @@ def _member_findings(
             baseline_minutes,
             thresholds,
             [],
+            report_time=report_time,
         )
         for name, stats in member_stats.items()
     }
@@ -517,6 +1087,7 @@ def _member_case_verdict(
     member_stats: dict[str, NormalizedInterfaceStats],
     member_baseline_stats: dict[str, NormalizedInterfaceStats],
     member_errors: dict[str, str],
+    report_time: datetime | None,
 ) -> Verdict:
     """Judge a case that is a member of a port-channel.
 
@@ -527,7 +1098,15 @@ def _member_case_verdict(
     of the port that was actually reported.
     """
     verdict = _evaluate_stats(
-        case.counter, stats, baseline_stats, baseline_minutes, thresholds, parse_errors
+        case.counter,
+        stats,
+        baseline_stats,
+        baseline_minutes,
+        thresholds,
+        parse_errors,
+        csv_change=case.change,
+        poll_time=case.poll_time,
+        report_time=report_time,
     )
     _, findings = _member_findings(
         case.counter,
@@ -536,6 +1115,7 @@ def _member_case_verdict(
         member_stats,
         member_baseline_stats,
         member_errors,
+        report_time,
     )
     verdict.details.append(
         f"member of port-channel {parent_portchannel}: the members listed are "
@@ -543,6 +1123,25 @@ def _member_case_verdict(
     )
     verdict.member_findings = findings
     return verdict
+
+
+def _min_member_confidence(
+    bundle_confidence: Confidence | None,
+    member_verdicts: dict[str, Verdict],
+) -> Confidence | None:
+    """A bundle may not claim more confidence than its least confident
+    evaluated member: the fault sits on a physical member, and that member's
+    data-quality caps bound what the bundle knows."""
+    confidences = [
+        verdict.confidence
+        for verdict in member_verdicts.values()
+        if verdict.confidence is not None
+    ]
+    if bundle_confidence is not None:
+        confidences.append(bundle_confidence)
+    if not confidences:
+        return None
+    return min(confidences, key=lambda item: _CONFIDENCE_RANK[item])
 
 
 def _portchannel_verdict(
@@ -555,6 +1154,7 @@ def _portchannel_verdict(
     member_stats: dict[str, NormalizedInterfaceStats],
     member_baseline_stats: dict[str, NormalizedInterfaceStats],
     member_errors: dict[str, str],
+    report_time: datetime | None,
 ) -> Verdict:
     """Judge a port-channel through its members.
 
@@ -571,6 +1171,7 @@ def _portchannel_verdict(
         member_stats,
         member_baseline_stats,
         member_errors,
+        report_time,
     )
 
     bundle = _evaluate_stats(
@@ -580,6 +1181,9 @@ def _portchannel_verdict(
         baseline_minutes,
         thresholds,
         list(parse_errors),
+        csv_change=case.change,
+        poll_time=case.poll_time,
+        report_time=report_time,
     )
 
     culpable = {
@@ -602,6 +1206,11 @@ def _portchannel_verdict(
             f"isolated to member {primary_name} — {primary.reason}",
             details=details,
             member_findings=findings,
+            confidence=_min_member_confidence(primary.confidence, member_verdicts),
+            signals=primary.signals,
+            data_quality=primary.data_quality,
+            metrics=primary.metrics,
+            what_would_change=primary.what_would_change,
         )
 
     unevaluable = dict(member_errors)
@@ -632,6 +1241,10 @@ def _portchannel_verdict(
             f"Bundle-level analysis: {bundle.reason}",
             details=bundle.details,
             member_findings=findings,
+            confidence=_min_member_confidence(bundle.confidence, member_verdicts),
+            signals=bundle.signals,
+            data_quality=bundle.data_quality,
+            metrics=bundle.metrics,
         )
 
     # No culpable member, every member evaluable: the bundle-level verdict

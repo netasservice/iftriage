@@ -21,7 +21,8 @@ _COUNTER_COLUMNS: dict[str, str | tuple[str, ...]] = {
     "align-err": "align_errors",
     "fcs-err": ("crc_errors", "fcs_errors"),
     "xmit-err": "output_errors",
-    "rcv-err": ("input_errors", "rcv_err"),
+    # Same series split as IOS-XE: Rcv-Err never overwrites input_errors.
+    "rcv-err": "rcv_err",
     "undersize": "undersize",
     "outdiscards": "discards_out",
     "late-col": "late_collisions",

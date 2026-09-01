@@ -3,7 +3,7 @@ Generated 2026-08-29 20:29 UTC | source: docs/examples/input.csv
 Baseline: 7 of 8 case(s) compared against an earlier stored sample.
 Thresholds: errors 0.001% / discards 1% of frames
 EXECUTIVE SUMMARY
-  8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE
+  8 cases: 2 PHYSICAL_MEDIA, 1 LINK_NEGOTIATION, 1 CONGESTION_BUFFER, 1 PARSE_ERROR, 1 UNVERIFIED, 1 HISTORIC_NOT_ACTIVE, 1 IGNORE
 
 DATA QUALITY (surfaced, not analyzed)
   * [negative_delta] (rows 2): sw-acc-02 Gi3/0/20 Late-Col: negative delta (-154073) — counter reset or device reload during the window. Delta is not meaningful; live verification decides.
@@ -11,37 +11,87 @@ DATA QUALITY (surfaced, not analyzed)
 
 CASES
 --------------------------------------------------------------------------------
-[PHYSICAL_MEDIA] sw-acc-01 Gi3/0/20 (Rcv-Err, delta24h=2123)
-  PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over the 18.0 h since the earlier sample: real receive errors at meaningful rate. CRC/FCS accounts for 3,683 of 3,683 input errors. Inspect cable/transceiver/path. Counter still incrementing (+412 in 18.0 h).
+[PHYSICAL_MEDIA — confidence MEDIUM] sw-acc-01 Gi3/0/20 (Rcv-Err)
+  PHYSICAL_MEDIA — confidence MEDIUM (fcs_fraction_active).
+  Evidence:
+    - FCS errors are 100.0% of input errors: frames arriving but corrupted (marginal signal).
+    - 2 interface resets.
+  Delta (iftriage, run-to-run): 412 over 18.0 h (host-side timestamps)
+  Delta (CSV, Splunk window): 2,123
+  Error rate: 0.01/s (23/h)
+  Error ratio: 0.0298% of received frames
+  Data quality:
+    - Interval (18.0 h) derived from host-side timestamps, not device time.
+    - CSV poll timestamp is 42.3 h old at report time; its rates describe that period.
+    - Delta sources disagree: iftriage run-to-run 412 vs CSV change 2,123; the tool's own delta is used for rate math.
+  What would change this: If errors stop advancing after a coordinated manual counter clear and repoll, reclassify HISTORIC_NOT_ACTIVE.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Recurrence: appeared in 2 ingested top-20 lists.
 --------------------------------------------------------------------------------
-[PHYSICAL_MEDIA] sw-dist-01 Et4/15 (Rcv-Err, delta24h=9459)
-  PHYSICAL_MEDIA — DOM receive power -15.2 dBm is out of range (-14..2 dBm): degraded optical path (fiber, connector, or transceiver). Inspect the optical path. Counter flat over the 18.0 h since the earlier sample.
+[PHYSICAL_MEDIA — confidence HIGH] sw-dist-01 Et4/15 (Rcv-Err)
+  PHYSICAL_MEDIA — confidence HIGH (dom_rx_out_of_range).
+  Evidence:
+    - DOM receive power -15.2 dBm outside -14..2 dBm: degraded optical path.
+  Delta (iftriage, run-to-run): 0 over 18.0 h (host-side timestamps)
+  Delta (CSV, Splunk window): 9,459
+  Error rate: 0.00/s (0/h)
+  Data quality:
+    - Interval (18.0 h) derived from host-side timestamps, not device time.
+    - CSV poll timestamp is 40.2 h old at report time; its rates describe that period.
+    - Delta sources disagree: iftriage run-to-run 0 vs CSV change 9,459; the tool's own delta is used for rate math.
+  What would change this: If errors stop advancing after a coordinated manual counter clear and repoll, reclassify HISTORIC_NOT_ACTIVE.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Recurrence: appeared in 2 ingested top-20 lists.
 --------------------------------------------------------------------------------
-[CONFIG_ISSUE] sw-acc-02 Gi3/0/20 (Late-Col, delta24h=-154073)
-  CONFIG_ISSUE — 38,449,023 late collisions on a half-duplex link while neighbor SEP001122AABB99 reports full duplex: duplex mismatch confirmed. Fix via CLI (align both ends), not by touching media. Counter still incrementing (+3,096 in 18.0 h).
+[LINK_NEGOTIATION — confidence HIGH] sw-acc-02 Gi3/0/20 (Late-Col)
+  LINK_NEGOTIATION — confidence HIGH (duplex_mismatch_confirmed).
+  Evidence:
+    - 38,449,023 late collisions on a half-duplex link (neighbor SEP001122AABB99 reports full): negotiation/duplex mismatch, fixed via CLI.
+  Delta (iftriage, run-to-run): 3,096 over 18.0 h (host-side timestamps)
+  Delta (CSV, Splunk window): -154,073
+  Error rate: 0.00/s (0/h)
+  Error ratio: 27.1961% of received frames
+  Data quality:
+    - Interval (18.0 h) derived from host-side timestamps, not device time.
+    - CSV poll timestamp is 41.9 h old at report time; its rates describe that period.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Data-quality flags: negative_delta
 --------------------------------------------------------------------------------
-[CAPACITY] sw-core-01 Eth4/15 (InDiscards, delta24h=286)
-  CAPACITY — 3,988 input discards at 2.0000% (20,000 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+3,600 in 18.0 h).
+[CONGESTION_BUFFER — confidence HIGH] sw-core-01 Eth4/15 (InDiscards)
+  CONGESTION_BUFFER — confidence HIGH (discards_at_rate).
+  Evidence:
+    - 3,600 input discards at meaningful rate: frames arrived intact and were dropped (oversubscription, policer, or ring sizing), not media.
+  Delta (iftriage, run-to-run): 3,600 over 18.0 h (host-side timestamps)
+  Delta (CSV, Splunk window): 286
+  Error rate: 0.00/s (0/h)
+  Error ratio: 2.0000% of received frames
+  Data quality:
+    - Interval (18.0 h) derived from host-side timestamps, not device time.
+    - CSV poll timestamp is 39.6 h old at report time; its rates describe that period.
+    - Delta sources disagree: iftriage run-to-run 3,600 vs CSV change 286; the tool's own delta is used for rate math.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
 --------------------------------------------------------------------------------
-[PARSE_ERROR] sw-acc-01 Gi1/0/47 (Rcv-Err, delta24h=918)
+[PARSE_ERROR] sw-acc-01 Gi1/0/47 (Rcv-Err)
   PARSE_ERROR — critical field(s) input_errors, crc_errors, input_packets, link_status could not be parsed from device output. Refusing to guess (fail closed).
 --------------------------------------------------------------------------------
-[UNVERIFIED] sw-acc-04 Gi1/0/9 (Rcv-Err, delta24h=5785)
+[UNVERIFIED] sw-acc-04 Gi1/0/9 (Rcv-Err)
   UNVERIFIED — device could not be checked (connection failed: TCP connection to device failed: timed out). CSV data only; treat as unconfirmed.
 --------------------------------------------------------------------------------
-[IGNORE] sw-acc-03 Gi2/0/1 (Rx, delta24h=1133561112)
-  IGNORE — 'Rx' is a total traffic counter, not an error counter; a 24h increase is normal operation. No action.
+[HISTORIC_NOT_ACTIVE — confidence HIGH] sw-core-02 Eth4/15 (Rcv-Err)
+  HISTORIC_NOT_ACTIVE — confidence HIGH (zero_delta_nonzero_lifetime).
+  Evidence:
+    - The lifetime counter is large (912) but did not move between this tool's two observations: old event, not an incident.
+  Delta (iftriage, run-to-run): 0 over 18.0 h (host-side timestamps)
+  Delta (CSV, Splunk window): 28
+  Error rate: 0.00/s (0/h)
+  Data quality:
+    - Interval (18.0 h) derived from host-side timestamps, not device time.
+    - CSV poll timestamp is 39.1 h old at report time; its rates describe that period.
+    - Delta sources disagree: iftriage run-to-run 0 vs CSV change 28; the tool's own delta is used for rate math.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
 --------------------------------------------------------------------------------
-[IGNORE] sw-core-02 Eth4/15 (Rcv-Err, delta24h=28)
-  IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters, counter flat over the 18.0 h since the earlier sample: historical, not happening now. DOM rx power -3.5 dBm within range. No action.
+[IGNORE] sw-acc-03 Gi2/0/1 (Rx)
+  IGNORE — 'Rx' is a total traffic counter, not an error counter; a 24h increase is normal operation. No action.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
 --------------------------------------------------------------------------------
 iftriage is a read-only diagnostic tool. Raw evidence for each case is embedded
