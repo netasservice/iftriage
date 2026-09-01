@@ -193,3 +193,66 @@ def test_golden_zero_traffic_narrative_names_its_counters(tmp_path):
 
 def test_replay_schema_bumped_for_v2():
     assert REPLAY_SCHEMA == 3
+
+
+def test_golden_next_steps_are_media_aware_and_separated(tmp_path):
+    """Copper remediation: jack/patch-cord language, DOM absence explained as
+    expected, and the disruptive actions (TDR, manual clear) labeled apart."""
+    paths = _rendered_golden(tmp_path)
+    text = paths["txt"].read_text()
+    assert "non-disruptive" in text
+    assert "Disruptive, coordinate first" in text
+    assert "test cable-diagnostics tdr" in text
+    assert "DOM is not implemented on this copper port" in text
+    assert "expected, not a finding" in text
+
+
+def test_fiber_case_does_mention_the_transceiver(tmp_path):
+    """Guard against over-suppression: optical remediation must still talk
+    about the transceiver."""
+    from iftriage.config import Thresholds
+
+    stats = NormalizedInterfaceStats(
+        link_status="up",
+        protocol_status="up",
+        duplex="full",
+        input_packets=1_000_000,
+        input_errors=100,
+        crc_errors=100,
+        late_collisions=0,
+        collisions=0,
+        runts=0,
+        giants=0,
+        discards_in=0,
+        discards_out=0,
+        dom_rx_power_dbm=-18.0,
+        counters_never_cleared=False,
+        last_clearing_minutes=1440.0,
+    )
+    case = make_case("Rcv-Err")
+    verdict = evaluate_case(case, stats, None, None, Thresholds())
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    result = CaseResult(case=case)
+    result.platform = Platform.NXOS
+    result.stats = stats
+    result.verdict = verdict
+    meta = {"csv_file": "top20.csv", "audit_log": "audit.log"}
+    paths = render_report([result], [], meta, "report_en", tmp_path)
+    for key in ("html", "txt"):
+        assert "transceiver" in paths[key].read_text().lower()
+
+
+def test_enriched_csv_carries_confidence_and_labeled_deltas(tmp_path):
+    import csv as csv_module
+
+    paths = _rendered_golden(tmp_path)
+    with paths["csv"].open(newline="") as handle:
+        header, row = list(csv_module.reader(handle))
+    column = {name: index for index, name in enumerate(header)}
+    assert row[column["confidence"]] == "HIGH"
+    assert row[column["delta_tool"]] == "1326250"
+    assert row[column["delta_csv"]] == "112905"
+    assert row[column["interval_source"]] == "device uptime"
+    assert "stale_poll_timestamp" in row[column["data_quality"]]
+    assert row[column["rcv_err"]] == "316073999"
+    assert row[column["runts"]] == "4718847"

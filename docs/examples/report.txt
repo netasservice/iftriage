@@ -25,6 +25,13 @@ CASES
     - CSV poll timestamp is 42.3 h old at report time; its rates describe that period.
     - Delta sources disagree: iftriage run-to-run 412 vs CSV change 2,123; the tool's own delta is used for rate math.
   What would change this: If errors stop advancing after a coordinated manual counter clear and repoll, reclassify HISTORIC_NOT_ACTIVE.
+Next steps — non-disruptive: identify the attached device and its native
+    speed; inspect the patch cord and the jack; correlate the error history
+    with the interface resets. DOM is not implemented on this copper port —
+    expected, not a finding.
+  Disruptive, coordinate first: TDR (test cable-diagnostics tdr) on Gi3/0/20;
+    a manual counter clear on this interface and a repoll at 24 h to
+    establish a clean baseline.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Recurrence: appeared in 2 ingested top-20 lists.
 --------------------------------------------------------------------------------
@@ -40,6 +47,11 @@ CASES
     - CSV poll timestamp is 40.2 h old at report time; its rates describe that period.
     - Delta sources disagree: iftriage run-to-run 0 vs CSV change 9,459; the tool's own delta is used for rate math.
   What would change this: If errors stop advancing after a coordinated manual counter clear and repoll, reclassify HISTORIC_NOT_ACTIVE.
+Next steps — non-disruptive: inspect and clean the fiber connectors and
+    patch panel; check the transceiver's DOM receive-power trend; verify the
+    optic is seated.
+  Disruptive, coordinate first: a manual counter clear and a repoll at 24 h;
+    replace the transceiver if DOM stays out of range.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Recurrence: appeared in 2 ingested top-20 lists.
 --------------------------------------------------------------------------------
@@ -54,6 +66,8 @@ CASES
   Data quality:
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 41.9 h old at report time; its rates describe that period.
+Next steps: fix via CLI — align speed/duplex (and MTU where giants
+    dominate) on both ends. Not a media dispatch.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Data-quality flags: negative_delta
 --------------------------------------------------------------------------------
@@ -69,6 +83,8 @@ CASES
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 39.6 h old at report time; its rates describe that period.
     - Delta sources disagree: iftriage run-to-run 3,600 vs CSV change 286; the tool's own delta is used for rate math.
+Next steps: review oversubscription, policers, and buffer/ring sizing on
+    this path. Not a media dispatch.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
 --------------------------------------------------------------------------------
 [PARSE_ERROR] sw-acc-01 Gi1/0/47 (Rcv-Err)
@@ -88,6 +104,9 @@ CASES
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 39.1 h old at report time; its rates describe that period.
     - Delta sources disagree: iftriage run-to-run 0 vs CSV change 28; the tool's own delta is used for rate math.
+  What would change this: If the counter advances again on a future run, the case reopens and is reclassified.
+Next steps: coordinate a manual counter clear, then requeue for a future
+    run. Do not dispatch anyone.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
 --------------------------------------------------------------------------------
 [IGNORE] sw-acc-03 Gi2/0/1 (Rx)
