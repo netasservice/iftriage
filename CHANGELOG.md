@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- The canonical interface model now captures the full receive-error
+  decomposition (runts, giants, undersize, FCS, alignment, symbol, overrun,
+  ignored, no buffer, and the platform's aggregate `Rcv-Err` column kept as
+  its own `rcv_err` field), byte counters, MTU, media type, the counter epoch
+  (`Last clearing ... never` vs a parsed age), `Last input`, device-reported
+  load-interval rates, interface resets, and the device uptime parsed from
+  the already-collected `show version`. All new fields are Optional and
+  unused by the current verdict engine — groundwork for the v2 diagnostic
+  engine. No new device commands; the allow-list is unchanged.
+
+### Fixed
+- The EOS `counters errors` `Tx` column now maps to `output_errors`; it was
+  previously mapped to `discards_out` although it counts transmit errors.
+
 ## [0.6.0] - 2026-08-30
 
 ### Added

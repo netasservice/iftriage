@@ -119,11 +119,13 @@ def _to_int(token: str) -> int | None:
 
 
 def parse_counters_table(
-    raw: str, canonical_interface: str, column_map: dict[str, str]
+    raw: str, canonical_interface: str, column_map: dict[str, str | tuple[str, ...]]
 ) -> dict:
     """Parse whitespace-aligned counters tables (one or more blocks).
 
-    column_map: lowercase header token -> canonical field name.
+    column_map: lowercase header token -> canonical field name, or a tuple of
+    them when one device column feeds several canonical fields (IOS-XE Rcv-Err
+    is both the merged `input_errors` and the standalone `rcv_err`).
     Finds the row whose first token refers to the target interface.
     """
     result: dict = {}
@@ -145,13 +147,109 @@ def parse_counters_table(
         if header and interface_matches_token(first, canonical_interface):
             values = tokens[1:]
             for name, value in zip(header, values, strict=False):
-                field = column_map.get(name.lower())
-                if field:
+                mapped = column_map.get(name.lower())
+                if mapped:
                     parsed = _to_int(value)
                     if parsed is not None:
-                        result[field] = parsed
+                        targets = (mapped,) if isinstance(mapped, str) else mapped
+                        for field in targets:
+                            result[field] = parsed
             header = None  # next block needs its own header
     return result
+
+
+# Duration spellings across the three platforms: "41 weeks, 3 days, 2 hours,
+# 11 minutes" (IOS-XE), "291 day(s), 4 hour(s), ..." (NX-OS), "41 weeks,
+# 3 days, 2 hours and 11 minutes" (EOS).
+_DURATION_UNIT_RE = re.compile(
+    r"(\d+)\s*(year|week|day|hour|minute|second)", re.IGNORECASE
+)
+_DURATION_MINUTES = {
+    "year": 365 * 24 * 60,
+    "week": 7 * 24 * 60,
+    "day": 24 * 60,
+    "hour": 60,
+    "minute": 1,
+    "second": 1 / 60,
+}
+# Compact IOS tokens: "00:03:22" (H:MM:SS), "1d02h", "2w3d", "3y22w".
+_DURATION_HMS_RE = re.compile(r"^(\d+):(\d\d):(\d\d)$")
+_DURATION_COMPACT_RE = re.compile(r"(\d+)([ywdhms])")
+_COMPACT_MINUTES = {
+    "y": 365 * 24 * 60,
+    "w": 7 * 24 * 60,
+    "d": 24 * 60,
+    "h": 60,
+    "m": 1,
+    "s": 1 / 60,
+}
+
+
+def parse_duration_minutes(token: str) -> float | None:
+    """Parse a device-printed duration into minutes, None when unrecognized.
+
+    Handles both the worded form ("2 hours, 11 minutes") and the compact IOS
+    timestamp forms ("00:03:22", "1d02h", "2w3d"). "never" is NOT a duration;
+    callers handle it explicitly.
+    """
+    token = token.strip().rstrip(".,")
+    if not token:
+        return None
+    match = _DURATION_HMS_RE.match(token)
+    if match:
+        hours, minutes, seconds = (int(group) for group in match.groups())
+        return hours * 60 + minutes + seconds / 60
+    units = _DURATION_UNIT_RE.findall(token)
+    if units:
+        return sum(
+            int(value) * _DURATION_MINUTES[unit.lower()] for value, unit in units
+        )
+    compact = _DURATION_COMPACT_RE.findall(token)
+    if compact and re.fullmatch(r"(?:\d+[ywdhms])+", token):
+        return sum(int(value) * _COMPACT_MINUTES[unit] for value, unit in compact)
+    return None
+
+
+_LAST_CLEARING_RE = re.compile(
+    r"Last clearing of \"show interface\" counters\s+(\S.*)$", re.MULTILINE
+)
+
+
+def parse_last_clearing(raw: str) -> dict:
+    """The counter epoch line, shared verbatim by all three platforms.
+
+    "never" and a parsed age are distinct facts; a missing line yields {} so
+    both fields stay None (unknown), never a fake "never".
+    """
+    match = _LAST_CLEARING_RE.search(raw)
+    if not match:
+        return {}
+    token = match.group(1).strip()
+    if token.lower() == "never":
+        return {"counters_never_cleared": True}
+    minutes = parse_duration_minutes(token)
+    if minutes is None:
+        return {}
+    return {"counters_never_cleared": False, "last_clearing_minutes": minutes}
+
+
+_UPTIME_LINE_RE = re.compile(r"^.*uptime\s+is\s+(.+)$", re.IGNORECASE | re.MULTILINE)
+_UPTIME_COLON_RE = re.compile(r"^Uptime:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+
+
+def parse_uptime_minutes(raw: str) -> dict:
+    """Device uptime from `show version` output, as {'uptime_minutes': float}.
+
+    Matches "<host> uptime is ..." (IOS-XE), "Kernel uptime is ..." (NX-OS)
+    and "Uptime: ..." (EOS). Returns {} when no uptime line parses.
+    """
+    match = _UPTIME_LINE_RE.search(raw) or _UPTIME_COLON_RE.search(raw)
+    if not match:
+        return {}
+    minutes = parse_duration_minutes(match.group(1))
+    if minutes is None:
+        return {}
+    return {"uptime_minutes": minutes}
 
 
 # Member/flag tokens like Gi3/0/20(P), Eth4/15(P), Et3/1/1(PG+), Po21(SU).

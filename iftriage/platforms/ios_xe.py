@@ -10,16 +10,24 @@ from .base import (
     parse_cdp_neighbor_detail,
     parse_counters_table,
     parse_cpu_five_seconds,
+    parse_duration_minutes,
     parse_flap_count,
+    parse_last_clearing,
     parse_portchannel_summary,
+    parse_uptime_minutes,
     register,
 )
 
-_COUNTER_COLUMNS = {
-    "fcs-err": "crc_errors",
-    "rcv-err": "input_errors",
+_COUNTER_COLUMNS: dict[str, str | tuple[str, ...]] = {
+    "align-err": "align_errors",
+    "fcs-err": ("crc_errors", "fcs_errors"),
+    "xmit-err": "output_errors",
+    "rcv-err": ("input_errors", "rcv_err"),
+    "undersize": "undersize",
     "outdiscards": "discards_out",
     "late-col": "late_collisions",
+    "runts": "runts",
+    "giants": "giants",
 }
 
 
@@ -34,16 +42,55 @@ def _parse_show_interfaces(raw: str) -> dict:
     if match:
         result["duplex"] = match.group(1).lower()
         result["speed"] = match.group(2).strip()
-    match = re.search(r"(\d+) packets input", raw)
+    match = re.search(r"media type is (\S[^\n]*)", raw)
+    if match:
+        result["media_type"] = match.group(1).strip()
+    match = re.search(r"MTU (\d+) bytes", raw)
+    if match:
+        result["mtu"] = int(match.group(1))
+    match = re.search(r"(\d+) packets input, (\d+) bytes, (\d+) no buffer", raw)
     if match:
         result["input_packets"] = int(match.group(1))
-    match = re.search(r"(\d+) packets output", raw)
+        result["bytes_input"] = int(match.group(2))
+        result["no_buffer"] = int(match.group(3))
+    else:
+        match = re.search(r"(\d+) packets input", raw)
+        if match:
+            result["input_packets"] = int(match.group(1))
+    match = re.search(r"(\d+) packets output, (\d+) bytes", raw)
     if match:
         result["output_packets"] = int(match.group(1))
-    match = re.search(r"(\d+) input errors, (\d+) CRC", raw)
+        result["bytes_output"] = int(match.group(2))
+    else:
+        match = re.search(r"(\d+) packets output", raw)
+        if match:
+            result["output_packets"] = int(match.group(1))
+    match = re.search(r"(\d+) runts, (\d+) giants", raw)
+    if match:
+        result["runts"] = int(match.group(1))
+        result["giants"] = int(match.group(2))
+    match = re.search(
+        r"(\d+) input errors, (\d+) CRC, (\d+) frame, (\d+) overrun, (\d+) ignored",
+        raw,
+    )
     if match:
         result["input_errors"] = int(match.group(1))
         result["crc_errors"] = int(match.group(2))
+        result["align_errors"] = int(match.group(3))
+        result["overrun"] = int(match.group(4))
+        result["ignored"] = int(match.group(5))
+    else:
+        match = re.search(r"(\d+) input errors, (\d+) CRC", raw)
+        if match:
+            result["input_errors"] = int(match.group(1))
+            result["crc_errors"] = int(match.group(2))
+    match = re.search(
+        r"(\d+) output errors, (\d+) collisions, (\d+) interface resets", raw
+    )
+    if match:
+        result["output_errors"] = int(match.group(1))
+        result["collisions"] = int(match.group(2))
+        result["interface_resets"] = int(match.group(3))
     match = re.search(r"(\d+) late collision", raw)
     if match:
         result["late_collisions"] = int(match.group(1))
@@ -53,6 +100,28 @@ def _parse_show_interfaces(raw: str) -> dict:
     match = re.search(r"Total output drops: (\d+)", raw)
     if match:
         result["discards_out"] = int(match.group(1))
+    match = re.search(
+        r"(\d+) (?:minute|second) input rate \d+ bits/sec, (\d+) packets/sec", raw
+    )
+    if match:
+        result["input_rate_pps"] = int(match.group(2))
+    match = re.search(
+        r"(\d+) (minute|second) output rate \d+ bits/sec, (\d+) packets/sec", raw
+    )
+    if match:
+        result["output_rate_pps"] = int(match.group(3))
+    match = re.search(r"(\d+) (minute|second)s? (?:input|output) rate", raw)
+    if match:
+        value, unit = int(match.group(1)), match.group(2)
+        result["load_interval_seconds"] = value * 60 if unit == "minute" else value
+    match = re.search(r"Last input ([^,\n]+),", raw)
+    if match:
+        token = match.group(1).strip()
+        if token.lower() != "never":
+            minutes = parse_duration_minutes(token)
+            if minutes is not None:
+                result["last_input_minutes"] = minutes
+    result.update(parse_last_clearing(raw))
     return result
 
 
@@ -95,6 +164,7 @@ def _parse_version(raw: str) -> dict:
     )
     if match:
         result["model"] = match.group(1)
+    result.update(parse_uptime_minutes(raw))
     return result
 
 

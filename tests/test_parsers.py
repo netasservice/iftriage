@@ -1,9 +1,11 @@
 """Platform parsers tested against raw fixture outputs. Zero device access."""
 
+import pytest
 from conftest import load_fixture
 
 from iftriage.models import Platform
 from iftriage.platforms import get_profile
+from iftriage.platforms.base import parse_duration_minutes
 
 IOS = get_profile(Platform.IOS_XE)
 NX = get_profile(Platform.NXOS)
@@ -28,6 +30,25 @@ def test_ios_xe_show_interfaces():
     assert parsed["late_collisions"] == 0
     assert parsed["discards_in"] == 17
     assert parsed["discards_out"] == 42
+    assert parsed["mtu"] == 1500
+    assert parsed["media_type"] == "10/100/1000BaseTX"
+    assert parsed["bytes_input"] == 2394664329
+    assert parsed["bytes_output"] == 8873201991
+    assert parsed["no_buffer"] == 0
+    assert parsed["runts"] == 0
+    assert parsed["giants"] == 0
+    assert parsed["align_errors"] == 0
+    assert parsed["overrun"] == 0
+    assert parsed["ignored"] == 0
+    assert parsed["output_errors"] == 0
+    assert parsed["collisions"] == 0
+    assert parsed["interface_resets"] == 2
+    assert parsed["input_rate_pps"] == 267
+    assert parsed["output_rate_pps"] == 341
+    assert parsed["load_interval_seconds"] == 300
+    assert parsed["counters_never_cleared"] is True
+    assert "last_clearing_minutes" not in parsed
+    assert parsed["last_input_minutes"] == pytest.approx(1 / 60)
 
 
 def test_ios_xe_counters_errors():
@@ -37,9 +58,64 @@ def test_ios_xe_counters_errors():
         "GigabitEthernet3/0/20",
     )
     assert parsed["crc_errors"] == 3271
+    assert parsed["fcs_errors"] == 3271
     assert parsed["input_errors"] == 3271
+    assert parsed["rcv_err"] == 3271
+    assert parsed["align_errors"] == 0
+    assert parsed["undersize"] == 0
+    assert parsed["output_errors"] == 0
+    assert parsed["runts"] == 0
+    assert parsed["giants"] == 0
     assert parsed["discards_out"] == 42
     assert parsed["late_collisions"] == 0
+
+
+def test_ios_xe_golden_gi8_0_4_reference_case():
+    """Reference case for the v2 engine: massive Rcv-Err with near-zero FCS
+    on a copper port, no traffic. The two outputs must reconcile:
+    input errors == runts + Rcv-Err."""
+    interface = IOS.parse(
+        "interface",
+        load_fixture("ios_xe", "real_show_interfaces_gi8_0_4.txt"),
+        "GigabitEthernet8/0/4",
+    )
+    assert interface["input_errors"] == 320792846
+    assert interface["crc_errors"] == 185
+    assert interface["runts"] == 4718847
+    assert interface["giants"] == 0
+    assert interface["overrun"] == 0
+    assert interface["ignored"] == 0
+    assert interface["no_buffer"] == 0
+    assert interface["discards_in"] == 0
+    assert interface["discards_out"] == 0
+    assert interface["late_collisions"] == 0
+    assert interface["input_packets"] == 561806
+    assert interface["bytes_input"] == 87262523986
+    assert interface["mtu"] == 9160
+    assert interface["media_type"] == "10/100/1000BaseTX"
+    assert interface["speed"] == "100Mb/s"
+    assert interface["input_rate_pps"] == 0
+    assert interface["load_interval_seconds"] == 30
+    assert interface["interface_resets"] == 7
+    assert interface["counters_never_cleared"] is True
+    assert interface["last_input_minutes"] == pytest.approx(3 + 22 / 60)
+
+    counters = IOS.parse(
+        "counters",
+        load_fixture("ios_xe", "real_counters_errors_gi8_0_4.txt"),
+        "GigabitEthernet8/0/4",
+    )
+    assert counters["rcv_err"] == 316073999
+    assert counters["fcs_errors"] == 185
+    assert counters["align_errors"] == 0
+    assert counters["undersize"] == 0
+    assert counters["runts"] == 4718847
+    assert counters["giants"] == 0
+    assert counters["output_errors"] == 0
+    assert counters["late_collisions"] == 0
+    assert counters["discards_out"] == 0
+    # The reconciliation identity the v2 engine verifies at runtime.
+    assert interface["input_errors"] == counters["runts"] + counters["rcv_err"]
 
 
 def test_ios_xe_transceiver_detail():
@@ -99,6 +175,8 @@ def test_ios_xe_version():
     )
     assert parsed["os_version"] == "17.06.05"
     assert parsed["model"] == "C9300-48P"
+    # 41 weeks, 3 days, 2 hours, 11 minutes
+    assert parsed["uptime_minutes"] == pytest.approx(41 * 10080 + 3 * 1440 + 131)
 
 
 # ---- NX-OS -----------------------------------------------------------------
@@ -116,6 +194,23 @@ def test_nxos_show_interface():
     assert parsed["discards_in"] == 388
     assert parsed["discards_out"] == 57
     assert parsed["late_collisions"] == 0
+    assert parsed["mtu"] == 1500
+    assert parsed["media_type"] == "10G"
+    assert parsed["bytes_input"] == 71234567890
+    assert parsed["bytes_output"] == 81234567890
+    assert parsed["runts"] == 0
+    assert parsed["giants"] == 0
+    assert parsed["no_buffer"] == 0
+    assert parsed["undersize"] == 0  # NX-OS "short frame"
+    assert parsed["overrun"] == 0
+    assert parsed["ignored"] == 0
+    assert parsed["output_errors"] == 0
+    assert parsed["collisions"] == 0
+    assert parsed["interface_resets"] == 1
+    assert parsed["input_rate_pps"] == 512
+    assert parsed["output_rate_pps"] == 401
+    assert parsed["load_interval_seconds"] == 30
+    assert parsed["counters_never_cleared"] is True
 
 
 def test_nxos_counters_errors():
@@ -123,7 +218,12 @@ def test_nxos_counters_errors():
         "counters", load_fixture("nxos", "counters_errors.txt"), "Ethernet4/15"
     )
     assert parsed["crc_errors"] == 912
+    assert parsed["fcs_errors"] == 912
     assert parsed["input_errors"] == 912
+    assert parsed["rcv_err"] == 912
+    assert parsed["align_errors"] == 0
+    assert parsed["undersize"] == 0
+    assert parsed["output_errors"] == 0
     assert parsed["discards_out"] == 57
 
 
@@ -158,6 +258,8 @@ def test_nxos_version():
     )
     assert parsed["os_version"] == "9.3(10)"
     assert "Nexus9000" in parsed["model"]
+    # Kernel uptime is 291 day(s), 4 hour(s), 22 minute(s), 1 second(s)
+    assert parsed["uptime_minutes"] == pytest.approx(291 * 1440 + 262 + 1 / 60)
 
 
 # ---- EOS -------------------------------------------------------------------
@@ -174,6 +276,19 @@ def test_eos_show_interfaces():
     assert parsed["crc_errors"] == 21503
     assert parsed["discards_in"] == 0
     assert parsed["late_collisions"] == 0
+    assert parsed["mtu"] == 9214
+    assert parsed["bytes_input"] == 198765432109
+    assert parsed["bytes_output"] == 176543210987
+    assert parsed["runts"] == 0
+    assert parsed["giants"] == 0
+    assert parsed["align_errors"] == 0
+    assert parsed["symbol_errors"] == 0
+    assert parsed["output_errors"] == 0
+    assert parsed["collisions"] == 0
+    assert parsed["input_rate_pps"] == 891
+    assert parsed["output_rate_pps"] == 1021
+    assert parsed["load_interval_seconds"] == 300
+    assert parsed["counters_never_cleared"] is True
 
 
 def test_eos_counters_errors():
@@ -181,7 +296,15 @@ def test_eos_counters_errors():
         "counters", load_fixture("eos", "counters_errors.txt"), "Ethernet4/15"
     )
     assert parsed["crc_errors"] == 21503
+    assert parsed["fcs_errors"] == 21503
     assert parsed["input_errors"] == 21503
+    assert parsed["align_errors"] == 0
+    assert parsed["symbol_errors"] == 0
+    assert parsed["runts"] == 0
+    assert parsed["giants"] == 0
+    # EOS 'Tx' counts transmit errors, not discards.
+    assert parsed["output_errors"] == 0
+    assert "discards_out" not in parsed
 
 
 def test_eos_transceiver():
@@ -215,6 +338,22 @@ def test_eos_version():
     )
     assert parsed["os_version"] == "4.28.3M"
     assert parsed["model"] == "DCS-7808-CH"
+    # Uptime: 41 weeks, 3 days, 2 hours and 11 minutes
+    assert parsed["uptime_minutes"] == pytest.approx(41 * 10080 + 3 * 1440 + 131)
+
+
+# ---- shared duration parsing (counter epochs, last input, uptime) ----------
+
+
+def test_parse_duration_minutes_formats():
+    assert parse_duration_minutes("00:03:22") == pytest.approx(3 + 22 / 60)
+    assert parse_duration_minutes("1d02h") == pytest.approx(1440 + 120)
+    assert parse_duration_minutes("2w3d") == pytest.approx(2 * 10080 + 3 * 1440)
+    assert parse_duration_minutes("2 hours, 11 minutes") == pytest.approx(131)
+    assert parse_duration_minutes("4 hour(s), 22 minute(s)") == pytest.approx(262)
+    assert parse_duration_minutes("never") is None
+    assert parse_duration_minutes("") is None
+    assert parse_duration_minutes("garbage") is None
 
 
 # ---- copper port through the transceiver command (empty/error response) ----
