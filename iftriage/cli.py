@@ -257,6 +257,7 @@ def _evaluate_all(results, config, history: History) -> None:
     Pure analysis over already-collected data: shared by a live run and by
     --from-history, so both answer with the same rules and thresholds.
     """
+    report_time = datetime.now(UTC)
     for result in results:
         result.verdict = evaluate_case(
             case=result.case,
@@ -270,6 +271,7 @@ def _evaluate_all(results, config, history: History) -> None:
             member_baseline_stats=result.member_baseline_stats,
             member_errors=result.member_errors,
             parent_portchannel=result.parent_portchannel,
+            report_time=report_time,
         )
         result.recurrence = history.recurrence_count(
             result.case.switch, result.case.interface

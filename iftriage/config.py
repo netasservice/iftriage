@@ -57,9 +57,10 @@ class BaselineSettings:
 
     Both exist because the verdict claims to answer "is this counter moving
     NOW". Too close together and a counter looks flat because nothing had time
-    to move -- and a false "flat" VETOES escalation to PHYSICAL_MEDIA or
-    CAPACITY. Too far apart and "still incrementing" stops meaning now: errors
-    accumulated a month ago would read as a live fault.
+    to move -- and a false "flat" reads as HISTORIC_NOT_ACTIVE instead of an
+    escalation to PHYSICAL_MEDIA or CONGESTION_BUFFER. Too far apart and
+    "still incrementing" stops meaning now: errors accumulated a month ago
+    would read as a live fault.
     """
 
     min_window_minutes: float = 5.0

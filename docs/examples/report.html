@@ -1,6 +1,5 @@
 <!doctype html>
-<html lang="en">
-<head>
+<html lang="en"><head>
 <meta charset="utf-8">
 <title>Interface Error Triage — 2026-08-29 20:29 UTC</title>
 <style>
@@ -15,16 +14,21 @@
           margin: 0.8em 0; }
   .verdict { font-weight: 700; padding: 0.1em 0.5em; border-radius: 4px;
              display: inline-block; }
-  .v-PHYSICAL_MEDIA { background: #fde3e3; color: #8f1d1d; }
-  .v-CONFIG_ISSUE  { background: #fdefd8; color: #8a5a00; }
-  .v-CAPACITY      { background: #e3ecfd; color: #1d3f8f; }
-  .v-IGNORE        { background: #e5f5e6; color: #1e6b2a; }
-  .v-UNVERIFIED    { background: #ececec; color: #555; }
-  .v-PARSE_ERROR   { background: #f3e3fd; color: #5d1d8f; }
+  .confidence { font-weight: 600; color: #444; }
+  .v-PHYSICAL_MEDIA       { background: #fde3e3; color: #8f1d1d; }
+  .v-LINK_NEGOTIATION     { background: #fdefd8; color: #8a5a00; }
+  .v-CONGESTION_BUFFER    { background: #e3ecfd; color: #1d3f8f; }
+  .v-HISTORIC_NOT_ACTIVE  { background: #eef2e5; color: #4a5c1e; }
+  .v-INSUFFICIENT_DATA    { background: #f0ecec; color: #6b4a4a; }
+  .v-IGNORE               { background: #e5f5e6; color: #1e6b2a; }
+  .v-UNVERIFIED           { background: #ececec; color: #555; }
+  .v-PARSE_ERROR          { background: #f3e3fd; color: #5d1d8f; }
   details { margin-top: 0.6em; }
   pre { background: #0f1720; color: #d8e1ea; padding: 0.8em; border-radius: 6px;
         overflow-x: auto; font-size: 0.8em; }
   .muted { color: #667; font-size: 0.9em; }
+  .evidence, .against { margin: 0.4em 0 0.4em 0; }
+  .against { border-left: 3px solid #c9a; padding-left: 0.8em; }
   table.kv td { padding: 0.05em 0.9em 0.05em 0; }
 </style>
 </head>
@@ -33,7 +37,7 @@
 <p class="muted">Generated 2026-08-29 20:29 UTC · source: docs/examples/input.csv
  · baseline: 7 of 8 case(s) compared against an earlier stored sample · thresholds: errors 0.001% / discards 1% of frames</p>
 
-<div class="summary"><strong>Executive summary:</strong> 8 cases: 2 PHYSICAL_MEDIA, 1 CONFIG_ISSUE, 1 CAPACITY, 1 PARSE_ERROR, 1 UNVERIFIED, 2 IGNORE</div>
+<div class="summary"><strong>Executive summary:</strong> 8 cases: 2 PHYSICAL_MEDIA, 1 LINK_NEGOTIATION, 1 CONGESTION_BUFFER, 1 PARSE_ERROR, 1 UNVERIFIED, 1 HISTORIC_NOT_ACTIVE, 1 IGNORE</div>
 
 <h2>Data quality (surfaced, not analyzed)</h2>
 <div class="dq"><strong>negative delta</strong>
@@ -48,10 +52,17 @@ Poll timestamps span 2026-08-28T02:10:00 .. 2026-08-28T05:20:00: the 24h windows
   <div>
     <span class="verdict v-PHYSICAL_MEDIA">
       PHYSICAL_MEDIA</span>
-    &nbsp;<strong>sw-acc-01</strong> — Gi3/0/20
-    (Rcv-Err, Δ24h=2123)
+<span class="confidence">confidence MEDIUM</span>    &nbsp;<strong>sw-acc-01</strong> — Gi3/0/20
+    (Rcv-Err)
   </div>
-<div class="muted">ACCESS-FLOOR3-PRINTER</div>  <p>PHYSICAL_MEDIA — error rate 0.0298% (298 per million frames) over the 18.0 h since the earlier sample: real receive errors at meaningful rate. CRC/FCS accounts for 3,683 of 3,683 input errors. Inspect cable/transceiver/path. Counter still incrementing (+412 in 18.0 h).</p>
+<div class="muted">ACCESS-FLOOR3-PRINTER</div>  <p>PHYSICAL_MEDIA — confidence MEDIUM (fcs_fraction_active).</p>
+  <div class="evidence"><strong>Evidence</strong>
+  <ul><li>FCS errors are 100.0% of input errors: frames are arriving but corrupted — marginal signal rather than link-level corruption.</li><li>2 interface resets.</li></ul></div>
+  <table class="kv muted">
+<tr><td>Δ (iftriage, run-to-run)</td><td>412 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>2,123</td></tr><tr><td>Error rate</td><td>0.01/s (23/h)</td></tr><tr><td>Error ratio</td><td>0.0298% of received frames</td></tr>  </table>
+  <p class="muted"><strong>Data quality:</strong></p>
+  <ul class="muted"><li>Interval (18.0 h) derived from host-side timestamps, not device time.</li><li>CSV poll timestamp is 42.3 h old at report time; the CSV's rates describe that period, not the present.</li><li>Δ sources disagree: iftriage run-to-run 412 vs CSV change 2,123. The tool's own observation is used for rate math because its interval is measured.</li></ul>
+  <p class="muted"><strong>What would change this:</strong> If the errors stop advancing after a coordinated manual counter clear and a repoll, with the port otherwise untouched, reclassify HISTORIC_NOT_ACTIVE.</p>
   <p class="muted">Compared against the sample from
   2026-08-29 02:29 UTC
   (18.0 h earlier, run #1).</p>
@@ -229,10 +240,17 @@ Group  Port-channel  Protocol    Ports
   <div>
     <span class="verdict v-PHYSICAL_MEDIA">
       PHYSICAL_MEDIA</span>
-    &nbsp;<strong>sw-dist-01</strong> — Et4/15
-    (Rcv-Err, Δ24h=9459)
+<span class="confidence">confidence HIGH</span>    &nbsp;<strong>sw-dist-01</strong> — Et4/15
+    (Rcv-Err)
   </div>
-<div class="muted">UPLINK-SPINE1</div>  <p>PHYSICAL_MEDIA — DOM receive power -15.2 dBm is out of range (-14..2 dBm): degraded optical path (fiber, connector, or transceiver). Inspect the optical path. Counter flat over the 18.0 h since the earlier sample.</p>
+<div class="muted">UPLINK-SPINE1</div>  <p>PHYSICAL_MEDIA — confidence HIGH (dom_rx_out_of_range).</p>
+  <div class="evidence"><strong>Evidence</strong>
+  <ul><li>DOM receive power -15.2 dBm is outside -14..2 dBm: degraded optical path.</li></ul></div>
+  <table class="kv muted">
+<tr><td>Δ (iftriage, run-to-run)</td><td>0 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>9,459</td></tr><tr><td>Error rate</td><td>0.00/s (0/h)</td></tr>  </table>
+  <p class="muted"><strong>Data quality:</strong></p>
+  <ul class="muted"><li>Interval (18.0 h) derived from host-side timestamps, not device time.</li><li>CSV poll timestamp is 40.2 h old at report time; the CSV's rates describe that period, not the present.</li><li>Δ sources disagree: iftriage run-to-run 0 vs CSV change 9,459. The tool's own observation is used for rate math because its interval is measured.</li></ul>
+  <p class="muted"><strong>What would change this:</strong> If the errors stop advancing after a coordinated manual counter clear and a repoll, with the port otherwise untouched, reclassify HISTORIC_NOT_ACTIVE.</p>
   <p class="muted">Compared against the sample from
   2026-08-29 02:29 UTC
   (18.0 h earlier, run #1).</p>
@@ -316,12 +334,18 @@ Et4/15               31.42    3.28     7.06     -2.63     -15.21       0:00:03 a
 </div>
 <div class="case">
   <div>
-    <span class="verdict v-CONFIG_ISSUE">
-      CONFIG_ISSUE</span>
-    &nbsp;<strong>sw-acc-02</strong> — Gi3/0/20
-    (Late-Col, Δ24h=-154073)
+    <span class="verdict v-LINK_NEGOTIATION">
+      LINK_NEGOTIATION</span>
+<span class="confidence">confidence HIGH</span>    &nbsp;<strong>sw-acc-02</strong> — Gi3/0/20
+    (Late-Col)
   </div>
-<div class="muted">ACCESS-PHONE-RACK01-RU01</div>  <p>CONFIG_ISSUE — 38,449,023 late collisions on a half-duplex link while neighbor SEP001122AABB99 reports full duplex: duplex mismatch confirmed. Fix via CLI (align both ends), not by touching media. Counter still incrementing (+3,096 in 18.0 h).</p>
+<div class="muted">ACCESS-PHONE-RACK01-RU01</div>  <p>LINK_NEGOTIATION — confidence HIGH (duplex_mismatch_confirmed).</p>
+  <div class="evidence"><strong>Evidence</strong>
+  <ul><li>38,449,023 late collisions on a half-duplex link (neighbor SEP001122AABB99 reports full): negotiation/duplex mismatch — fixed via CLI, not by touching media.</li></ul></div>
+  <table class="kv muted">
+<tr><td>Δ (iftriage, run-to-run)</td><td>3,096 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>-154,073</td></tr><tr><td>Error rate</td><td>0.00/s (0/h)</td></tr><tr><td>Error ratio</td><td>27.1961% of received frames</td></tr>  </table>
+  <p class="muted"><strong>Data quality:</strong></p>
+  <ul class="muted"><li>Interval (18.0 h) derived from host-side timestamps, not device time.</li><li>CSV poll timestamp is 41.9 h old at report time; the CSV's rates describe that period, not the present.</li></ul>
   <p class="muted">Compared against the sample from
   2026-08-29 02:29 UTC
   (18.0 h earlier, run #1).</p>
@@ -503,12 +527,18 @@ Group  Port-channel  Protocol    Ports
 </div>
 <div class="case">
   <div>
-    <span class="verdict v-CAPACITY">
-      CAPACITY</span>
-    &nbsp;<strong>sw-core-01</strong> — Eth4/15
-    (InDiscards, Δ24h=286)
+    <span class="verdict v-CONGESTION_BUFFER">
+      CONGESTION_BUFFER</span>
+<span class="confidence">confidence HIGH</span>    &nbsp;<strong>sw-core-01</strong> — Eth4/15
+    (InDiscards)
   </div>
-<div class="muted">UPLINK-TO-CORE</div>  <p>CAPACITY — 3,988 input discards at 2.0000% (20,000 per million frames): frames arrived intact and were dropped (buffer congestion, VLAN not allowed on trunk, or ACL). Not a physical error — escalate as capacity/config, not media. Counter still incrementing (+3,600 in 18.0 h).</p>
+<div class="muted">UPLINK-TO-CORE</div>  <p>CONGESTION_BUFFER — confidence HIGH (discards_at_rate).</p>
+  <div class="evidence"><strong>Evidence</strong>
+  <ul><li>3,600 input discards at meaningful rate: frames arrived intact and were dropped — oversubscription, policer, or ring sizing, not media.</li></ul></div>
+  <table class="kv muted">
+<tr><td>Δ (iftriage, run-to-run)</td><td>3,600 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>286</td></tr><tr><td>Error rate</td><td>0.00/s (0/h)</td></tr><tr><td>Error ratio</td><td>2.0000% of received frames</td></tr>  </table>
+  <p class="muted"><strong>Data quality:</strong></p>
+  <ul class="muted"><li>Interval (18.0 h) derived from host-side timestamps, not device time.</li><li>CSV poll timestamp is 39.6 h old at report time; the CSV's rates describe that period, not the present.</li><li>Δ sources disagree: iftriage run-to-run 3,600 vs CSV change 286. The tool's own observation is used for rate math because its interval is measured.</li></ul>
   <p class="muted">Compared against the sample from
   2026-08-29 02:29 UTC
   (18.0 h earlier, run #1).</p>
@@ -671,7 +701,7 @@ Mgmt address(es):
     <span class="verdict v-PARSE_ERROR">
       PARSE_ERROR</span>
     &nbsp;<strong>sw-acc-01</strong> — Gi1/0/47
-    (Rcv-Err, Δ24h=918)
+    (Rcv-Err)
   </div>
 <div class="muted">DECOMMISSIONED</div>  <p>PARSE_ERROR — critical field(s) input_errors, crc_errors, input_packets, link_status could not be parsed from device output. Refusing to guess (fail closed).</p>
   <details><summary>Raw evidence (8 commands)</summary>
@@ -798,16 +828,187 @@ Group  Port-channel  Protocol    Ports
     <span class="verdict v-UNVERIFIED">
       UNVERIFIED</span>
     &nbsp;<strong>sw-acc-04</strong> — Gi1/0/9
-    (Rcv-Err, Δ24h=5785)
+    (Rcv-Err)
   </div>
 <div class="muted">ACCESS-FLOOR1-CAMERA</div>  <p>UNVERIFIED — device could not be checked (connection failed: TCP connection to device failed: timed out). CSV data only; treat as unconfirmed.</p>
+</div>
+<div class="case">
+  <div>
+    <span class="verdict v-HISTORIC_NOT_ACTIVE">
+      HISTORIC_NOT_ACTIVE</span>
+<span class="confidence">confidence HIGH</span>    &nbsp;<strong>sw-core-02</strong> — Eth4/15
+    (Rcv-Err)
+  </div>
+<div class="muted">UPLINK-TO-CORE-B</div>  <p>HISTORIC_NOT_ACTIVE — confidence HIGH (zero_delta_nonzero_lifetime).</p>
+  <div class="evidence"><strong>Evidence</strong>
+  <ul><li>The lifetime counter is large (912) but did not move between this tool's two observations: an old event, not an incident. Nobody needs to be dispatched.</li></ul></div>
+  <table class="kv muted">
+<tr><td>Δ (iftriage, run-to-run)</td><td>0 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>28</td></tr><tr><td>Error rate</td><td>0.00/s (0/h)</td></tr>  </table>
+  <p class="muted"><strong>Data quality:</strong></p>
+  <ul class="muted"><li>Interval (18.0 h) derived from host-side timestamps, not device time.</li><li>CSV poll timestamp is 39.1 h old at report time; the CSV's rates describe that period, not the present.</li><li>Δ sources disagree: iftriage run-to-run 0 vs CSV change 28. The tool's own observation is used for rate math because its interval is measured.</li></ul>
+  <p class="muted">Compared against the sample from
+  2026-08-29 02:29 UTC
+  (18.0 h earlier, run #1).</p>
+  <details><summary>Raw evidence (8 commands)</summary>
+    <p class="muted">cpu</p>
+    <pre>Load average:   1 minute: 0.38   5 minutes: 0.32   15 minutes: 0.28
+Processes   :   721 total, 1 running
+CPU states  :   2.55% user,   3.25% kernel,   94.20% idle
+        CPU0 states  :   1.00% user,   2.00% kernel,   97.00% idle
+Memory usage:   16400380K total,   6134936K used,  10265444K free
+</pre>
+    <p class="muted">version</p>
+    <pre>Cisco Nexus Operating System (NX-OS) Software
+TAC support: http://www.cisco.com/tac
+Copyright (C) 2002-2022, Cisco and/or its affiliates.
+
+Software
+  BIOS: version 05.47
+  NXOS: version 9.3(10)
+  BIOS compile time:  04/28/2022
+  NXOS image file is: bootflash:///nxos.9.3.10.bin
+  NXOS compile time:  8/12/2022 12:00:00 [08/12/2022 20:04:12]
+
+Hardware
+  cisco Nexus9000 C9336C-FX2 Chassis
+  Intel(R) Xeon(R) CPU D-1526 @ 1.80GHz with 24632072 kB of memory.
+  Processor Board ID FDO12345678
+
+  Device name: core-sw-01
+  bootflash:  115805708 kB
+Kernel uptime is 291 day(s), 4 hour(s), 22 minute(s), 1 second(s)
+</pre>
+    <p class="muted">interface</p>
+    <pre>Ethernet4/15 is up
+admin state is up, Dedicated Interface
+  Hardware: 10000 Ethernet, address: 003a.9c1a.4d2e (bia 003a.9c1a.4d2e)
+  Description: UPLINK-TO-CORE
+  MTU 1500 bytes, BW 10000000 Kbit, DLY 10 usec
+  reliability 255/255, txload 1/255, rxload 1/255
+  Encapsulation ARPA, medium is broadcast
+  Port mode is trunk
+  full-duplex, 10 Gb/s, media type is 10G
+  Beacon is turned off
+  Auto-Negotiation is turned on
+  Input flow-control is off, output flow-control is off
+  Auto-mdix is turned off
+  Rate mode is dedicated
+  Switchport monitor is off
+  EtherType is 0x8100
+  EEE (efficient-ethernet) : n/a
+  Last link flapped 4week(s) 2day(s)
+  Last clearing of "show interface" counters never
+  1 interface resets
+  30 seconds input rate 903812 bits/sec, 512 packets/sec
+  30 seconds output rate 476182 bits/sec, 401 packets/sec
+  Load-Interval #2: 5 minute (300 seconds)
+    input rate 812.11 Kbps, 498 pps; output rate 402.91 Kbps, 388 pps
+  RX
+    88213456 unicast packets  1203456 multicast packets  8123 broadcast packets
+    89425035 input packets  71234567890 bytes
+    0 jumbo packets  0 storm suppression packets
+    0 runts  0 giants  912 CRC  0 no buffer
+    912 input error  0 short frame  0 overrun   0 underrun  0 ignored
+    0 watchdog  0 bad etype drop  0 bad proto drop  0 if down drop
+    0 input with dribble  0 input discard
+    0 Rx pause
+  TX
+    91234567 unicast packets  234567 multicast packets  4567 broadcast packets
+    91473701 output packets  81234567890 bytes
+    0 jumbo packets
+    0 output error  0 collision  0 deferred  0 late collision
+    0 lost carrier  0 no carrier  0 babble  57 output discard
+    0 Tx pause
+</pre>
+    <p class="muted">counters</p>
+    <pre>--------------------------------------------------------------------------------
+Port          Align-Err    FCS-Err   Xmit-Err    Rcv-Err  UnderSize OutDiscards
+--------------------------------------------------------------------------------
+Eth4/15               0        912          0        912          0          57
+</pre>
+    <p class="muted">transceiver</p>
+    <pre>Ethernet4/15
+    transceiver is present
+    type is 10Gbase-SR
+    name is CISCO-FINISAR
+    part number is FTLX8571D3BCL-C2
+    revision is A
+    serial number is FNS0000TEST5
+    nominal bitrate is 10300 MBit/sec
+    Link length supported for 50/125um OM2 fiber is 82 m
+    cisco id is --
+    cisco extended id number is 4
+
+           SFP Detail Diagnostics Information (internal calibration)
+  ----------------------------------------------------------------------------
+                Current              Alarms                  Warnings
+                Measurement     High        Low         High          Low
+  ----------------------------------------------------------------------------
+  Temperature   30.51 C        75.00 C     -5.00 C     70.00 C        0.00 C
+  Voltage        3.28 V         3.63 V      2.97 V      3.46 V        3.13 V
+  Current        7.15 mA       11.80 mA     4.00 mA    10.80 mA       5.00 mA
+  Tx Power       -2.25 dBm      1.69 dBm  -11.30 dBm   -1.30 dBm     -7.30 dBm
+  Rx Power       -3.55 dBm      1.99 dBm  -13.90 dBm   -1.00 dBm     -9.90 dBm
+  Transmit Fault Count = 0
+  ----------------------------------------------------------------------------
+  Note: ++  high-alarm; +  high-warning; --  low-alarm; -  low-warning
+</pre>
+    <p class="muted">neighbors_lldp</p>
+    <pre>----------------------------------------
+Device ID:core-sw-01(FDO12345678)
+System Name: core-sw-01
+
+Interface address(es):
+    IPv4 Address: 10.0.0.1
+Platform: N9K-C9336C-FX2, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
+Interface: Ethernet4/15, Port ID (outgoing port): Ethernet1/33
+Holdtime: 176 sec
+
+Version:
+Cisco Nexus Operating System (NX-OS) Software, Version 9.3(10)
+
+Advertisement Version: 2
+
+Native VLAN: 1
+Duplex: full
+MTU: 1500
+Physical Location: snmplocation
+Mgmt address(es):
+    IPv4 Address: 10.0.0.1
+</pre>
+    <p class="muted">neighbors</p>
+    <pre>----------------------------------------
+Device ID:core-sw-01(FDO12345678)
+System Name: core-sw-01
+
+Interface address(es):
+    IPv4 Address: 10.0.0.1
+Platform: N9K-C9336C-FX2, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
+Interface: Ethernet4/15, Port ID (outgoing port): Ethernet1/33
+Holdtime: 176 sec
+
+Version:
+Cisco Nexus Operating System (NX-OS) Software, Version 9.3(10)
+
+Advertisement Version: 2
+
+Native VLAN: 1
+Duplex: full
+MTU: 1500
+Physical Location: snmplocation
+Mgmt address(es):
+    IPv4 Address: 10.0.0.1
+</pre>
+    <p class="muted">logging</p>
+    <pre></pre>
+  </details>
 </div>
 <div class="case">
   <div>
     <span class="verdict v-IGNORE">
       IGNORE</span>
     &nbsp;<strong>sw-acc-03</strong> — Gi2/0/1
-    (Rx, Δ24h=1133561112)
+    (Rx)
   </div>
 <div class="muted">ACCESS-FLOOR2-AP</div>  <p>IGNORE — 'Rx' is a total traffic counter, not an error counter; a 24h increase is normal operation. No action.</p>
   <p class="muted">Compared against the sample from
@@ -979,171 +1180,6 @@ Group  Port-channel  Protocol    Ports
 ------+-------------+-----------+-----------------------------------------------
 214    Po214(SU)         LACP      Gi3/0/23(P)     Gi3/0/24(P)
 </pre>
-  </details>
-</div>
-<div class="case">
-  <div>
-    <span class="verdict v-IGNORE">
-      IGNORE</span>
-    &nbsp;<strong>sw-core-02</strong> — Eth4/15
-    (Rcv-Err, Δ24h=28)
-  </div>
-<div class="muted">UPLINK-TO-CORE-B</div>  <p>IGNORE — error rate 0.0010% (10 per million frames) over lifetime counters, counter flat over the 18.0 h since the earlier sample: historical, not happening now. DOM rx power -3.5 dBm within range. No action.</p>
-  <p class="muted">Compared against the sample from
-  2026-08-29 02:29 UTC
-  (18.0 h earlier, run #1).</p>
-  <details><summary>Raw evidence (8 commands)</summary>
-    <p class="muted">cpu</p>
-    <pre>Load average:   1 minute: 0.38   5 minutes: 0.32   15 minutes: 0.28
-Processes   :   721 total, 1 running
-CPU states  :   2.55% user,   3.25% kernel,   94.20% idle
-        CPU0 states  :   1.00% user,   2.00% kernel,   97.00% idle
-Memory usage:   16400380K total,   6134936K used,  10265444K free
-</pre>
-    <p class="muted">version</p>
-    <pre>Cisco Nexus Operating System (NX-OS) Software
-TAC support: http://www.cisco.com/tac
-Copyright (C) 2002-2022, Cisco and/or its affiliates.
-
-Software
-  BIOS: version 05.47
-  NXOS: version 9.3(10)
-  BIOS compile time:  04/28/2022
-  NXOS image file is: bootflash:///nxos.9.3.10.bin
-  NXOS compile time:  8/12/2022 12:00:00 [08/12/2022 20:04:12]
-
-Hardware
-  cisco Nexus9000 C9336C-FX2 Chassis
-  Intel(R) Xeon(R) CPU D-1526 @ 1.80GHz with 24632072 kB of memory.
-  Processor Board ID FDO12345678
-
-  Device name: core-sw-01
-  bootflash:  115805708 kB
-Kernel uptime is 291 day(s), 4 hour(s), 22 minute(s), 1 second(s)
-</pre>
-    <p class="muted">interface</p>
-    <pre>Ethernet4/15 is up
-admin state is up, Dedicated Interface
-  Hardware: 10000 Ethernet, address: 003a.9c1a.4d2e (bia 003a.9c1a.4d2e)
-  Description: UPLINK-TO-CORE
-  MTU 1500 bytes, BW 10000000 Kbit, DLY 10 usec
-  reliability 255/255, txload 1/255, rxload 1/255
-  Encapsulation ARPA, medium is broadcast
-  Port mode is trunk
-  full-duplex, 10 Gb/s, media type is 10G
-  Beacon is turned off
-  Auto-Negotiation is turned on
-  Input flow-control is off, output flow-control is off
-  Auto-mdix is turned off
-  Rate mode is dedicated
-  Switchport monitor is off
-  EtherType is 0x8100
-  EEE (efficient-ethernet) : n/a
-  Last link flapped 4week(s) 2day(s)
-  Last clearing of "show interface" counters never
-  1 interface resets
-  30 seconds input rate 903812 bits/sec, 512 packets/sec
-  30 seconds output rate 476182 bits/sec, 401 packets/sec
-  Load-Interval #2: 5 minute (300 seconds)
-    input rate 812.11 Kbps, 498 pps; output rate 402.91 Kbps, 388 pps
-  RX
-    88213456 unicast packets  1203456 multicast packets  8123 broadcast packets
-    89425035 input packets  71234567890 bytes
-    0 jumbo packets  0 storm suppression packets
-    0 runts  0 giants  912 CRC  0 no buffer
-    912 input error  0 short frame  0 overrun   0 underrun  0 ignored
-    0 watchdog  0 bad etype drop  0 bad proto drop  0 if down drop
-    0 input with dribble  0 input discard
-    0 Rx pause
-  TX
-    91234567 unicast packets  234567 multicast packets  4567 broadcast packets
-    91473701 output packets  81234567890 bytes
-    0 jumbo packets
-    0 output error  0 collision  0 deferred  0 late collision
-    0 lost carrier  0 no carrier  0 babble  57 output discard
-    0 Tx pause
-</pre>
-    <p class="muted">counters</p>
-    <pre>--------------------------------------------------------------------------------
-Port          Align-Err    FCS-Err   Xmit-Err    Rcv-Err  UnderSize OutDiscards
---------------------------------------------------------------------------------
-Eth4/15               0        912          0        912          0          57
-</pre>
-    <p class="muted">transceiver</p>
-    <pre>Ethernet4/15
-    transceiver is present
-    type is 10Gbase-SR
-    name is CISCO-FINISAR
-    part number is FTLX8571D3BCL-C2
-    revision is A
-    serial number is FNS0000TEST5
-    nominal bitrate is 10300 MBit/sec
-    Link length supported for 50/125um OM2 fiber is 82 m
-    cisco id is --
-    cisco extended id number is 4
-
-           SFP Detail Diagnostics Information (internal calibration)
-  ----------------------------------------------------------------------------
-                Current              Alarms                  Warnings
-                Measurement     High        Low         High          Low
-  ----------------------------------------------------------------------------
-  Temperature   30.51 C        75.00 C     -5.00 C     70.00 C        0.00 C
-  Voltage        3.28 V         3.63 V      2.97 V      3.46 V        3.13 V
-  Current        7.15 mA       11.80 mA     4.00 mA    10.80 mA       5.00 mA
-  Tx Power       -2.25 dBm      1.69 dBm  -11.30 dBm   -1.30 dBm     -7.30 dBm
-  Rx Power       -3.55 dBm      1.99 dBm  -13.90 dBm   -1.00 dBm     -9.90 dBm
-  Transmit Fault Count = 0
-  ----------------------------------------------------------------------------
-  Note: ++  high-alarm; +  high-warning; --  low-alarm; -  low-warning
-</pre>
-    <p class="muted">neighbors_lldp</p>
-    <pre>----------------------------------------
-Device ID:core-sw-01(FDO12345678)
-System Name: core-sw-01
-
-Interface address(es):
-    IPv4 Address: 10.0.0.1
-Platform: N9K-C9336C-FX2, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
-Interface: Ethernet4/15, Port ID (outgoing port): Ethernet1/33
-Holdtime: 176 sec
-
-Version:
-Cisco Nexus Operating System (NX-OS) Software, Version 9.3(10)
-
-Advertisement Version: 2
-
-Native VLAN: 1
-Duplex: full
-MTU: 1500
-Physical Location: snmplocation
-Mgmt address(es):
-    IPv4 Address: 10.0.0.1
-</pre>
-    <p class="muted">neighbors</p>
-    <pre>----------------------------------------
-Device ID:core-sw-01(FDO12345678)
-System Name: core-sw-01
-
-Interface address(es):
-    IPv4 Address: 10.0.0.1
-Platform: N9K-C9336C-FX2, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
-Interface: Ethernet4/15, Port ID (outgoing port): Ethernet1/33
-Holdtime: 176 sec
-
-Version:
-Cisco Nexus Operating System (NX-OS) Software, Version 9.3(10)
-
-Advertisement Version: 2
-
-Native VLAN: 1
-Duplex: full
-MTU: 1500
-Physical Location: snmplocation
-Mgmt address(es):
-    IPv4 Address: 10.0.0.1
-</pre>
-    <p class="muted">logging</p>
-    <pre></pre>
   </details>
 </div>
 

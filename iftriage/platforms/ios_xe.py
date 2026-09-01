@@ -22,7 +22,10 @@ _COUNTER_COLUMNS: dict[str, str | tuple[str, ...]] = {
     "align-err": "align_errors",
     "fcs-err": ("crc_errors", "fcs_errors"),
     "xmit-err": "output_errors",
-    "rcv-err": ("input_errors", "rcv_err"),
+    # Rcv-Err is a DIFFERENT series from `show interfaces` input errors (it
+    # excludes runts); it must never overwrite input_errors or every ratio
+    # mixes populations. The engine reconciles the two instead.
+    "rcv-err": "rcv_err",
     "undersize": "undersize",
     "outdiscards": "discards_out",
     "late-col": "late_collisions",

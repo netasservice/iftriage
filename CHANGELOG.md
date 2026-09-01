@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Diagnostic engine v2.** Classification is now driven by WHICH error
+  bucket is incrementing, never the total alone, in a deterministic ladder:
+  INSUFFICIENT_DATA → HISTORIC_NOT_ACTIVE → CONGESTION_BUFFER →
+  PHYSICAL_MEDIA → LINK_NEGOTIATION → IGNORE. New verdict vocabulary:
+  `LINK_NEGOTIATION` (absorbs the old CONFIG_ISSUE duplex-mismatch cases,
+  plus giants/MTU profiles), `CONGESTION_BUFFER` (renames CAPACITY),
+  `HISTORIC_NOT_ACTIVE` (a large lifetime counter with zero movement between
+  the tool's own two observations is not an incident), and
+  `INSUFFICIENT_DATA` (a never-cleared lifetime counter with no second
+  observation supports no rate). `UNVERIFIED` and `PARSE_ERROR` keep their
+  fail-closed semantics untouched. Every judged verdict carries a confidence
+  (HIGH/MEDIUM/LOW) with hard caps, typed evidence signals — including
+  evidence AGAINST the verdict, printed and explained instead of dropped —
+  and labeled metrics.
+- Rates can no longer exceed 100%: every ratio pairs same-population
+  operands (delta received frames as the input-side denominator, delta
+  output packets for output discards), and an out-of-range ratio is
+  suppressed and flagged instead of printed. The IOS-XE/NX-OS `Rcv-Err`
+  column no longer overwrites `input_errors` — it is a different series, and
+  the engine now reconciles `input errors == runts + Rcv-Err` at runtime,
+  leading its narrative with the unattributed residual (the symbol-error
+  proxy) instead of the total.
+- The report labels both delta sources (`Δ (iftriage, run-to-run)` vs
+  `Δ (CSV, Splunk window)`), never calls a window "24h" unless it is one,
+  states each interval's provenance (device uptime → counter-clear age →
+  host-side timestamps), and raises a headline data-quality item when the
+  CSV poll is older than 24 h at report time. Report sentences are keyed on
+  signal kinds in the templates, so a new report language is still a
+  template-only change.
+- `REPLAY_SCHEMA` is now 3: pre-v2 runs are barred from `--from-history`
+  (their rows lack the per-bucket counters the v2 report renders) but still
+  serve as baselines, with missing fields capping confidence instead of
+  faking values.
+
 ### Added
 - Structured verdict data model (not yet produced by the engine): verdicts
   can now carry a confidence level (HIGH/MEDIUM/LOW), typed evidence signals

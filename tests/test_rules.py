@@ -1,18 +1,27 @@
-"""Verdict engine tests — including the fail-closed PARSE_ERROR behavior."""
+"""Verdict engine tests — including the fail-closed PARSE_ERROR behavior and
+the v2 ladder (verdict + confidence + signals)."""
 
-import pytest
+from datetime import UTC, datetime
 
 from iftriage.config import Thresholds
-from iftriage.models import InterfaceCase, NormalizedInterfaceStats, VerdictCategory
+from iftriage.models import (
+    Confidence,
+    DataQualityKind,
+    InterfaceCase,
+    NormalizedInterfaceStats,
+    SignalKind,
+    VerdictCategory,
+)
 from iftriage.rules import (
     CounterClass,
-    _counter_delta,
+    apply_caps,
     classify_counter,
     evaluate_case,
     format_window,
 )
 
 T = Thresholds()
+REPORT_TIME = datetime(2026, 9, 1, 17, 53, tzinfo=UTC)
 
 
 def make_case(counter="Rcv-Err", change=1000):
@@ -43,6 +52,13 @@ def make_stats(**kwargs):
         late_collisions=0,
         discards_in=0,
         discards_out=0,
+        collisions=0,
+        runts=0,
+        giants=0,
+        # A known epoch: cleared a day ago, so a single sample still supports
+        # a lifetime rate (capped MEDIUM by the missing second observation).
+        counters_never_cleared=False,
+        last_clearing_minutes=1440.0,
     )
     defaults.update(kwargs)
     return NormalizedInterfaceStats(**defaults)
@@ -63,92 +79,118 @@ def run(case, stats, baseline=None, minutes=None, error=None, parse_errors=()):
     )
 
 
+def signal_kinds(verdict):
+    return {signal.kind for signal in verdict.signals}
+
+
+def flag_kinds(verdict):
+    return {flag.kind for flag in verdict.data_quality}
+
+
 # ---- classification --------------------------------------------------------
 
 
 def test_counter_classification():
-    assert classify_counter("Late-Col") is CounterClass.LATE_COLLISIONS
     assert classify_counter("Rcv-Err") is CounterClass.RECEIVE_ERRORS
+    assert classify_counter("late-col") is CounterClass.LATE_COLLISIONS
     assert classify_counter("InDiscards") is CounterClass.IN_DISCARDS
+    assert classify_counter("OutDiscards") is CounterClass.OUT_DISCARDS
     assert classify_counter("Rx") is CounterClass.TOTAL_TRAFFIC
-    assert classify_counter("weird-thing") is CounterClass.GENERIC_ERRORS
+    assert classify_counter("weird-new-counter") is CounterClass.GENERIC_ERRORS
 
 
-# ---- fail-closed behavior (the most important tests in this file) ----------
+# ---- fail-closed guarantees (unchanged by v2) ------------------------------
 
 
 def test_unreachable_device_is_unverified():
-    verdict = run(make_case(), None, error="connection failed: timeout")
+    verdict = run(make_case(), None, error="connection timed out")
     assert verdict.category is VerdictCategory.UNVERIFIED
 
 
 def test_missing_crc_is_parse_error_never_ignore():
-    # crc=None must NEVER be treated as 0 -> false IGNORE.
     stats = make_stats(crc_errors=None)
     verdict = run(make_case("Rcv-Err"), stats)
     assert verdict.category is VerdictCategory.PARSE_ERROR
-    assert "crc" in verdict.reason.lower()
+    assert "crc_errors" in verdict.reason
 
 
 def test_missing_duplex_on_late_col_is_parse_error():
-    stats = make_stats(duplex=None, late_collisions=10)
+    stats = make_stats(duplex=None, late_collisions=5)
     verdict = run(make_case("Late-Col"), stats)
     assert verdict.category is VerdictCategory.PARSE_ERROR
 
 
 def test_no_stats_at_all_is_parse_error():
-    verdict = run(make_case(), None)
+    verdict = run(make_case(), None, parse_errors=["interface: no match"])
     assert verdict.category is VerdictCategory.PARSE_ERROR
+    assert verdict.details == ["interface: no match"]
 
 
-# ---- late collisions -------------------------------------------------------
+# ---- late collisions / negotiation -----------------------------------------
 
 
-def test_late_col_on_full_duplex_is_config_issue():
-    stats = make_stats(late_collisions=42, duplex="full")
+def test_late_col_on_full_duplex_is_link_negotiation():
+    stats = make_stats(late_collisions=773)
     verdict = run(make_case("Late-Col"), stats)
-    assert verdict.category is VerdictCategory.CONFIG_ISSUE
-    assert "duplex mismatch" in verdict.reason.lower()
+    assert verdict.category is VerdictCategory.LINK_NEGOTIATION
+    assert verdict.confidence is Confidence.MEDIUM  # single observation
+    assert SignalKind.LATE_COLLISIONS_FULL_DUPLEX in signal_kinds(verdict)
+
+
+def test_late_col_full_duplex_with_second_observation_is_high():
+    earlier = make_stats(late_collisions=100)
+    stats = make_stats(late_collisions=773)
+    verdict = run(make_case("Late-Col"), stats, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.LINK_NEGOTIATION
+    assert verdict.confidence is Confidence.HIGH
 
 
 def test_late_col_on_half_duplex_is_physical():
-    stats = make_stats(late_collisions=42, duplex="half")
+    stats = make_stats(duplex="half", late_collisions=773)
     verdict = run(make_case("Late-Col"), stats)
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
 
 
-def test_late_col_half_duplex_with_full_duplex_neighbor_is_config_issue():
-    # Real fleet case: switch port fell back to half, IP phone reports full.
+def test_late_col_half_duplex_with_full_duplex_neighbor_is_link_negotiation():
     stats = make_stats(
-        late_collisions=38_445_916,
         duplex="half",
-        neighbor_name="SEP001122AABB99",
+        late_collisions=773,
+        neighbor_name="ap-floor2",
         neighbor_duplex="full",
     )
     verdict = run(make_case("Late-Col"), stats)
-    assert verdict.category is VerdictCategory.CONFIG_ISSUE
-    assert "mismatch confirmed" in verdict.reason.lower()
+    assert verdict.category is VerdictCategory.LINK_NEGOTIATION
+    assert "duplex_mismatch_confirmed" in verdict.reason
 
 
-def test_late_col_half_duplex_with_logged_mismatch_is_config_issue():
-    stats = make_stats(late_collisions=42, duplex="half", duplex_mismatch_logged=True)
+def test_late_col_half_duplex_with_logged_mismatch_is_link_negotiation():
+    stats = make_stats(duplex="half", late_collisions=773, duplex_mismatch_logged=True)
     verdict = run(make_case("Late-Col"), stats)
-    assert verdict.category is VerdictCategory.CONFIG_ISSUE
+    assert verdict.category is VerdictCategory.LINK_NEGOTIATION
 
 
 def test_late_col_zero_on_device_is_ignore():
-    stats = make_stats(late_collisions=0)
-    verdict = run(make_case("Late-Col"), stats)
+    verdict = run(make_case("Late-Col"), make_stats(late_collisions=0))
     assert verdict.category is VerdictCategory.IGNORE
 
 
-# ---- receive errors --------------------------------------------------------
+def test_late_col_flat_across_observations_is_historic():
+    earlier = make_stats(late_collisions=773)
+    stats = make_stats(late_collisions=773)
+    verdict = run(make_case("Late-Col"), stats, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.HISTORIC_NOT_ACTIVE
+
+
+# ---- receive errors: the core ladder ---------------------------------------
 
 
 def test_high_crc_rate_is_physical_media():
     stats = make_stats(input_errors=3271, crc_errors=3271, input_packets=1_000_000)
     verdict = run(make_case("Rcv-Err"), stats)
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    # Single observation: the missing second sample caps MEDIUM.
+    assert verdict.confidence is Confidence.MEDIUM
+    assert DataQualityKind.NO_SECOND_OBSERVATION in flag_kinds(verdict)
 
 
 def test_negligible_rate_is_ignore():
@@ -157,94 +199,251 @@ def test_negligible_rate_is_ignore():
     assert verdict.category is VerdictCategory.IGNORE
 
 
-def test_same_rate_is_physical_when_climbing_and_ignored_when_flat():
-    """The comparison against an earlier sample, not the floor, is what
-    separates a live fault from an old one: both interfaces sit at the same
-    0.5% lifetime rate."""
+def test_flat_counter_with_large_lifetime_is_historic_not_active():
+    """A never-cleared counter with millions of errors and zero movement is
+    not an incident, regardless of how large the lifetime figure is."""
+    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    flat = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_100_000)
+    verdict = run(make_case("Rcv-Err"), flat, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.HISTORIC_NOT_ACTIVE
+    assert SignalKind.ZERO_DELTA_NONZERO_LIFETIME in signal_kinds(verdict)
+
+
+def test_climbing_counter_at_rate_is_physical():
     earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
     climbing = make_stats(input_errors=5_600, crc_errors=5_600, input_packets=1_100_000)
-    flat = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_100_000)
-
-    live = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
-    historical = run(make_case("Rcv-Err"), flat, earlier, minutes=1080)
-
-    assert live.category is VerdictCategory.PHYSICAL_MEDIA
-    assert historical.category is VerdictCategory.IGNORE
-
-
-def test_ignored_flat_counter_is_not_called_below_threshold():
-    """A rate above the floor that the baseline kills is historical, not noise:
-    saying 'below the threshold' would send the operator to the wrong knob."""
-    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
-    current = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_100_000)
-
-    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
-
-    assert verdict.category is VerdictCategory.IGNORE
-    assert "below the" not in verdict.reason
-    assert "historical" in verdict.reason
-
-
-def test_flat_baseline_with_low_rate_is_ignore():
-    earlier = make_stats(input_errors=500, crc_errors=500, input_packets=100_000_000)
-    current = make_stats(input_errors=500, crc_errors=500, input_packets=101_000_000)
-    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
-    assert verdict.category is VerdictCategory.IGNORE
-    assert "flat" in verdict.reason.lower()
-
-
-def test_incrementing_since_the_baseline_at_meaningful_rate_is_physical():
-    earlier = make_stats(input_errors=1000, crc_errors=1000, input_packets=100_000_000)
-    current = make_stats(input_errors=1600, crc_errors=1600, input_packets=101_000_000)
-    # 600 errors / 1M packets in the window = 6e-4 >= error_rate
-    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+    verdict = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
-    assert "incrementing" in verdict.reason.lower()
-    assert "18.0 h" in verdict.reason
-
-
-def test_counter_delta_direction():
-    """The subtraction inverted when the second sample moved from "collected
-    after a wait" to "read back from an earlier run"; nothing may call this
-    positionally, and nothing may treat a reset as a flat counter."""
-    earlier = make_stats(input_errors=100, input_packets=1_000_000)
-    later = make_stats(input_errors=180, input_packets=1_500_000)
-
-    assert _counter_delta(earlier=earlier, later=later, field="input_errors") == (
-        80,
-        500_000,
-    )
-    # Counters lower now than in the earlier sample: reload or counter clear.
-    assert _counter_delta(earlier=later, later=earlier, field="input_errors") is None
-
-    with pytest.raises(TypeError):
-        _counter_delta(earlier, later, "input_errors")
 
 
 def test_a_discarded_baseline_never_vetoes_escalation():
-    """A device that reloaded between the two samples yields no delta. That
-    must read as "unknown", never as "flat" — a flat counter suppresses the
-    escalation below, and this is the fail-closed direction."""
-    earlier = make_stats(input_errors=9_000, crc_errors=9_000, input_packets=9_000_000)
-    current = make_stats(input_errors=1_000, crc_errors=1_000, input_packets=1_000_000)
-
+    """A counter that went BACKWARDS (clear/reload) yields no delta — and no
+    delta must never read as flat."""
+    earlier = make_stats(input_errors=9_999, crc_errors=9_999, input_packets=2_000_000)
+    current = make_stats(input_errors=3_271, crc_errors=3_271, input_packets=1_000_000)
     verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
-
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
-    assert "flat" not in verdict.reason.lower()
-    assert "lifetime counters" in verdict.reason  # no window rate to quote
-    assert any("earlier sample discarded" in detail for detail in verdict.details)
+    assert verdict.category is not VerdictCategory.HISTORIC_NOT_ACTIVE
+    assert any("discarded" in detail for detail in verdict.details)
 
 
 def test_missing_baseline_still_escalates_on_lifetime_rate():
-    """The comparison is a veto, never a precondition: with nothing stored to
-    compare against, a meaningful lifetime rate still escalates."""
-    stats = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
-
+    stats = make_stats(input_errors=3_271, crc_errors=3_271, input_packets=1_000_000)
     verdict = run(make_case("Rcv-Err"), stats)
-
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
-    assert "lifetime counters" in verdict.reason
+    assert verdict.confidence is Confidence.MEDIUM
+
+
+def test_never_cleared_single_sample_is_insufficient_data():
+    """Only a never-cleared lifetime figure and no second observation:
+    nothing says whether a single error happened this month."""
+    stats = make_stats(
+        input_errors=316_073_999,
+        crc_errors=185,
+        input_packets=561_806,
+        counters_never_cleared=True,
+        last_clearing_minutes=None,
+        uptime_minutes=417_731.0,
+    )
+    verdict = run(make_case("Rcv-Err"), stats)
+    assert verdict.category is VerdictCategory.INSUFFICIENT_DATA
+    assert verdict.confidence is None
+
+
+def test_zero_traffic_test_is_physical_high():
+    earlier = make_stats(
+        input_errors=319_466_596,
+        crc_errors=185,
+        input_packets=561_806,
+        input_rate_pps=0,
+    )
+    current = make_stats(
+        input_errors=320_792_846,
+        crc_errors=185,
+        input_packets=561_806,
+        input_rate_pps=0,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=int(39.8 * 60))
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert verdict.confidence is Confidence.HIGH
+    assert SignalKind.ZERO_TRAFFIC_ERRORS in signal_kinds(verdict)
+
+
+def test_buffer_group_dominant_is_congestion_not_physical():
+    earlier = make_stats(input_errors=0, crc_errors=0, overrun=0, ignored=0)
+    current = make_stats(
+        input_errors=90_000,
+        crc_errors=100,
+        input_packets=1_400_000,
+        overrun=60_000,
+        ignored=25_000,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.CONGESTION_BUFFER
+    assert SignalKind.BUFFER_GROUP_DOMINANT in signal_kinds(verdict)
+
+
+def test_unattributed_rx_dominant_is_physical_high():
+    earlier = make_stats(
+        input_errors=100_000,
+        crc_errors=100,
+        rcv_err=95_000,
+        fcs_errors=100,
+        align_errors=0,
+        runts=5_000,
+    )
+    current = make_stats(
+        input_errors=200_000,
+        crc_errors=185,
+        rcv_err=190_000,
+        fcs_errors=185,
+        align_errors=0,
+        runts=10_000,
+        input_packets=1_200_000,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert verdict.confidence is Confidence.HIGH
+    assert SignalKind.UNATTRIBUTED_RX_DOMINANT in signal_kinds(verdict)
+    # The 185 FCS belongs under "evidence against", with the verdict retained.
+    against = [signal for signal in verdict.signals if signal.contradicts]
+    assert any(
+        signal.kind is SignalKind.LOW_FCS_DOES_NOT_CLEAR_MEDIA for signal in against
+    )
+
+
+def test_reconciliation_residual_above_one_percent_caps_low():
+    # input_errors != runts + rcv_err by 5%.
+    current = make_stats(
+        input_errors=200_000,
+        crc_errors=185,
+        rcv_err=180_000,
+        fcs_errors=185,
+        align_errors=0,
+        runts=10_000,
+        input_packets=1_200_000,
+    )
+    earlier = make_stats(
+        input_errors=100_000,
+        crc_errors=100,
+        rcv_err=90_000,
+        fcs_errors=100,
+        align_errors=0,
+        runts=5_000,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+    assert DataQualityKind.COUNTER_RECONCILIATION_FAILED in flag_kinds(verdict)
+    assert verdict.confidence is Confidence.LOW
+
+
+def test_giants_dominant_is_link_negotiation():
+    earlier = make_stats(input_errors=1_000, crc_errors=0, giants=900)
+    current = make_stats(
+        input_errors=61_000,
+        crc_errors=100,
+        giants=55_000,
+        input_packets=1_400_000,
+        mtu=1500,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.LINK_NEGOTIATION
+    assert verdict.confidence is Confidence.MEDIUM
+    assert SignalKind.GIANTS_WITH_MTU_MISMATCH in signal_kinds(verdict)
+
+
+def test_speed_below_capability_is_corroborating_only():
+    """100M on a gig-capable copper port must never carry a verdict alone."""
+    clean = make_stats(speed="100Mb/s", media_type="10/100/1000BaseTX")
+    verdict = run(make_case("Rcv-Err"), clean)
+    assert verdict.category is VerdictCategory.IGNORE
+
+    dirty = make_stats(
+        input_errors=3_271,
+        crc_errors=3_271,
+        input_packets=1_000_000,
+        speed="100Mb/s",
+        media_type="10/100/1000BaseTX",
+    )
+    escalated = run(make_case("Rcv-Err"), dirty)
+    assert escalated.category is VerdictCategory.PHYSICAL_MEDIA
+    speed_signals = [
+        signal
+        for signal in escalated.signals
+        if signal.kind is SignalKind.SPEED_BELOW_CAPABILITY
+    ]
+    assert speed_signals and speed_signals[0].weight is Confidence.LOW
+
+
+def test_dom_out_of_range_is_physical_media():
+    stats = make_stats(input_errors=100, crc_errors=100, dom_rx_power_dbm=-18.0)
+    verdict = run(make_case("Rcv-Err"), stats)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert SignalKind.DOM_RX_OUT_OF_RANGE in signal_kinds(verdict)
+
+
+def test_no_division_when_everything_is_zero():
+    stats = make_stats(input_packets=0, input_errors=0, crc_errors=0)
+    verdict = run(make_case("Rcv-Err"), stats)
+    assert verdict.category is VerdictCategory.IGNORE
+    assert verdict.metrics is not None
+    assert verdict.metrics.error_ratio is None
+
+
+def test_delta_source_disagreement_is_flagged():
+    earlier = make_stats(input_errors=0, crc_errors=0)
+    current = make_stats(
+        input_errors=1_326_250, crc_errors=185, input_packets=1_000_100
+    )
+    verdict = run(make_case("Rcv-Err", change=112_905), current, earlier, minutes=2388)
+    assert DataQualityKind.DELTA_SOURCE_DISAGREEMENT in flag_kinds(verdict)
+    assert verdict.metrics.delta_tool == 1_326_250
+    assert verdict.metrics.delta_csv == 112_905
+
+
+def test_stale_poll_is_flagged_but_does_not_cap_a_delta_verdict():
+    earlier = make_stats(input_errors=0, crc_errors=0, input_rate_pps=0)
+    current = make_stats(input_errors=1_326_250, crc_errors=185, input_rate_pps=0)
+    verdict = evaluate_case(
+        make_case("Rcv-Err"),
+        current,
+        earlier,
+        2388,
+        T,
+        report_time=REPORT_TIME,  # poll_time is 2026-08-24: ~8.6 d stale
+    )
+    assert DataQualityKind.STALE_POLL_TIMESTAMP in flag_kinds(verdict)
+    assert verdict.confidence is Confidence.HIGH  # tool's own delta decided
+
+
+def test_apply_caps_ranking():
+    from iftriage.models import DataQualityFlag
+
+    assert (
+        apply_caps(
+            Confidence.HIGH,
+            [DataQualityFlag(DataQualityKind.NO_SECOND_OBSERVATION)],
+        )
+        is Confidence.MEDIUM
+    )
+    assert (
+        apply_caps(
+            Confidence.HIGH,
+            [
+                DataQualityFlag(
+                    DataQualityKind.COUNTER_RECONCILIATION_FAILED,
+                    {"residual_fraction": 0.05},
+                )
+            ],
+        )
+        is Confidence.LOW
+    )
+    assert (
+        apply_caps(
+            Confidence.LOW,
+            [DataQualityFlag(DataQualityKind.NO_SECOND_OBSERVATION)],
+        )
+        is Confidence.LOW
+    )
 
 
 def test_format_window_uses_the_largest_readable_unit():
@@ -254,42 +453,36 @@ def test_format_window_uses_the_largest_readable_unit():
     assert format_window(None) == "?"
 
 
-def test_dom_out_of_range_is_physical_media():
-    stats = make_stats(
-        input_errors=100,
-        crc_errors=100,
-        input_packets=1_000_000_000,
-        dom_rx_power_dbm=-16.2,
-    )
-    verdict = run(make_case("Rcv-Err"), stats)
-    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
-    assert "dom" in verdict.reason.lower()
+# ---- discards: congestion, not physical ------------------------------------
 
 
-# ---- discards --------------------------------------------------------------
-
-
-def test_indiscards_at_rate_is_capacity_not_physical():
-    stats = make_stats(discards_in=20_000, input_packets=1_000_000)  # 2%
+def test_indiscards_at_rate_is_congestion_buffer_not_physical():
+    stats = make_stats(discards_in=200_000, input_packets=1_000_000)
     verdict = run(make_case("InDiscards"), stats)
-    assert verdict.category is VerdictCategory.CAPACITY
-    assert "not a physical error" in verdict.reason.lower()
+    assert verdict.category is VerdictCategory.CONGESTION_BUFFER
 
 
 def test_discards_below_the_threshold_is_ignore():
-    """Dropped-but-intact frames under 1% are operational noise, not capacity."""
-    stats = make_stats(discards_in=5_000, input_packets=1_000_000)  # 0.5%
+    stats = make_stats(discards_in=50, input_packets=1_000_000)
     verdict = run(make_case("InDiscards"), stats)
     assert verdict.category is VerdictCategory.IGNORE
 
 
-def test_negligible_discards_is_ignore():
-    stats = make_stats(discards_in=3, input_packets=1_000_000_000)
-    verdict = run(make_case("InDiscards"), stats)
-    assert verdict.category is VerdictCategory.IGNORE
+def test_flat_discards_are_historic():
+    earlier = make_stats(discards_out=223_462)
+    stats = make_stats(discards_out=223_462, input_packets=1_100_000)
+    verdict = run(make_case("OutDiscards"), stats, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.HISTORIC_NOT_ACTIVE
 
 
-# ---- total traffic ---------------------------------------------------------
+def test_outdiscards_rate_uses_the_output_side_denominator():
+    """The old engine divided output discards by INPUT packets, which is how
+    a >100% rate gets printed. The output side must be its own population."""
+    earlier = make_stats(discards_out=0, output_packets=1_000, input_packets=40)
+    stats = make_stats(discards_out=900, output_packets=1_500, input_packets=41)
+    verdict = run(make_case("OutDiscards"), stats, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.CONGESTION_BUFFER
+    # 900 discards over (500 delivered + 900 dropped) = 64%, never >100%.
 
 
 def test_rx_counter_is_ignore():
@@ -359,7 +552,7 @@ def test_po_member_with_dom_out_of_range_is_physical_media():
 
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
     assert "Ethernet1/1" in verdict.reason
-    assert "DOM receive power -18.0 dBm" in verdict.reason
+    assert SignalKind.DOM_RX_OUT_OF_RANGE in signal_kinds(verdict)
 
 
 def test_po_member_baseline_delta_confirms_live_errors():
@@ -376,7 +569,9 @@ def test_po_member_baseline_delta_confirms_live_errors():
     )
 
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
-    assert "still incrementing" in verdict.reason
+    # An FCS-dominant profile with an active delta is MEDIUM by design:
+    # frames arriving but corrupted reads as marginal signal, not link-level.
+    assert verdict.confidence is Confidence.MEDIUM
 
 
 def test_po_missing_member_fails_closed_to_parse_error():

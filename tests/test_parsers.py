@@ -59,8 +59,9 @@ def test_ios_xe_counters_errors():
     )
     assert parsed["crc_errors"] == 3271
     assert parsed["fcs_errors"] == 3271
-    assert parsed["input_errors"] == 3271
+    # Rcv-Err is its own series: it must never masquerade as input_errors.
     assert parsed["rcv_err"] == 3271
+    assert "input_errors" not in parsed
     assert parsed["align_errors"] == 0
     assert parsed["undersize"] == 0
     assert parsed["output_errors"] == 0
@@ -219,8 +220,8 @@ def test_nxos_counters_errors():
     )
     assert parsed["crc_errors"] == 912
     assert parsed["fcs_errors"] == 912
-    assert parsed["input_errors"] == 912
     assert parsed["rcv_err"] == 912
+    assert "input_errors" not in parsed
     assert parsed["align_errors"] == 0
     assert parsed["undersize"] == 0
     assert parsed["output_errors"] == 0
