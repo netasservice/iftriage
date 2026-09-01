@@ -45,6 +45,8 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
 | `normalize.py` | Short→canonical interface names, safe-substitution validation | no |
 | `platforms/` | `PlatformProfile` ABC + registry; command templates and parsers | no |
 | `rules.py` | Verdict engine — pure functions over the canonical model | no |
+| `metrics.py` | Population-safe counter math: tool deltas (`DeltaWindow`), lifetime ratios, reconciliation, zero-traffic test | no |
+| `timebase.py` | Interval derivation with provenance (device uptime → counter epoch → CSV poll time → host clocks), staleness | no |
 | `history.py` | SQLite persistence (archive, runs, platform cache, recurrence) | no |
 | `replay.py` | Rebuilds a run's results from stored data (`--from-history`); reads the database, never writes it | no |
 | `report.py` | Jinja2 HTML/text rendering + enriched CSV writer (input rows echoed with analysis columns appended) | no |
