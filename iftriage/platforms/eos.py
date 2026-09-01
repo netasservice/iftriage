@@ -12,14 +12,22 @@ from .base import (
     parse_counters_table,
     parse_cpu_from_idle,
     parse_flap_count,
+    parse_last_clearing,
     parse_portchannel_summary,
+    parse_uptime_minutes,
     register,
 )
 
-_COUNTER_COLUMNS = {
-    "fcs": "crc_errors",
+_COUNTER_COLUMNS: dict[str, str | tuple[str, ...]] = {
+    "fcs": ("crc_errors", "fcs_errors"),
+    "align": "align_errors",
+    "symbol": "symbol_errors",
     "rx": "input_errors",
-    "tx": "discards_out",  # EOS 'Tx' column in counters errors = transmit errors
+    "runts": "runts",
+    "giants": "giants",
+    # EOS 'Tx' in counters errors counts transmit ERRORS; it was previously
+    # (incorrectly) mapped to discards_out.
+    "tx": "output_errors",
 }
 
 
@@ -37,25 +45,67 @@ def _parse_show_interfaces(raw: str) -> dict:
     if match:
         result["duplex"] = match.group(1).lower()
         result["speed"] = match.group(2).strip()
-    match = re.search(r"(\d+) packets input", raw)
+    match = re.search(r"MTU (\d+) bytes", raw)
+    if match:
+        result["mtu"] = int(match.group(1))
+    match = re.search(r"(\d+) packets input, (\d+) bytes", raw)
     if match:
         result["input_packets"] = int(match.group(1))
-    match = re.search(r"(\d+) packets output", raw)
+        result["bytes_input"] = int(match.group(2))
+    else:
+        match = re.search(r"(\d+) packets input", raw)
+        if match:
+            result["input_packets"] = int(match.group(1))
+    match = re.search(r"(\d+) packets output, (\d+) bytes", raw)
     if match:
         result["output_packets"] = int(match.group(1))
-    match = re.search(r"(\d+) input errors, (\d+) CRC", raw)
+        result["bytes_output"] = int(match.group(2))
+    else:
+        match = re.search(r"(\d+) packets output", raw)
+        if match:
+            result["output_packets"] = int(match.group(1))
+    match = re.search(r"(\d+) runts, (\d+) giants", raw)
+    if match:
+        result["runts"] = int(match.group(1))
+        result["giants"] = int(match.group(2))
+    match = re.search(
+        r"(\d+) input errors, (\d+) CRC, (\d+) alignment, (\d+) symbol", raw
+    )
     if match:
         result["input_errors"] = int(match.group(1))
         result["crc_errors"] = int(match.group(2))
+        result["align_errors"] = int(match.group(3))
+        result["symbol_errors"] = int(match.group(4))
+    else:
+        match = re.search(r"(\d+) input errors, (\d+) CRC", raw)
+        if match:
+            result["input_errors"] = int(match.group(1))
+            result["crc_errors"] = int(match.group(2))
     match = re.search(r"(\d+) input discards", raw)
     if match:
         result["discards_in"] = int(match.group(1))
     match = re.search(r"(\d+) output discards", raw)
     if match:
         result["discards_out"] = int(match.group(1))
+    match = re.search(r"(\d+) output errors, (\d+) collisions", raw)
+    if match:
+        result["output_errors"] = int(match.group(1))
+        result["collisions"] = int(match.group(2))
     match = re.search(r"(\d+) late collision", raw)
     if match:
         result["late_collisions"] = int(match.group(1))
+    match = re.search(
+        r"(\d+) minutes? input rate [\d.]+ [KMG]?bps[^,]*, (\d+) packets/sec", raw
+    )
+    if match:
+        result["load_interval_seconds"] = int(match.group(1)) * 60
+        result["input_rate_pps"] = int(match.group(2))
+    match = re.search(
+        r"\d+ minutes? output rate [\d.]+ [KMG]?bps[^,]*, (\d+) packets/sec", raw
+    )
+    if match:
+        result["output_rate_pps"] = int(match.group(1))
+    result.update(parse_last_clearing(raw))
     return result
 
 
@@ -101,6 +151,7 @@ def _parse_version(raw: str) -> dict:
     match = re.search(r"^Arista\s+(\S+)", raw, re.MULTILINE)
     if match:
         result["model"] = match.group(1)
+    result.update(parse_uptime_minutes(raw))
     return result
 
 

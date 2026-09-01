@@ -64,7 +64,18 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
    (`ConfigModeDetected` → `RunAborted`).
 4. **Fail-closed analysis.** `NormalizedInterfaceStats` fields are `Optional`;
    `None` is never coerced to zero. `rules.py` declares required fields per
-   counter class and returns `PARSE_ERROR` when any are missing.
+   counter class and returns `PARSE_ERROR` when any are missing. Every counter
+   field in the model is a **lifetime** value (since the last counter clear);
+   deltas are derived by comparing two stored snapshots, and the two
+   populations are never mixed in one ratio. The model carries the full
+   receive-error decomposition (runts, giants, undersize, FCS, alignment,
+   symbol, overrun, ignored, no buffer, plus the platform's aggregate
+   `rcv_err` column kept separate from `input_errors` so the totals can be
+   reconciled), the counter epoch (`Last clearing`, as an explicit
+   "never"/age pair distinct from "line not seen"), byte counters, MTU, media
+   type, device-reported load-interval rates, interface resets, and the
+   device uptime parsed from the already-collected `show version` — no extra
+   command, no allow-list change.
 5. **Bounded evidence.** `session.get()` enforces a hard byte ceiling per
    command (keeping the tail, with a visible marker), and `collectors.py`
    stores a line-bounded head+tail copy in `raw_outputs`. Parsing always runs

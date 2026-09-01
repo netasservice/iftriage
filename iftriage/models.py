@@ -77,6 +77,11 @@ class NormalizedInterfaceStats:
 
     Every field is Optional; None means "unknown / not parsed" and is treated
     fail-closed by the rules engine — it is never coerced to zero.
+
+    All counter fields are LIFETIME values: read from the device as-is, since
+    the last counter clear. Deltas between two observations are computed by the
+    rules layer from two of these snapshots; the two populations must never be
+    mixed in a ratio.
     """
 
     link_status: str | None = None  # "up" / "down" / ...
@@ -90,6 +95,44 @@ class NormalizedInterfaceStats:
     late_collisions: int | None = None
     discards_in: int | None = None
     discards_out: int | None = None
+    bytes_input: int | None = None
+    bytes_output: int | None = None
+    mtu: int | None = None
+    # Free text from the device ("10/100/1000BaseTX", "10G"); remediation and
+    # DOM expectations are derived from it, so a copper port is never told to
+    # check a transceiver.
+    media_type: str | None = None
+    # Receive-error decomposition. `rcv_err` is the platform's aggregate
+    # receive-error column (IOS-XE/NX-OS Rcv-Err) kept separate from
+    # `input_errors` so the rules layer can reconcile the two and compute the
+    # unattributed residual instead of trusting the total alone.
+    runts: int | None = None
+    giants: int | None = None
+    undersize: int | None = None
+    fcs_errors: int | None = None
+    align_errors: int | None = None
+    symbol_errors: int | None = None
+    rcv_err: int | None = None
+    overrun: int | None = None
+    ignored: int | None = None
+    no_buffer: int | None = None
+    collisions: int | None = None
+    output_errors: int | None = None
+    interface_resets: int | None = None
+    # Device-reported load-interval rates. The interval length matters as much
+    # as the value ("30 seconds" vs "5 minute"), so it travels alongside.
+    input_rate_pps: int | None = None
+    output_rate_pps: int | None = None
+    load_interval_seconds: int | None = None
+    # Counter epoch. `counters_never_cleared` is True for the literal `never`;
+    # `last_clearing_minutes` carries a parsed age otherwise. Both None means
+    # the line was not seen — distinct from a known "never".
+    last_clearing_minutes: float | None = None
+    counters_never_cleared: bool | None = None
+    last_input_minutes: float | None = None
+    # Device uptime from `show version` — the device-side time anchor used to
+    # bound lifetime counters without any extra command.
+    uptime_minutes: float | None = None
     dom_rx_power_dbm: float | None = None
     dom_tx_power_dbm: float | None = None
     neighbor_name: str | None = None
