@@ -269,6 +269,97 @@ def test_zero_traffic_test_is_physical_high():
     assert SignalKind.ZERO_TRAFFIC_ERRORS in signal_kinds(verdict)
 
 
+def test_zero_traffic_with_confirmed_duplex_mismatch_is_link_negotiation():
+    # A half-duplex port whose CDP neighbor reports full duplex, with late
+    # collisions advancing alongside the receive errors: the errors accumulate
+    # without traffic, but the link includes its negotiation — the mismatch,
+    # not the medium, is the verdict.
+    earlier = make_stats(
+        input_errors=426_000_000,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        duplex="half",
+        neighbor_duplex="full",
+        neighbor_name="phone-fake-01",
+        collisions=160_000,
+        late_collisions=80_000,
+    )
+    current = make_stats(
+        input_errors=429_895_397,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        duplex="half",
+        neighbor_duplex="full",
+        neighbor_name="phone-fake-01",
+        collisions=161_390,
+        late_collisions=87_896,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=int(18.4 * 60))
+    assert verdict.category is VerdictCategory.LINK_NEGOTIATION
+    assert verdict.confidence is Confidence.HIGH
+    assert "duplex_mismatch_confirmed" in verdict.reason
+    # The zero-traffic observation stays as evidence for the reader.
+    assert SignalKind.ZERO_TRAFFIC_ERRORS in signal_kinds(verdict)
+    assert SignalKind.LATE_COLLISIONS_FULL_DUPLEX in signal_kinds(verdict)
+
+
+def test_zero_traffic_with_collisions_but_no_duplex_evidence_is_not_high():
+    # Collision activity without a confirming neighbor: the media reading may
+    # still win, but never as a HIGH zero-traffic claim that ignores the
+    # collisions.
+    earlier = make_stats(
+        input_errors=426_000_000,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        duplex="half",
+        collisions=160_000,
+        late_collisions=80_000,
+    )
+    current = make_stats(
+        input_errors=429_895_397,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        duplex="half",
+        collisions=161_390,
+        late_collisions=87_896,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=int(18.4 * 60))
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert verdict.confidence is not Confidence.HIGH
+    assert "zero_traffic_errors" not in verdict.reason
+    assert SignalKind.ZERO_TRAFFIC_ERRORS in signal_kinds(verdict)
+
+
+def test_zero_traffic_with_unknown_collision_counters_caps_medium():
+    # The guard cannot run when the collision counters were not parsed; the
+    # zero-traffic verdict stands but says so and gives up HIGH.
+    earlier = make_stats(
+        input_errors=319_466_596,
+        crc_errors=185,
+        input_packets=561_806,
+        input_rate_pps=0,
+        collisions=None,
+        late_collisions=None,
+    )
+    current = make_stats(
+        input_errors=320_792_846,
+        crc_errors=185,
+        input_packets=561_806,
+        input_rate_pps=0,
+        collisions=None,
+        late_collisions=None,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=int(39.8 * 60))
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert verdict.confidence is Confidence.MEDIUM
+    assert "zero_traffic_errors" in verdict.reason
+    assert DataQualityKind.NULL_RULE_INPUT in flag_kinds(verdict)
+
+
 def test_buffer_group_dominant_is_congestion_not_physical():
     earlier = make_stats(input_errors=0, crc_errors=0, overrun=0, ignored=0)
     current = make_stats(

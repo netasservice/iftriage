@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- The `zero_traffic_errors` rule no longer returns PHYSICAL_MEDIA HIGH while
+  ignoring collision activity. It now applies the same collision guard as the
+  media-dominance rule: with collisions or late collisions on the counters,
+  the collision-aware rungs decide (a CDP-confirmed duplex mismatch now
+  yields LINK_NEGOTIATION from a receive-error case too), and the
+  errors-without-traffic observation is kept as evidence for whichever rung
+  wins. When the collision counters were not parsed, the zero-traffic verdict
+  stands but is capped MEDIUM with a data-quality flag saying why. Found in a
+  field audit: a half-duplex port with 87K late collisions was reported as
+  PHYSICAL_MEDIA HIGH without mentioning either.
+
 ## [0.7.0] - 2026-09-01
 
 ### Changed
