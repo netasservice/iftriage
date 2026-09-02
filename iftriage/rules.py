@@ -1382,10 +1382,9 @@ def _member_case_verdict(
         member_errors,
         report_time,
     )
-    verdict.details.append(
-        f"member of port-channel {parent_portchannel}: the members listed are "
-        f"context; the verdict is for {case.interface} itself"
-    )
+    # No details line naming the bundle: this path is only reached with a
+    # member breakdown present, and the breakdown's own header already says
+    # the members are context and the verdict is this interface's own.
     verdict.member_findings = findings
     return verdict
 
@@ -1464,11 +1463,15 @@ def _portchannel_verdict(
         others = [name for name in culpable if name != primary_name]
         if others:
             details.append("other affected members: " + ", ".join(others))
-        details.append(f"bundle-level analysis: {bundle.reason}")
+        if bundle.reason != primary.reason:
+            # Only worth a line when the bundle view disagrees with the
+            # culpable member — identical text three times is noise.
+            details.append(f"bundle-level analysis: {bundle.reason}")
+        primary_summary = primary.reason.removeprefix(f"{primary.category.value} — ")
         return Verdict(
             primary.category,
             f"{primary.category.value} — port-channel {case.interface}: fault "
-            f"isolated to member {primary_name} — {primary.reason}",
+            f"isolated to member {primary_name} — {primary_summary}",
             details=details,
             member_findings=findings,
             confidence=_min_member_confidence(primary.confidence, member_verdicts),

@@ -1022,7 +1022,9 @@ def test_member_case_keeps_its_own_verdict_and_lists_siblings():
     assert verdict.category is VerdictCategory.IGNORE
     assert "Ethernet4/16" not in verdict.reason
     assert verdict.member_findings["Ethernet4/16"].startswith("PHYSICAL_MEDIA")
-    assert any("member of port-channel Po195" in d for d in verdict.details)
+    # With a member breakdown present, the breakdown's own header labels the
+    # relationship — the details line would say it twice.
+    assert not any("member of port-channel Po195" in d for d in verdict.details)
 
 
 def test_member_case_verdict_matches_the_plain_single_interface_path():

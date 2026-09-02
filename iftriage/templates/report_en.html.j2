@@ -52,16 +52,18 @@ If the counter advances again on a future run, the case reopens and is reclassif
 {%- set copper = 'baset' in media -%}
 {%- set fiber = r.stats and r.stats.dom_rx_power_dbm is not none -%}
 {%- set category = r.verdict.category.value -%}
+{%- set bundle_case = r.verdict.member_findings and not r.parent_portchannel -%}
+{%- set clear_target = 'the culpable member interface (the bundle aggregates its members)' if bundle_case else 'this interface' -%}
 {%- if category == 'PHYSICAL_MEDIA' -%}
 {%- if copper -%}
-<p class="muted"><strong>Next steps — non-disruptive:</strong> identify the attached device and its native speed; inspect the patch cord and the jack; correlate the error history with the interface resets. DOM is not implemented on this copper port — expected, not a finding.</p>
-<p class="muted"><strong>Disruptive, coordinate first:</strong> TDR (<code>test cable-diagnostics tdr</code>) on {{ r.case.interface }}; a manual counter clear on this interface and a repoll at 24&nbsp;h to establish a clean baseline.</p>
+<p class="muted"><strong>Next steps — non-disruptive:</strong> identify the attached device and its native speed; inspect the patch cord and the jack{% if r.stats and r.stats.interface_resets %}; correlate the error history with the interface resets{% endif %}. DOM is not implemented on this copper port — expected, not a finding.</p>
+<p class="muted"><strong>Disruptive, coordinate first:</strong> TDR (<code>test cable-diagnostics tdr</code>) on {{ r.case.interface }}; a manual counter clear on {{ clear_target }} and a repoll at 24&nbsp;h to establish a clean baseline.</p>
 {%- elif fiber -%}
 <p class="muted"><strong>Next steps — non-disruptive:</strong> inspect and clean the fiber connectors and patch panel; check the transceiver's DOM receive-power trend (this reading: {{ '%.1f'|format(r.stats.dom_rx_power_dbm) }} dBm — a single reading, not a trend); verify the optic is seated.</p>
 <p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear and a repoll at 24&nbsp;h; replace the transceiver if DOM stays out of range.</p>
 {%- else -%}
 <p class="muted"><strong>Next steps — non-disruptive:</strong> inspect the physical path.{% if media and not copper %} DOM could not be read from the transceiver output on this port — check it manually.{% endif %}</p>
-<p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear on this interface and a repoll at 24&nbsp;h.</p>
+<p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear on {{ clear_target }} and a repoll at 24&nbsp;h.</p>
 {%- endif -%}
 {%- elif category == 'LINK_NEGOTIATION' -%}
 {%- set phone = r.stats and ('phone' in (r.stats.neighbor_platform or '') | lower or (r.stats.neighbor_name or '').startswith('SEP')) -%}
@@ -197,7 +199,7 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
   {% if r.verdict %}{{ next_steps(r) }}{% endif %}
   {% if r.duplicate_of %}
   <p class="muted">Note: member of {{ r.duplicate_of }}, which is also in this
-  report — same physical issue counted twice.</p>
+  report — same underlying issue counted twice.</p>
   {% endif %}
   {% set judged_on_counters = r.stats and (not r.verdict or r.verdict.category != VerdictCategory.PARSE_ERROR) %}
   {% if judged_on_counters and r.baseline_taken_at %}

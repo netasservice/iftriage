@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   not at the jack). No new device commands; the allow-list is unchanged.
 
 ### Fixed
+- Report polish from the field audit: next steps no longer suggest
+  correlating with interface resets on a port that has none, and a
+  port-channel case's counter-clear step targets the culpable member (the
+  bundle only aggregates). The executive summary counts distinct issues when
+  port-channel duplicates are present; the duplicate note says "same
+  underlying issue" (an IGNORE discards pair is not a "physical issue"); and
+  a port-channel verdict no longer prints the same verdict string three
+  times (headline, member breakdown, and a bundle-analysis line that now
+  appears only when the bundle view disagrees).
 - Port-channel member samples now inherit the device-level fields (uptime,
   model, OS version) from their parent case: the member pass deliberately
   skips `show version`, which left members without a device clock — their
