@@ -772,35 +772,62 @@ def _receive_errors_verdict(
             return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "below_threshold")
 
         if zero_traffic:
-            return verdict(
-                VerdictCategory.PHYSICAL_MEDIA,
-                Confidence.HIGH,
-                "zero_traffic_errors",
-                extra_signals=[
-                    Signal(
-                        kind=SignalKind.ZERO_TRAFFIC_ERRORS,
-                        weight=Confidence.HIGH,
-                        values={
-                            "delta_input_errors": window.input_errors or 0,
-                            "errors_per_second": round(
-                                window.errors_per_second() or 0, 2
-                            ),
-                            "input_rate_pps": stats.input_rate_pps
-                            if stats.input_rate_pps is not None
-                            else -1,
-                            "last_input_minutes": round(
-                                stats.last_input_minutes
-                                if stats.last_input_minutes is not None
-                                else -1,
-                                1,
-                            ),
-                        },
-                        supports=VerdictCategory.PHYSICAL_MEDIA,
-                    ),
-                    *_unattributed_signals(stats),
-                    *_corroborating_signals(stats),
-                ],
-                what=what_media,
+            zero_traffic_values: dict[str, int | float | str] = {
+                "delta_input_errors": window.input_errors or 0,
+                "errors_per_second": round(window.errors_per_second() or 0, 2),
+                "input_rate_pps": stats.input_rate_pps
+                if stats.input_rate_pps is not None
+                else -1,
+                "last_input_minutes": round(
+                    stats.last_input_minutes
+                    if stats.last_input_minutes is not None
+                    else -1,
+                    1,
+                ),
+                "duplex": stats.duplex or "?",
+            }
+            # Errors without traffic place the fault at the link, but the link
+            # includes its negotiation: collision activity means the port is
+            # fighting its peer, and the collision-aware rungs below must
+            # decide between media and duplex — same guard as
+            # _media_dominance_verdict.
+            collision_activity = bool(stats.collisions) or bool(stats.late_collisions)
+            if not collision_activity:
+                if stats.collisions is None or stats.late_collisions is None:
+                    flags.append(
+                        DataQualityFlag(
+                            DataQualityKind.NULL_RULE_INPUT,
+                            {"fields": "collisions/late_collisions"},
+                        )
+                    )
+                return verdict(
+                    VerdictCategory.PHYSICAL_MEDIA,
+                    Confidence.HIGH,
+                    "zero_traffic_errors",
+                    extra_signals=[
+                        Signal(
+                            kind=SignalKind.ZERO_TRAFFIC_ERRORS,
+                            weight=Confidence.HIGH,
+                            values=zero_traffic_values,
+                            supports=VerdictCategory.PHYSICAL_MEDIA,
+                        ),
+                        *_unattributed_signals(stats),
+                        *_corroborating_signals(stats),
+                    ],
+                    what=what_media,
+                )
+            # Keep the observation as evidence for whichever rung wins, but
+            # without pre-judging the category.
+            signals.append(
+                Signal(
+                    kind=SignalKind.ZERO_TRAFFIC_ERRORS,
+                    weight=Confidence.MEDIUM,
+                    values={
+                        **zero_traffic_values,
+                        "collisions": stats.collisions or 0,
+                        "late_collisions": stats.late_collisions or 0,
+                    },
+                )
             )
 
         buffer_delta = buffer_group_delta(window)
@@ -1020,6 +1047,30 @@ def _link_negotiation_verdict(
                     kind=SignalKind.LATE_COLLISIONS_FULL_DUPLEX,
                     weight=Confidence.HIGH,
                     values={"late_collisions": late, "duplex": stats.duplex or "?"},
+                    supports=VerdictCategory.LINK_NEGOTIATION,
+                )
+            ],
+        )
+    neighbor_duplex = (stats.neighbor_duplex or "").lower()
+    if late and (neighbor_duplex.startswith("full") or stats.duplex_mismatch_logged):
+        # Half duplex here, full duplex reported by the peer (or the device
+        # logged the mismatch itself): the same confirmation the dedicated
+        # Late-Col rule uses, reachable from a receive-error case.
+        return verdict(
+            VerdictCategory.LINK_NEGOTIATION,
+            Confidence.HIGH,
+            "duplex_mismatch_confirmed",
+            extra_signals=[
+                Signal(
+                    kind=SignalKind.LATE_COLLISIONS_FULL_DUPLEX,
+                    weight=Confidence.HIGH,
+                    values={
+                        "late_collisions": late,
+                        "duplex": stats.duplex or "?",
+                        "neighbor_duplex": stats.neighbor_duplex or "?",
+                        "neighbor_name": stats.neighbor_name or "?",
+                        "mismatch_logged": str(bool(stats.duplex_mismatch_logged)),
+                    },
                     supports=VerdictCategory.LINK_NEGOTIATION,
                 )
             ],
