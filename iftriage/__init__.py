@@ -1,3 +1,3 @@
 """iftriage — read-only interface error triage for Splunk top-N delta reports."""
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
