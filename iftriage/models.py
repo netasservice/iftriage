@@ -56,6 +56,7 @@ class SignalKind(StrEnum):
     LATE_COLLISIONS_FULL_DUPLEX = "late_collisions_full_duplex"
     GIANTS_WITH_MTU_MISMATCH = "giants_with_mtu_mismatch"
     SPEED_BELOW_CAPABILITY = "speed_below_capability"
+    RELIABILITY_DEGRADED = "reliability_degraded"
     BYTES_PER_FRAME_ABOVE_MTU = "bytes_per_frame_above_mtu"
     DOM_RX_OUT_OF_RANGE = "dom_rx_out_of_range"
     ZERO_DELTA_NONZERO_LIFETIME = "zero_delta_nonzero_lifetime"
@@ -177,6 +178,13 @@ class NormalizedInterfaceStats:
     collisions: int | None = None
     output_errors: int | None = None
     interface_resets: int | None = None
+    # Device-computed health/load averages ("reliability 132/255,
+    # txload 1/255, rxload 6/255"). Reliability is the device's own
+    # error-weighted exponential average: 255/255 is healthy, anything lower
+    # is the device itself reporting degradation.
+    reliability: int | None = None
+    txload: int | None = None
+    rxload: int | None = None
     # Device-reported load-interval rates. The interval length matters as much
     # as the value ("30 seconds" vs "5 minute"), so it travels alongside.
     input_rate_pps: int | None = None
@@ -196,6 +204,14 @@ class NormalizedInterfaceStats:
     neighbor_name: str | None = None
     neighbor_port: str | None = None
     neighbor_duplex: str | None = None
+    # CDP "Platform:" string ("Cisco IP Phone 8841", "cisco C9500-32C") —
+    # remediation language depends on WHAT is at the far end: a managed
+    # phone's duplex is fixed in the call manager, not at the jack.
+    neighbor_platform: str | None = None
+    # NX-OS vPC membership ("vPC Status: Up, vPC number: 214"): a healthy
+    # peer leg means member-level remediation can be hitless.
+    vpc_status: str | None = None
+    vpc_number: int | None = None
     port_channel_members: dict[str, list[str]] | None = (
         None  # Po name -> member interfaces
     )

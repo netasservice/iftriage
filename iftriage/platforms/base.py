@@ -312,6 +312,25 @@ def parse_cpu_from_idle(raw: str) -> dict:
     return {}
 
 
+_RELIABILITY_RE = re.compile(
+    r"reliability\s+(\d+)/255,\s*txload\s+(\d+)/255,\s*rxload\s+(\d+)/255"
+)
+
+
+def parse_reliability_loads(raw: str) -> dict:
+    """The device-computed reliability/txload/rxload triple (IOS-XE and
+    NX-OS print the same line). 255/255 is healthy; a lower reliability is
+    the device's own error-weighted average reporting degradation."""
+    match = _RELIABILITY_RE.search(raw)
+    if not match:
+        return {}
+    return {
+        "reliability": int(match.group(1)),
+        "txload": int(match.group(2)),
+        "rxload": int(match.group(3)),
+    }
+
+
 def parse_cdp_neighbor_detail(raw: str) -> dict:
     """Extract neighbor identity from CDP/LLDP detail output."""
     result: dict = {}
@@ -330,6 +349,9 @@ def parse_cdp_neighbor_detail(raw: str) -> dict:
     match = re.search(r"Duplex(?: Mode)?:\s*(\S+)", raw, re.IGNORECASE)
     if match:
         result["neighbor_duplex"] = match.group(1).strip().lower()
+    match = re.search(r"^Platform:\s*([^,\n]+)", raw, re.MULTILINE)
+    if match:
+        result["neighbor_platform"] = match.group(1).strip()
     return result
 
 

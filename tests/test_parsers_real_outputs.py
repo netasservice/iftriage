@@ -78,6 +78,7 @@ def test_real_ios_xe_cdp_phone_with_mismatch_flag():
     assert parsed["neighbor_name"] == "SEP001122AABB99"
     assert parsed["neighbor_port"] == "Port 1"  # CDP port ids can have spaces
     assert parsed["neighbor_duplex"] == "full"
+    assert parsed["neighbor_platform"] == "Cisco IP Phone 8841"
 
 
 def test_real_ios_xe_empty_etherchannel_summary():
@@ -141,6 +142,10 @@ def test_real_nxos_show_interface_po21():
     assert parsed["discards_in"] == 177631552
     assert parsed["discards_out"] == 20655
     assert parsed["late_collisions"] == 0
+    assert parsed["vpc_status"] == "Up"
+    assert parsed["vpc_number"] == 21
+    assert parsed["reliability"] == 255
+    assert parsed["rxload"] == 87
 
 
 def test_real_nxos_counters_po21_includes_indiscards_block():

@@ -405,6 +405,33 @@ def test_unattributed_rx_dominant_is_physical_high():
     )
 
 
+def test_degraded_reliability_is_corroborating_evidence():
+    # reliability 132/255 is the device's own error-weighted average saying
+    # half the traffic is bad — the best free corroboration there is.
+    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    climbing = make_stats(
+        input_errors=5_600,
+        crc_errors=5_600,
+        input_packets=1_100_000,
+        reliability=132,
+    )
+    verdict = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert SignalKind.RELIABILITY_DEGRADED in signal_kinds(verdict)
+
+
+def test_healthy_reliability_emits_no_signal():
+    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    climbing = make_stats(
+        input_errors=5_600,
+        crc_errors=5_600,
+        input_packets=1_100_000,
+        reliability=255,
+    )
+    verdict = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
+    assert SignalKind.RELIABILITY_DEGRADED not in signal_kinds(verdict)
+
+
 def test_reconciliation_residual_above_one_percent_caps_low():
     # input_errors != runts + rcv_err by 5%.
     current = make_stats(

@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- The canonical model and parsers now capture three pieces of context the
+  devices were already printing: the device-computed
+  `reliability x/255` triple (with txload/rxload; a value below 255 becomes
+  corroborating evidence — the device's own error-weighted average reporting
+  degradation), NX-OS vPC membership (`vPC Status/number` — actionable
+  verdicts on a healthy vPC now say member-level remediation can be hitless
+  and point at the peer leg), and the CDP neighbor `Platform:` string (a
+  duplex mismatch against a managed IP phone now says the fix lives in CUCM,
+  not at the jack). No new device commands; the allow-list is unchanged.
+
 ### Fixed
 - The unattributed receive-error residual (the symbol-corruption proxy) now
   subtracts every congestion-side bucket the platform reports (overrun,

@@ -11,8 +11,10 @@ FCS errors are {{ '%.1f'|format(100 * s.values.fcs_fraction) }}% of input errors
 {% if s.values.buffer_group is defined %}Overrun/ignored/no-buffer/input-queue drops account for {{ '{:,}'.format(s.values.buffer_group) }} of {{ '{:,}'.format(s.values.input_errors) }} input errors in the window: congestion, not media.{% else %}{{ '{:,}'.format(s.values.discards) }} {{ s.values.direction }} discards at meaningful rate: frames arrived intact and were dropped (oversubscription, policer, or ring sizing), not media.{% endif %}
 {%- elif s.kind.value == 'discards_without_congestion_signature' -%}
 {{ '{:,}'.format(s.values.discards) }} {{ s.values.direction }} discards at meaningful rate with no buffer-pressure signature (overrun/ignored/no-buffer flat): consistent with policy drops (unallowed VLAN, ACL, storm-control), not congestion.
+{%- elif s.kind.value == 'reliability_degraded' -%}
+Interface reliability {{ s.values.reliability }}/255: the device's own error-weighted average reports the link as degraded (255/255 is healthy).
 {%- elif s.kind.value == 'late_collisions_full_duplex' -%}
-{{ '{:,}'.format(s.values.late_collisions) }} late collisions on a {{ s.values.duplex }}-duplex link{% if s.values.neighbor_duplex is defined and s.values.neighbor_duplex not in ('?', '') %} (neighbor {{ s.values.neighbor_name }} reports {{ s.values.neighbor_duplex }}){% endif %}: negotiation/duplex mismatch, fixed via CLI.
+{{ '{:,}'.format(s.values.late_collisions) }} late collisions on a {{ s.values.duplex }}-duplex link{% if s.values.neighbor_duplex is defined and s.values.neighbor_duplex not in ('?', '') %} (neighbor {{ s.values.neighbor_name }}{% if s.values.neighbor_platform is defined and s.values.neighbor_platform not in ('?', '') %}, {{ s.values.neighbor_platform }},{% endif %} reports {{ s.values.neighbor_duplex }}){% endif %}: negotiation/duplex mismatch, fixed via CLI.
 {%- elif s.kind.value == 'giants_with_mtu_mismatch' -%}
 Giants dominate ({{ '{:,}'.format(s.values.giants) }}, local MTU {{ s.values.mtu }}): consistent with an MTU mismatch between ends; far-end MTU unknown.
 {%- elif s.kind.value == 'speed_below_capability' -%}
@@ -61,8 +63,11 @@ If the counter advances again on a future run, the case reopens and is reclassif
     a repoll at 24 h.
 {%- endif -%}
 {%- elif category == 'LINK_NEGOTIATION' -%}
+{%- set phone = r.stats and ('phone' in (r.stats.neighbor_platform or '') | lower or (r.stats.neighbor_name or '').startswith('SEP')) -%}
   Next steps: fix via CLI — align speed/duplex (and MTU where giants
-    dominate) on both ends. Not a media dispatch.
+    dominate) on both ends.{% if phone %} The endpoint is a managed IP phone: its
+    speed/duplex is set from the call manager (CUCM), not at the jack.{% endif %} Not a
+    media dispatch.
 {%- elif category == 'CONGESTION_BUFFER' -%}
 {%- set policy = r.verdict.signals | selectattr('kind.value', 'equalto', 'discards_without_congestion_signature') | list -%}
 {% if policy %}  Next steps: check the port's policy first — trunk allowed VLANs, ACL hit
@@ -75,6 +80,12 @@ If the counter advances again on a future run, the case reopens and is reclassif
   Next steps: coordinate a manual counter clear, then requeue for a future
     run. Do not dispatch anyone.
 {%- endif -%}
+{%- if r.stats and r.stats.vpc_status and r.stats.vpc_status | lower == 'up' and category in ('PHYSICAL_MEDIA', 'LINK_NEGOTIATION', 'CONGESTION_BUFFER') %}
+  This port serves vPC {{ r.stats.vpc_number }} and the vPC is up: the peer switch
+    carries a leg to the same host, so member-level remediation can be
+    hitless — verify the peer leg is healthy first, and check it for the
+    same errors.
+{%- endif %}
 {%- endmacro -%}
 {%- macro dq_text(f) -%}
 {%- if f.kind.value == 'stale_poll_timestamp' -%}

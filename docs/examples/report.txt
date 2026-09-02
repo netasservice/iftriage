@@ -58,7 +58,7 @@ Next steps — non-disruptive: inspect and clean the fiber connectors and
 [LINK_NEGOTIATION — confidence HIGH] sw-acc-02 Gi3/0/20 (Late-Col)
   LINK_NEGOTIATION — confidence HIGH (duplex_mismatch_confirmed).
   Evidence:
-    - 38,449,023 late collisions on a half-duplex link (neighbor SEP001122AABB99 reports full): negotiation/duplex mismatch, fixed via CLI.
+    - 38,449,023 late collisions on a half-duplex link (neighbor SEP001122AABB99, Cisco IP Phone 8841, reports full): negotiation/duplex mismatch, fixed via CLI.
   Delta (iftriage, run-to-run): 3,096 over 18.0 h (host-side timestamps)
   Delta (CSV, Splunk window): -154,073
   Error rate: 0.05/s (172/h)
@@ -67,7 +67,9 @@ Next steps — non-disruptive: inspect and clean the fiber connectors and
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 41.9 h old at report time; its rates describe that period.
 Next steps: fix via CLI — align speed/duplex (and MTU where giants
-    dominate) on both ends. Not a media dispatch.
+    dominate) on both ends. The endpoint is a managed IP phone: its
+    speed/duplex is set from the call manager (CUCM), not at the jack. Not a
+    media dispatch.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Data-quality flags: negative_delta
 --------------------------------------------------------------------------------

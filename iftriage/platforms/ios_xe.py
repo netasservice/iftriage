@@ -14,6 +14,7 @@ from .base import (
     parse_flap_count,
     parse_last_clearing,
     parse_portchannel_summary,
+    parse_reliability_loads,
     parse_uptime_minutes,
     register,
 )
@@ -125,6 +126,7 @@ def _parse_show_interfaces(raw: str) -> dict:
             if minutes is not None:
                 result["last_input_minutes"] = minutes
     result.update(parse_last_clearing(raw))
+    result.update(parse_reliability_loads(raw))
     return result
 
 

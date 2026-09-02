@@ -234,6 +234,15 @@ def _corroborating_signals(
                 supports=VerdictCategory.PHYSICAL_MEDIA,
             )
         )
+    if stats.reliability is not None and stats.reliability < 255:
+        signals.append(
+            Signal(
+                kind=SignalKind.RELIABILITY_DEGRADED,
+                weight=Confidence.LOW,
+                values={"reliability": stats.reliability},
+                supports=VerdictCategory.PHYSICAL_MEDIA,
+            )
+        )
     # `is True`: None means the average or the MTU was unknowable, which is
     # not the same claim as "within MTU".
     if include_bytes_per_frame and bytes_per_frame_exceeds_mtu(stats) is True:
@@ -629,6 +638,7 @@ def _late_collisions_verdict(
             "duplex": stats.duplex or "?",
             "neighbor_duplex": stats.neighbor_duplex or "?",
             "neighbor_name": stats.neighbor_name or "?",
+            "neighbor_platform": stats.neighbor_platform or "?",
             "mismatch_logged": str(mismatch_logged),
         },
         supports=VerdictCategory.LINK_NEGOTIATION,
@@ -1167,6 +1177,7 @@ def _link_negotiation_verdict(
                         "duplex": stats.duplex or "?",
                         "neighbor_duplex": stats.neighbor_duplex or "?",
                         "neighbor_name": stats.neighbor_name or "?",
+                        "neighbor_platform": stats.neighbor_platform or "?",
                         "mismatch_logged": str(bool(stats.duplex_mismatch_logged)),
                     },
                     supports=VerdictCategory.LINK_NEGOTIATION,
