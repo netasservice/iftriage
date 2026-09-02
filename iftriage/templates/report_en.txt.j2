@@ -202,7 +202,18 @@ CASES
 {% if r.case.dq_flags %}
   Data-quality flags: {{ r.case.dq_flags | join(', ') }}
 {% endif %}
+{% if r.baseline_raw_outputs %}
+  Raw evidence — two collections, older first:
+{% set extra_keys = r.baseline_raw_outputs | reject('in', r.raw_outputs) | list %}
+{% for key in (r.raw_outputs | list) + extra_keys %}
+    -- {{ key }} @ {% if r.baseline_taken_at %}{{ r.baseline_taken_at.strftime('%Y-%m-%d %H:%M UTC') }}{% else %}earlier collection{% endif %}{% if r.baseline_run_id %} (run #{{ r.baseline_run_id }}){% endif %}:
+{{ r.baseline_raw_outputs.get(key, '(not captured in this collection)') }}
+    -- {{ key }} @ current collection:
+{{ r.raw_outputs.get(key, '(not captured in this collection)') }}
+{% endfor %}
+{% endif %}
 {% endfor %}
 --------------------------------------------------------------------------------
-iftriage is a read-only diagnostic tool. Raw evidence for each case is embedded
-in the HTML report; {% if meta.from_history %}no command was sent — this report was rebuilt from stored data.{% else %}every command sent is recorded in the session audit log.{% endif %}
+iftriage is a read-only diagnostic tool. Cases compared across two collections
+carry both raw outputs above; the full raw evidence is embedded in the HTML
+report. {% if meta.from_history %}No command was sent — this report was rebuilt from stored data.{% else %}Every command sent is recorded in the session audit log.{% endif %}

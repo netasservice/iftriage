@@ -376,7 +376,9 @@ def _from_history(args, config, cases, findings, output_dir) -> int:
         loaded = load_stored(cases, history)
         selection = select_previous(loaded, history, config.baseline)
         use_pairs = _decide_replay_pairing(args, selection)
-        results, source = build_results(loaded, selection if use_pairs else None)
+        results, source = build_results(
+            loaded, selection if use_pairs else None, history=history
+        )
         _evaluate_all(results, config, history)
     except (ReplayError, HistoryError) as exc:
         print(f"error: {exc}", file=sys.stderr)

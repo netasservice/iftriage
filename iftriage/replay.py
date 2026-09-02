@@ -162,6 +162,7 @@ def select_previous(
 def build_results(
     loaded: list[tuple[InterfaceCase, StoredCase]],
     selection: PreviousSelection | None = None,
+    history: History | None = None,
 ) -> tuple[list[CaseResult], ReplaySource]:
     """Faithful replay of the newest collections; when a selection is given,
     the older collection of each paired case becomes its baseline — replacing
@@ -190,6 +191,7 @@ def build_results(
                     for name in result.member_stats
                     if name in older.member_stats
                 }
+                result.baseline_raw_outputs = older.raw_outputs
                 run_ids.add(older.run_id)
                 stamps.add(older.run_started_at)
             elif result.baseline_stats is None:
@@ -197,6 +199,18 @@ def build_results(
                 # carry the reason. A row with a live baseline keeps it and
                 # the report describes that comparison truthfully.
                 result.baseline_note = selection.notes.get(key)
+        if (
+            not result.baseline_raw_outputs
+            and result.baseline_run_id is not None
+            and result.baseline_stats is not None
+            and history is not None
+        ):
+            # Faithful replay of a live-baselined run: the baseline's raws
+            # live in the baseline run's own row. {} degrades to the
+            # single-column evidence block.
+            result.baseline_raw_outputs = history.raw_outputs_for(
+                result.baseline_run_id, case.switch, case.interface, case.counter
+            )
         results.append(result)
     return results, ReplaySource(sorted(run_ids), sorted(stamps))
 
@@ -205,4 +219,4 @@ def load_results(
     cases: list[InterfaceCase], history: History
 ) -> tuple[list[CaseResult], ReplaySource]:
     """Faithful single-collection replay: newest stored row per case."""
-    return build_results(load_stored(cases, history))
+    return build_results(load_stored(cases, history), history=history)

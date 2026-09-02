@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Side-by-side raw evidence: whenever a report rests on two collections (a
+  live run with a baseline, or a two-collection replay), the HTML report
+  renders both raw outputs of every command in two aligned columns — older
+  left, newer right, per-command, with placeholders when a side lacks a
+  command so rows never shift — and the text report carries the same
+  comparison as sequential blocks, older first. The earlier raws are read
+  from the baseline run's own stored row: no schema change, nothing new
+  persisted.
 - `--from-history` can now build the report from the latest TWO stored
   collections: when a second-newest replayable collection exists per case and
   its spacing from the newest respects the `baseline` window (the gap between

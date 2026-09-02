@@ -304,6 +304,9 @@ class CaseResult:
     baseline_taken_at: datetime | None = None
     baseline_run_id: int | None = None
     raw_outputs: dict[str, str] = field(default_factory=dict)
+    # Raw command output of the EARLIER collection, keyed like raw_outputs,
+    # so the report can place the two samples of each command side by side.
+    baseline_raw_outputs: dict[str, str] = field(default_factory=dict)
     collection_error: str | None = None  # unreachable / auth failed / timeout / aborted
     # Why this case has no delta: nothing stored, too recent, too old, or the
     # stored sample was discarded. Reported per case so an un-compared

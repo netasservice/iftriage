@@ -328,3 +328,64 @@ def test_a_previous_collection_older_than_the_maximum_window_is_refused(tmp_path
     assert selection.matched == 0
     assert all("comparison window" in note for note in selection.notes.values())
     history.close()
+
+
+def test_two_run_replay_carries_the_older_collections_raws(tmp_path):
+    from iftriage.config import BaselineSettings
+    from iftriage.replay import build_results, load_stored, select_previous
+
+    db = tmp_path / "h.db"
+    history = History(db)
+    cases = _cases()
+    first = _seed_run(history, cases, crc=21)
+    _shift_run(db, first, hours_ago=18)
+    _seed_run(history, cases, crc=42)
+
+    loaded = load_stored(cases, history)
+    selection = select_previous(loaded, history, BaselineSettings())
+    results, _ = build_results(loaded, selection, history=history)
+    # _collected stores the same raw dict in both runs; the point is that the
+    # baseline side is populated from the OLDER run's row.
+    assert results[0].baseline_raw_outputs == {
+        "interface": "GigabitEthernet3/0/20 is up ..."
+    }
+    history.close()
+
+
+def test_replaying_a_baselined_run_restores_the_earlier_raws(tmp_path):
+    # The stored row names baseline_run_id; the raws live in that run's own
+    # row and are recovered through raw_outputs_for.
+    db = tmp_path / "h.db"
+    history = History(db)
+    cases = _cases()
+    first = _seed_run(history, cases, crc=21)
+    _shift_run(db, first, hours_ago=18)
+    run2, _ = history.start_run("x.csv")
+    results = []
+    for case in cases:
+        result = _collected(case)
+        result.baseline_run_id = first  # as a live-baselined run stores it
+        results.append(result)
+    history.save_results(run2, results)
+
+    replayed, _ = load_results(cases, history)
+    assert replayed[0].baseline_raw_outputs == {
+        "interface": "GigabitEthernet3/0/20 is up ..."
+    }
+    history.close()
+
+
+def test_a_missing_baseline_row_degrades_to_single_column_evidence(tmp_path):
+    history = History(tmp_path / "h.db")
+    cases = _cases()
+    run_id, _ = history.start_run("x.csv")
+    results = []
+    for case in cases:
+        result = _collected(case)
+        result.baseline_run_id = 999  # a run this database never saw
+        results.append(result)
+    history.save_results(run_id, results)
+
+    replayed, _ = load_results(cases, history)
+    assert replayed[0].baseline_raw_outputs == {}
+    history.close()

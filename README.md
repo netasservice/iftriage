@@ -349,6 +349,14 @@ replaces any baseline the newest run stored live — the operator asked for
 these two collections, and the per-case provenance line names the run the
 comparison came from. Nothing is written back to the database either way.
 
+**Raw evidence, side by side.** Whenever a report rests on two collections —
+a live run that accepted a baseline, or a two-collection replay — the HTML
+report renders both raw outputs of every command in two columns, the older on
+the left and the newer on the right, aligned per command so eyeballing what
+changed needs no scrolling back and forth; the text report carries the same
+comparison as sequential blocks (older first, labeled with its timestamp and
+run number).
+
 Credentials are resolved per value, first match wins:
 
 | Credential | 1st | 2nd | 3rd |

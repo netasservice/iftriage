@@ -156,7 +156,10 @@ every case ingested at step 1 with its newest stored collection — and, on
 request (`--baseline`, or a yes at the interactive offer), with its
 second-newest as the baseline, when the two collections' spacing respects the
 configured comparison window — and hands the rebuilt `CaseResult`s straight
-to step 8. Analysis re-runs in full, so a rules
+to step 8. When a report rests on two collections (a live baseline or a
+two-collection replay), the earlier sample's raw command output rides along —
+read from the baseline run's own row — so the report can render both samples
+of each command side by side. Analysis re-runs in full, so a rules
 or threshold change is visible; collection does not happen at all. Nothing is
 recorded — no run row, and no second archive of the CSV, which would inflate
 every recurrence count. A case with no

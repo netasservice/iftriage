@@ -126,6 +126,12 @@ The CSV `_time` column carries no timezone; UTC was assumed.
   .v-UNVERIFIED           { background: #ececec; color: #555; }
   .v-PARSE_ERROR          { background: #f3e3fd; color: #5d1d8f; }
   details { margin-top: 0.6em; }
+  .rawgrid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.6em;
+             align-items: start; }
+  /* grid items default to min-width auto, which defeats pre's overflow-x */
+  .rawgrid pre { min-width: 0; margin: 0.2em 0 0.6em 0; }
+  .rawhead { font-weight: 600; }
+  .rawmissing { color: #99a; font-style: italic; }
   pre { background: #0f1720; color: #d8e1ea; padding: 0.8em; border-radius: 6px;
         overflow-x: auto; font-size: 0.8em; }
   .muted { color: #667; font-size: 0.9em; }
@@ -232,13 +238,30 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
   {% if r.verdict and r.verdict.details %}
   <p class="muted">{{ r.verdict.details | join(' · ') }}</p>
   {% endif %}
-  {% if r.raw_outputs %}
+  {% if r.raw_outputs or r.baseline_raw_outputs %}
+  {% if r.baseline_raw_outputs %}
+  {% set extra_keys = r.baseline_raw_outputs | reject('in', r.raw_outputs) | list %}
+  {% set raw_keys = (r.raw_outputs | list) + extra_keys %}
+  <details><summary>Raw evidence — two collections, side by side ({{ raw_keys | length }} commands)</summary>
+    <div class="rawgrid">
+      <p class="muted rawhead">Earlier{% if r.baseline_taken_at %} — {{ r.baseline_taken_at.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}{% if r.baseline_run_id %} (run #{{ r.baseline_run_id }}){% endif %}</p>
+      <p class="muted rawhead">Current{% if r.stats and r.stats.collected_at %} — {{ r.stats.collected_at.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}</p>
+      {% for key in raw_keys %}
+      <p class="muted">{{ key }}</p>
+      <p class="muted">{{ key }}</p>
+      {% if key in r.baseline_raw_outputs %}<pre>{{ r.baseline_raw_outputs[key] }}</pre>{% else %}<p class="rawmissing">not captured in this collection</p>{% endif %}
+      {% if key in r.raw_outputs %}<pre>{{ r.raw_outputs[key] }}</pre>{% else %}<p class="rawmissing">not captured in this collection</p>{% endif %}
+      {% endfor %}
+    </div>
+  </details>
+  {% else %}
   <details><summary>Raw evidence ({{ r.raw_outputs | length }} commands)</summary>
     {% for key, raw in r.raw_outputs.items() %}
     <p class="muted">{{ key }}</p>
     <pre>{{ raw }}</pre>
     {% endfor %}
   </details>
+  {% endif %}
   {% endif %}
 </div>
 {% endfor %}

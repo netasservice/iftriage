@@ -565,3 +565,58 @@ def test_verdict_json_column_is_added_to_an_existing_database(tmp_path):
     ).fetchone()
     assert row is not None  # column exists on the migrated table
     history.close()
+
+
+# ---- side-by-side raw evidence ---------------------------------------------
+
+
+def _rendered(tmp_path, results):
+    cases, findings = ingest_csv(FIXTURES / "sample_top20.csv")
+    meta = {"csv_file": "x.csv", "baseline": {"matched": 0, "total": len(results)}}
+    paths = render_report(results, findings, meta, "report_en", tmp_path)
+    return paths["html"].read_text(), paths["txt"].read_text()
+
+
+def _two_collection_result():
+    cases, _ = ingest_csv(FIXTURES / "sample_top20.csv")
+    case = next(c for c in cases if not c.excluded)
+    result = CaseResult(case=case)
+    result.stats = NormalizedInterfaceStats(
+        link_status="up",
+        collected_at=datetime(2026, 8, 30, 12, 0, tzinfo=UTC),
+    )
+    result.verdict = Verdict(VerdictCategory.IGNORE, "IGNORE — clean.")
+    result.baseline_taken_at = datetime(2026, 8, 29, 14, 2, tzinfo=UTC)
+    result.baseline_run_id = 7
+    result.raw_outputs = {
+        "interface": "CURRENT interface text",
+        "counters": "CURRENT counters text",
+    }
+    result.baseline_raw_outputs = {
+        "interface": "EARLIER interface text",
+        "logging": "EARLIER logging text",
+    }
+    return result
+
+
+def test_side_by_side_raw_evidence_renders_when_two_collections_exist(tmp_path):
+    html, txt = _rendered(tmp_path, [_two_collection_result()])
+    assert 'class="rawgrid"' in html
+    assert "Earlier — 2026-08-29 14:02 UTC (run #7)" in html
+    assert "Current — 2026-08-30 12:00 UTC" in html
+    assert "EARLIER interface text" in html and "CURRENT interface text" in html
+    # A command captured on only one side renders a placeholder, so the rows
+    # of the two columns never shift out of alignment.
+    assert "not captured in this collection" in html
+    # Text report: sequential blocks, older labeled and first.
+    assert "Raw evidence — two collections, older first:" in txt
+    assert txt.index("EARLIER interface text") < txt.index("CURRENT interface text")
+
+
+def test_single_collection_keeps_the_original_raw_block(tmp_path):
+    result = _two_collection_result()
+    result.baseline_raw_outputs = {}
+    html, txt = _rendered(tmp_path, [result])
+    assert 'class="rawgrid"' not in html
+    assert "Raw evidence (2 commands)" in html
+    assert "Raw evidence — two collections, older first:" not in txt
