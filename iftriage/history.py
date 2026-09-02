@@ -44,6 +44,18 @@ from .models import (
 # verdict's confidence instead of faking a value.
 REPLAY_SCHEMA = 3
 
+# The one column list that rebuilds a StoredCase; both case-result readers
+# share it so their SELECTs and _stored_case's positional mapping cannot
+# drift apart.
+_STORED_CASE_SELECT = (
+    "SELECT r.id, r.started_at, c.platform, c.canonical_interface, "
+    "c.stats_json, c.baseline_stats_json, c.baseline_minutes, "
+    "c.raw_outputs_json, c.collection_error, c.parse_errors_json, "
+    "c.parent_portchannel, c.baseline_note, c.members_json, "
+    "c.baseline_taken_at, c.baseline_run_id "
+    "FROM case_results AS c JOIN runs AS r ON r.id = c.run_id "
+)
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS ingests (
     id INTEGER PRIMARY KEY,
@@ -495,20 +507,51 @@ class History:
         missing fields the verdict depends on, and reusing them would look like
         a faithful replay while quietly answering a different question.
         """
+        return self._one_stored_case(
+            _STORED_CASE_SELECT + "WHERE c.switch=? AND c.interface=? AND c.counter=? "
+            "AND r.replay_schema >= ? "
+            "ORDER BY c.run_id DESC, c.rowid DESC LIMIT 1",
+            (switch, interface, counter, REPLAY_SCHEMA),
+            switch,
+            interface,
+            counter,
+        )
+
+    def previous_case_result(
+        self, switch: str, interface: str, counter: str, before_run_id: int
+    ) -> StoredCase | None:
+        """Newest replayable collection stored for one CSV case in a run
+        STRICTLY EARLIER than `before_run_id` — the second observation a
+        two-run replay pairs with the latest one.
+
+        Strictly-earlier by run id, not LIMIT 2 on the latest query:
+        duplicate CSV rows write two case_results rows in the same run, and
+        the second of those is the same collection, not an earlier one.
+        Unlike `latest_sample`, the replay-schema filter applies: this row
+        supplies member stats and raw evidence rendered as first-class report
+        content, so a pre-v2 row cannot honestly stand in.
+        """
+        return self._one_stored_case(
+            _STORED_CASE_SELECT + "WHERE c.switch=? AND c.interface=? AND c.counter=? "
+            "AND r.replay_schema >= ? AND c.run_id < ? "
+            "ORDER BY c.run_id DESC, c.rowid DESC LIMIT 1",
+            (switch, interface, counter, REPLAY_SCHEMA, before_run_id),
+            switch,
+            interface,
+            counter,
+        )
+
+    def _one_stored_case(
+        self,
+        sql: str,
+        params: tuple,
+        switch: str,
+        interface: str,
+        counter: str,
+    ) -> StoredCase | None:
         try:
             with self._lock:
-                cur = self._conn.execute(
-                    "SELECT r.id, r.started_at, c.platform, c.canonical_interface, "
-                    "c.stats_json, c.baseline_stats_json, c.baseline_minutes, "
-                    "c.raw_outputs_json, c.collection_error, c.parse_errors_json, "
-                    "c.parent_portchannel, c.baseline_note, c.members_json, "
-                    "c.baseline_taken_at, c.baseline_run_id "
-                    "FROM case_results AS c JOIN runs AS r ON r.id = c.run_id "
-                    "WHERE c.switch=? AND c.interface=? AND c.counter=? "
-                    "AND r.replay_schema >= ? "
-                    "ORDER BY c.run_id DESC, c.rowid DESC LIMIT 1",
-                    (switch, interface, counter, REPLAY_SCHEMA),
-                )
+                cur = self._conn.execute(sql, params)
                 row = cur.fetchone()
         except sqlite3.Error as exc:
             raise HistoryError(f"could not read {self.path}: {exc}") from exc

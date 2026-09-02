@@ -323,9 +323,31 @@ was collected, since nothing stops you from rebuilding week-old data.
 
 The whole CSV is answered or nothing is: if any row has no stored collection —
 a new interface, a different CSV, or a database written before 0.6.0 — the
-command exits 2 and names the rows to collect. `--baseline`, `--no-baseline`
-and `--user` are ignored (a note says so); `--dry-run` is rejected as
-contradictory.
+command exits 2 and names the rows to collect. `--user` is ignored (a note
+says so); `--dry-run` is rejected as contradictory.
+
+**Replaying the last two collections.** When the database also holds, per
+case, a second-newest replayable collection whose spacing from the newest
+respects the `baseline.min_window_minutes` .. `baseline.max_window_days`
+window (the *spacing between the two collections* — both may be a month old,
+only their gap matters), `--from-history` offers to build the report from the
+latest TWO collections, the older acting as the baseline:
+
+```bash
+iftriage run top20.csv --from-history                 # asks when pairs exist
+iftriage run top20.csv --from-history --baseline      # pair without asking
+iftriage run top20.csv --from-history --no-baseline   # latest collection only
+```
+
+The same flags answer the same question they answer on a live run, and the
+same philosophy applies: without a flag and without a terminal, the answer is
+no — the latest collection is replayed faithfully. Partial coverage is
+normal: cases with no eligible previous collection (never collected twice,
+too close, too old, or stored by a pre-v2 run) fall back to their faithful
+single replay, with a per-case note saying why. Pairing deliberately
+replaces any baseline the newest run stored live — the operator asked for
+these two collections, and the per-case provenance line names the run the
+comparison came from. Nothing is written back to the database either way.
 
 Credentials are resolved per value, first match wins:
 

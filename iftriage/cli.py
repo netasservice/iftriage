@@ -26,7 +26,13 @@ from .models import Credentials, Platform, VerdictCategory
 from .normalize import is_portchannel_name
 from .platforms import get_profile
 from .platforms.base import PORTCHANNEL_KEY
-from .replay import ReplayError, load_results
+from .replay import (
+    PreviousSelection,
+    ReplayError,
+    build_results,
+    load_stored,
+    select_previous,
+)
 from .report import build_summary, render_report
 from .rules import evaluate_case, format_window
 from .session import AuditLog
@@ -49,12 +55,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--baseline",
         action="store_true",
         help="Compare each interface against the newest earlier sample stored "
-        "for it, without asking (default when a terminal answers yes).",
+        "for it, without asking (default when a terminal answers yes). With "
+        "--from-history: build the report from the latest TWO stored "
+        "collections, the older acting as the baseline.",
     )
     baseline.add_argument(
         "--no-baseline",
         action="store_true",
-        help="Judge on this run's single sample only; ignore stored samples.",
+        help="Judge on this run's single sample only; ignore stored samples. "
+        "With --from-history: replay the latest stored collection only.",
     )
     run.add_argument(
         "--dry-run",
@@ -315,6 +324,33 @@ def _render_and_print(results, findings, meta, config, output_dir) -> None:
     print(f"Report (CSV):  {paths['csv']}")
 
 
+def _decide_replay_pairing(args, selection: PreviousSelection) -> bool:
+    """Whether --from-history should pair each case with its second-newest
+    stored collection. Mirrors _decide_baselines: flags answer up front, an
+    interactive terminal is asked, and a run nobody is watching replays the
+    latest collection only — a pairing is never applied silently."""
+    if args.no_baseline:
+        print("Replaying the latest stored collection only.")
+        return False
+    if selection.matched == 0:
+        print(
+            "No eligible previous collection stored for any of these cases; "
+            "replaying the latest collection only."
+        )
+        return False
+    print(
+        f"A previous stored collection exists for {selection.matched} of "
+        f"{selection.total_cases} case(s)."
+    )
+    if args.baseline:
+        return True
+    return _confirm(
+        "Build the report from the latest TWO collections, the older acting "
+        "as the baseline? [y/N]: ",
+        default=False,
+    )
+
+
 def _from_history(args, config, cases, findings, output_dir) -> int:
     """Re-render the report from stored data, recording no run of its own.
 
@@ -323,19 +359,8 @@ def _from_history(args, config, cases, findings, output_dir) -> int:
     archived this file already, recurrence comes out identical to the report
     this one rebuilds.
     """
-    ignored = [
-        name
-        for name, given in (
-            ("--baseline", args.baseline),
-            ("--no-baseline", args.no_baseline),
-            ("--user", args.user is not None),
-        )
-        if given
-    ]
-    if ignored:
-        print(
-            f"Note: ignoring {', '.join(ignored)} — --from-history contacts no device."
-        )
+    if args.user is not None:
+        print("Note: ignoring --user — --from-history contacts no device.")
 
     db_path = Path(config.db_path)
     if not db_path.exists():
@@ -348,13 +373,21 @@ def _from_history(args, config, cases, findings, output_dir) -> int:
 
     history = History(db_path)
     try:
-        results, source = load_results(cases, history)
+        loaded = load_stored(cases, history)
+        selection = select_previous(loaded, history, config.baseline)
+        use_pairs = _decide_replay_pairing(args, selection)
+        results, source = build_results(loaded, selection if use_pairs else None)
         _evaluate_all(results, config, history)
     except (ReplayError, HistoryError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     finally:
         history.close()
+    if use_pairs:
+        print(
+            f"Paired {selection.matched} of {len(results)} case(s) with the "
+            "previous stored collection."
+        )
 
     # Each stored row already carries the earlier sample it was judged
     # against, so the rebuilt report states the same coverage as the original.

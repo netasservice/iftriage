@@ -152,8 +152,11 @@ cli.py ──> collectors.py ──> models.py (InterfaceCase, NormalizedInterfa
    the original row order); the audit log holds every command sent.
 
 `iftriage run <csv> --from-history` short-circuits steps 2–7: `replay.py` pairs
-every case ingested at step 1 with its newest stored collection and hands the
-rebuilt `CaseResult`s straight to step 8. Analysis re-runs in full, so a rules
+every case ingested at step 1 with its newest stored collection — and, on
+request (`--baseline`, or a yes at the interactive offer), with its
+second-newest as the baseline, when the two collections' spacing respects the
+configured comparison window — and hands the rebuilt `CaseResult`s straight
+to step 8. Analysis re-runs in full, so a rules
 or threshold change is visible; collection does not happen at all. Nothing is
 recorded — no run row, and no second archive of the CSV, which would inflate
 every recurrence count. A case with no

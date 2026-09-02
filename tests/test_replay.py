@@ -210,3 +210,121 @@ def test_duplicate_csv_rows_share_one_stored_collection(tmp_path):
     # ...but each keeps its own CSV row.
     assert po_results[0].case.description == "po case"
     assert po_results[1].case.description == "po case again"
+
+
+# ---- two-run replay: the previous collection as the baseline ---------------
+
+
+def _shift_run(db_path, run_id, hours_ago):
+    from datetime import timedelta
+
+    moved = datetime.now(UTC) - timedelta(hours=hours_ago)
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE runs SET started_at=? WHERE id=?", (moved.isoformat(), run_id))
+    conn.commit()
+    conn.close()
+
+
+def _seed_run(history, cases, crc):
+    run_id, _ = history.start_run("x.csv")
+    results = []
+    for case in cases:
+        result = _collected(case)
+        result.stats.crc_errors = crc
+        results.append(result)
+    history.save_results(run_id, results)
+    return run_id
+
+
+def test_the_previous_collection_becomes_the_baseline(tmp_path):
+    from iftriage.config import BaselineSettings
+    from iftriage.replay import build_results, load_stored, select_previous
+
+    db = tmp_path / "h.db"
+    history = History(db)
+    cases = _cases()
+    first = _seed_run(history, cases, crc=21)
+    _shift_run(db, first, hours_ago=18)
+    _seed_run(history, cases, crc=42)
+
+    loaded = load_stored(cases, history)
+    selection = select_previous(loaded, history, BaselineSettings())
+    assert selection.matched > 0
+    assert not selection.notes
+
+    results, source = build_results(loaded, selection)
+    result = results[0]
+    # The older run replaces the baseline the newest row stored live (#7).
+    assert result.baseline_run_id == first
+    assert result.baseline_stats.crc_errors == 21
+    assert result.baseline_minutes == pytest.approx(18 * 60, abs=2)
+    assert result.baseline_note is None
+    # Member baselines intersect by name.
+    assert set(result.member_baseline_stats) == {"GigabitEthernet3/0/23"}
+    assert "runs #1, #2" in source.describe()
+    history.close()
+
+
+def test_a_previous_collection_inside_the_minimum_window_is_refused(tmp_path):
+    from iftriage.config import BaselineSettings
+    from iftriage.replay import build_results, load_stored, select_previous
+
+    history = History(tmp_path / "h.db")
+    cases = _cases()
+    _seed_run(history, cases, crc=21)  # seconds apart: under the 5-min floor
+    _seed_run(history, cases, crc=42)
+
+    loaded = load_stored(cases, history)
+    selection = select_previous(loaded, history, BaselineSettings())
+    assert selection.matched == 0
+    assert all("comparison window" in note for note in selection.notes.values())
+
+    # Unpaired cases keep the baseline their stored row carried live.
+    results, _ = build_results(loaded, selection)
+    assert results[0].baseline_run_id == 7
+    assert results[0].baseline_stats is not None
+    history.close()
+
+
+def test_a_schema_barred_older_run_falls_back_to_single(tmp_path):
+    from iftriage.config import BaselineSettings
+    from iftriage.replay import load_stored, select_previous
+
+    db = tmp_path / "h.db"
+    history = History(db)
+    cases = _cases()
+    first = _seed_run(history, cases, crc=21)
+    _shift_run(db, first, hours_ago=18)
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE runs SET replay_schema=2 WHERE id=?", (first,))
+    conn.commit()
+    conn.close()
+    _seed_run(history, cases, crc=42)
+
+    selection = select_previous(
+        load_stored(cases, history), history, BaselineSettings()
+    )
+    assert selection.matched == 0
+    assert all(
+        "no earlier replayable collection" in note for note in selection.notes.values()
+    )
+    history.close()
+
+
+def test_a_previous_collection_older_than_the_maximum_window_is_refused(tmp_path):
+    from iftriage.config import BaselineSettings
+    from iftriage.replay import load_stored, select_previous
+
+    db = tmp_path / "h.db"
+    history = History(db)
+    cases = _cases()
+    first = _seed_run(history, cases, crc=21)
+    _shift_run(db, first, hours_ago=15 * 24)  # beyond the 14-day ceiling
+    _seed_run(history, cases, crc=42)
+
+    selection = select_previous(
+        load_stored(cases, history), history, BaselineSettings()
+    )
+    assert selection.matched == 0
+    assert all("comparison window" in note for note in selection.notes.values())
+    history.close()

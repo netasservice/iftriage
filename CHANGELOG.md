@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `--from-history` can now build the report from the latest TWO stored
+  collections: when a second-newest replayable collection exists per case and
+  its spacing from the newest respects the `baseline` window (the gap between
+  the collections, not the wall clock), the command offers to pair them, the
+  older acting as the baseline. `--baseline` / `--no-baseline` answer the
+  offer up front — they were previously ignored under `--from-history` — and
+  a run without a terminal replays the latest collection only, faithfully.
+  Partial coverage falls back per case with a note; nothing is written back.
 - Chronic-benign detection: a case that keeps appearing in the ingested
   top-20 (3+ lists) and has never been judged anything but IGNORE — this run
   and at least two stored runs — is marked as a chronic benign resident, with
