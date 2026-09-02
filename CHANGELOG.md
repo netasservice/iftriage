@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   not at the jack). No new device commands; the allow-list is unchanged.
 
 ### Fixed
+- Port-channel member samples now inherit the device-level fields (uptime,
+  model, OS version) from their parent case: the member pass deliberately
+  skips `show version`, which left members without a device clock — their
+  interval provenance degraded to host-side timestamps, with a spurious
+  data-quality flag, while the bundle on the same switch kept the device
+  clock.
 - The unattributed receive-error residual (the symbol-corruption proxy) now
   subtracts every congestion-side bucket the platform reports (overrun,
   ignored, no-buffer, giants), so buffer drops can no longer be labeled

@@ -726,7 +726,26 @@ def collect_members(
         workers,
         device_fn=_collect_device_members,
     )
+    for result in eligible:
+        _backfill_device_fields(result)
     return len(eligible)
+
+
+# Fields parsed once per device (from `show version` in the first pass) that
+# every sample of that device shares. The member pass deliberately skips the
+# device-level commands, so members inherit these from the parent case —
+# otherwise a member's interval provenance degrades to host-side timestamps
+# while its own bundle keeps the device clock.
+_DEVICE_FIELDS = ("uptime_minutes", "model", "os_version")
+
+
+def _backfill_device_fields(result: CaseResult) -> None:
+    if result.stats is None:
+        return
+    for member_stats in result.member_stats.values():
+        for field_name in _DEVICE_FIELDS:
+            if getattr(member_stats, field_name) is None:
+                setattr(member_stats, field_name, getattr(result.stats, field_name))
 
 
 def collected_results(results: list[CaseResult]) -> list[CaseResult]:
