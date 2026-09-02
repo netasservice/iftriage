@@ -107,7 +107,10 @@ def test_golden_verdict_is_physical_media_high():
     # observation (bytes with almost no counted frames), not independent
     # evidence — the zero-traffic verdict must not list it.
     assert SignalKind.BYTES_PER_FRAME_ABOVE_MTU not in kinds
-    assert SignalKind.INTERFACE_RESETS in kinds
+    # 7 resets over the device's ~2.9-year uptime is ~2.4/year —
+    # maintenance noise, not evidence of a current fault; the time-normalized
+    # rule suppresses it.
+    assert SignalKind.INTERFACE_RESETS not in kinds
 
 
 def test_golden_fcs_is_evidence_against_not_supporting():

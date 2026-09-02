@@ -57,7 +57,7 @@ Poll timestamps span 2026-08-28T02:10:00 .. 2026-08-28T05:20:00: the 24h windows
   </div>
 <div class="muted">ACCESS-FLOOR3-PRINTER</div>  <p>PHYSICAL_MEDIA — confidence MEDIUM (fcs_fraction_active).</p>
   <div class="evidence"><strong>Evidence</strong>
-  <ul><li>FCS errors are 100.0% of input errors: frames are arriving but corrupted — marginal signal rather than link-level corruption.</li><li>2 interface resets.</li></ul></div>
+  <ul><li>FCS errors are 100.0% of input errors: frames are arriving but corrupted — marginal signal rather than link-level corruption.</li></ul></div>
   <table class="kv muted">
 <tr><td>Δ (iftriage, run-to-run)</td><td>412 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>2,123</td></tr><tr><td>Error rate</td><td>0.01/s (23/h)</td></tr><tr><td>Error ratio</td><td>0.0298% of received frames</td></tr>  </table>
   <p class="muted"><strong>Data quality:</strong></p>
@@ -252,7 +252,7 @@ Group  Port-channel  Protocol    Ports
   <p class="muted"><strong>Data quality:</strong></p>
   <ul class="muted"><li>Interval (18.0 h) derived from host-side timestamps, not device time.</li><li>CSV poll timestamp is 40.2 h old at report time; the CSV's rates describe that period, not the present.</li><li>Δ sources disagree: iftriage run-to-run 0 vs CSV change 9,459. The tool's own observation is used for rate math because its interval is measured.</li></ul>
   <p class="muted"><strong>What would change this:</strong> If the errors stop advancing after a coordinated manual counter clear and a repoll, with the port otherwise untouched, reclassify HISTORIC_NOT_ACTIVE.</p>
-<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect and clean the fiber connectors and patch panel; check the transceiver's DOM receive-power trend; verify the optic is seated.</p>
+<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect and clean the fiber connectors and patch panel; check the transceiver's DOM receive-power trend (this reading: -15.2 dBm — a single reading, not a trend); verify the optic is seated.</p>
 <p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear and a repoll at 24&nbsp;h; replace the transceiver if DOM stays out of range.</p>  <p class="muted">Compared against the sample from
   2026-08-29 02:29 UTC
   (18.0 h earlier, run #1).</p>

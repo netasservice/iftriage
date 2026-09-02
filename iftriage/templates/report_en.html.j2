@@ -3,7 +3,7 @@
 {#- Sentence catalog: the engine emits signal/flag KINDS plus named counter
     values; every sentence an operator reads lives here. A new report
     language is a copy of this file with translated macro bodies. -#}
-{%- macro signal_text(s) -%}
+{%- macro signal_text(s, kinds=None) -%}
 {%- if s.kind.value == 'zero_traffic_errors' -%}
 Receive errors advanced {{ '{:,}'.format(s.values.delta_input_errors) }} (~{{ s.values.errors_per_second }}/s) while the device-reported input rate was {{ s.values.input_rate_pps if s.values.input_rate_pps != -1 else '?' }} pps{% if s.values.last_input_minutes != -1 %} and last input was {{ window(s.values.last_input_minutes) }} prior{% endif %}. Errors are accumulating without valid traffic, which places the fault at the link, not in the traffic.
 {%- elif s.kind.value == 'unattributed_rx_dominant' -%}
@@ -23,17 +23,19 @@ Interface reliability {{ s.values.reliability }}/255: the device's own error-wei
 {%- elif s.kind.value == 'giants_with_mtu_mismatch' -%}
 Giants dominate the error profile ({{ '{:,}'.format(s.values.giants) }}, local MTU {{ s.values.mtu }}): consistent with an MTU mismatch between ends. The far end's MTU is not known to this tool — unresolved.
 {%- elif s.kind.value == 'speed_below_capability' -%}
-Link negotiated {{ s.values.speed }} on a {{ s.values.media_type }} port. Consistent with damaged pairs forcing a fallback, but equally consistent with a genuinely 100M endpoint — unresolved.
+Link negotiated {{ s.values.speed }} on a {{ s.values.media_type }} port{% if kinds and ('unattributed_rx_dominant' in kinds or 'runts_dominant_no_collisions' in kinds or 'zero_traffic_errors' in kinds) %} while symbol-level corruption dominates the receive errors: 1000BaseT needs all four pairs, and a damaged pair forces exactly this fallback — one damaged-pair story explains the speed, the corruption{% if 'interface_resets' in kinds %}, and the resets{% endif %}. Still consistent with a genuinely 100M endpoint — the TDR resolves it{% else %}. Consistent with damaged pairs forcing a fallback, but equally consistent with a genuinely 100M endpoint — unresolved{% endif %}.
 {%- elif s.kind.value == 'bytes_per_frame_above_mtu' -%}
 Byte counter implies ~{{ '{:,}'.format(s.values.bytes_per_frame) }} B/frame against MTU {{ s.values.mtu }}, indicating errored octets are being counted — weak corroboration of PHY-level errors.
 {%- elif s.kind.value == 'dom_rx_out_of_range' -%}
 DOM receive power {{ '%.1f'|format(s.values.dom_rx_power_dbm) }} dBm is outside {{ '%g'|format(s.values.dom_rx_low_dbm) }}..{{ '%g'|format(s.values.dom_rx_high_dbm) }} dBm: degraded optical path.
+{%- elif s.kind.value == 'fault_onset_estimate' -%}
+The lifetime total at the current rate spans {{ window(s.values.onset_minutes) }} — matching the {{ window(s.values.last_input_minutes) }} since the last valid frame. The fault has likely run at this rate since valid traffic stopped: a concrete date to correlate with change windows.
 {%- elif s.kind.value == 'zero_delta_nonzero_lifetime' -%}
 The lifetime counter is large ({{ '{:,}'.format(s.values.values() | first) }}) but did not move between this tool's two observations: an old event, not an incident. Nobody needs to be dispatched.
 {%- elif s.kind.value == 'low_fcs_does_not_clear_media' -%}
 FCS-Err is only {{ '{:,}'.format(s.values.fcs_errors) }} of {{ '{:,}'.format(s.values.input_errors) }}. Low FCS does not rule out media faults: symbol corruption and short frames are discarded before the FCS check, so severe link damage can present with near-zero FCS. Verdict retained.
 {%- elif s.kind.value == 'interface_resets' -%}
-{{ s.values.interface_resets }} interface resets.
+{{ s.values.interface_resets }} interface resets{% if s.values.resets_per_year is defined %} (~{{ s.values.resets_per_year }}/year over the counter's life){% endif %}.
 {%- elif s.kind.value == 'errors_stopped_after_clear' -%}
 If the errors stop advancing after a coordinated manual counter clear and a repoll, with the port otherwise untouched, reclassify HISTORIC_NOT_ACTIVE.
 {%- elif s.kind.value == 'errors_resumed' -%}
@@ -55,10 +57,10 @@ If the counter advances again on a future run, the case reopens and is reclassif
 <p class="muted"><strong>Next steps — non-disruptive:</strong> identify the attached device and its native speed; inspect the patch cord and the jack; correlate the error history with the interface resets. DOM is not implemented on this copper port — expected, not a finding.</p>
 <p class="muted"><strong>Disruptive, coordinate first:</strong> TDR (<code>test cable-diagnostics tdr</code>) on {{ r.case.interface }}; a manual counter clear on this interface and a repoll at 24&nbsp;h to establish a clean baseline.</p>
 {%- elif fiber -%}
-<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect and clean the fiber connectors and patch panel; check the transceiver's DOM receive-power trend; verify the optic is seated.</p>
+<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect and clean the fiber connectors and patch panel; check the transceiver's DOM receive-power trend (this reading: {{ '%.1f'|format(r.stats.dom_rx_power_dbm) }} dBm — a single reading, not a trend); verify the optic is seated.</p>
 <p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear and a repoll at 24&nbsp;h; replace the transceiver if DOM stays out of range.</p>
 {%- else -%}
-<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect the physical path.</p>
+<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect the physical path.{% if media and not copper %} DOM could not be read from the transceiver output on this port — check it manually.{% endif %}</p>
 <p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear on this interface and a repoll at 24&nbsp;h.</p>
 {%- endif -%}
 {%- elif category == 'LINK_NEGOTIATION' -%}
@@ -81,6 +83,8 @@ CSV poll timestamp is {{ window(f.values.staleness_minutes) }} old at report tim
 Interval ({{ window(f.values.interval_minutes) }}) derived from host-side timestamps, not device time.
 {%- elif f.kind.value == 'delta_source_disagreement' -%}
 Δ sources disagree: iftriage run-to-run {{ '{:,}'.format(f.values.delta_tool) }} vs CSV change {{ '{:,}'.format(f.values.delta_csv) }}. The tool's own observation is used for rate math because its interval is measured.
+{%- elif f.kind.value == 'reconciliation_skew' -%}
+Input-error reconciliation is off by {{ f.values.residual }} — consistent with the counters advancing (~{{ f.values.errors_per_second }}/s) between the two show commands, not an accounting problem.
 {%- elif f.kind.value == 'counter_reconciliation_failed' -%}
 Input-error reconciliation does not balance: residual {{ '{:,}'.format(f.values.residual) }} ({{ '%.1f'|format(100 * f.values.residual_fraction) }}% of the total).
 {%- elif f.kind.value == 'no_second_observation' -%}
@@ -163,14 +167,15 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
   <p>{{ r.verdict.reason if r.verdict else 'No verdict.' }}</p>
   {% if r.verdict and r.verdict.signals %}
   {% set supporting = r.verdict.signals | rejectattr('contradicts') | list %}
+  {% set kinds = r.verdict.signals | map(attribute='kind.value') | list %}
   {% set against = r.verdict.signals | selectattr('contradicts') | list %}
   {% if supporting %}
   <div class="evidence"><strong>Evidence</strong>
-  <ul>{% for s in supporting %}<li>{{ signal_text(s) }}</li>{% endfor %}</ul></div>
+  <ul>{% for s in supporting %}<li>{{ signal_text(s, kinds) }}</li>{% endfor %}</ul></div>
   {% endif %}
   {% if against %}
   <div class="against"><strong>Evidence against</strong>
-  <ul>{% for s in against %}<li>{{ signal_text(s) }}</li>{% endfor %}</ul></div>
+  <ul>{% for s in against %}<li>{{ signal_text(s, kinds) }}</li>{% endfor %}</ul></div>
   {% endif %}
   {% endif %}
   {% if r.verdict and r.verdict.metrics %}

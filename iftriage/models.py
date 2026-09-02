@@ -59,6 +59,7 @@ class SignalKind(StrEnum):
     RELIABILITY_DEGRADED = "reliability_degraded"
     BYTES_PER_FRAME_ABOVE_MTU = "bytes_per_frame_above_mtu"
     DOM_RX_OUT_OF_RANGE = "dom_rx_out_of_range"
+    FAULT_ONSET_ESTIMATE = "fault_onset_estimate"
     ZERO_DELTA_NONZERO_LIFETIME = "zero_delta_nonzero_lifetime"
     LOW_FCS_DOES_NOT_CLEAR_MEDIA = "low_fcs_does_not_clear_media"
     INTERFACE_RESETS = "interface_resets"
@@ -71,6 +72,7 @@ class DataQualityKind(StrEnum):
 
     RATIO_OUT_OF_RANGE = "ratio_out_of_range"
     COUNTER_RECONCILIATION_FAILED = "counter_reconciliation_failed"
+    RECONCILIATION_SKEW = "reconciliation_skew"
     DELTA_SOURCE_DISAGREEMENT = "delta_source_disagreement"
     STALE_POLL_TIMESTAMP = "stale_poll_timestamp"
     INTERVAL_FROM_INGEST_TIME = "interval_from_ingest_time"

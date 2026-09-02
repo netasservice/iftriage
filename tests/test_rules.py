@@ -432,6 +432,92 @@ def test_healthy_reliability_emits_no_signal():
     assert SignalKind.RELIABILITY_DEGRADED not in signal_kinds(verdict)
 
 
+def test_small_reconciliation_residual_reads_as_sampling_skew():
+    # Residual -23 at ~1 err/s is the ~24 s between the two show commands
+    # advancing the counter — skew, not an accounting problem, and it must
+    # not cost the verdict its confidence.
+    earlier = make_stats(
+        input_errors=100_000,
+        crc_errors=100,
+        rcv_err=95_000,
+        fcs_errors=100,
+        align_errors=0,
+        runts=5_000,
+    )
+    current = make_stats(
+        input_errors=200_000,
+        crc_errors=185,
+        rcv_err=190_023,  # 23 ahead of the identity: read moments apart
+        fcs_errors=185,
+        align_errors=0,
+        runts=10_000,
+        input_packets=1_200_000,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+    assert DataQualityKind.RECONCILIATION_SKEW in flag_kinds(verdict)
+    assert DataQualityKind.COUNTER_RECONCILIATION_FAILED not in flag_kinds(verdict)
+    assert verdict.confidence is Confidence.HIGH
+
+
+def test_resets_on_an_old_counter_are_not_evidence():
+    nine_years = 9.7 * 365 * 1440
+    earlier = make_stats(
+        input_errors=5_000,
+        crc_errors=5_000,
+        input_packets=1_000_000,
+        last_clearing_minutes=nine_years,
+    )
+    climbing = make_stats(
+        input_errors=5_600,
+        crc_errors=5_600,
+        input_packets=1_100_000,
+        interface_resets=60,
+        last_clearing_minutes=nine_years,
+    )
+    verdict = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
+    # 60 resets over 9.7 years is ~6/year: maintenance noise.
+    assert SignalKind.INTERFACE_RESETS not in signal_kinds(verdict)
+
+
+def test_resets_on_a_young_counter_stay_evidence():
+    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    climbing = make_stats(
+        input_errors=5_600,
+        crc_errors=5_600,
+        input_packets=1_100_000,
+        interface_resets=7,
+    )
+    # Counter cleared a day ago (make_stats default): 7 resets in a day.
+    verdict = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
+    assert SignalKind.INTERFACE_RESETS in signal_kinds(verdict)
+
+
+def test_fault_onset_is_dated_when_the_arithmetic_agrees():
+    # 429.9M lifetime errors at ~59/s spans 84 days — exactly the age of the
+    # last valid frame: the fault has run at this rate since traffic stopped.
+    lifetime = 429_895_397
+    last_input_minutes = 84 * 1440.0
+    delta = 3_924_057  # ~59.24/s over the 18.4 h window
+    earlier = make_stats(
+        input_errors=lifetime - delta,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        last_clearing_minutes=174 * 1440.0,
+    )
+    current = make_stats(
+        input_errors=lifetime,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        last_input_minutes=last_input_minutes,
+        last_clearing_minutes=174 * 1440.0,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1104)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert SignalKind.FAULT_ONSET_ESTIMATE in signal_kinds(verdict)
+
+
 def test_reconciliation_residual_above_one_percent_caps_low():
     # input_errors != runts + rcv_err by 5%.
     current = make_stats(

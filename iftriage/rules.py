@@ -66,6 +66,9 @@ DOMINANT_SHARE = 0.5  # a bucket "dominates" above half of the error total
 FCS_FRACTION_MIN = 0.10  # FCS share that reads as marginal-signal corruption
 FCS_NEGLIGIBLE_FRACTION = 0.01  # below this, FCS neither confirms nor clears
 RECONCILIATION_LOW_CAP_FRACTION = 0.01  # residual above 1% caps LOW
+SKEW_WINDOW_SECONDS = 120  # residual within rate x this is inter-command skew
+RESETS_PER_YEAR_FLOOR = 12  # resets slower than monthly are maintenance noise
+FAULT_ONSET_TOLERANCE = 0.15  # lifetime/rate vs last-input agreement band
 
 _CONFIDENCE_RANK = {Confidence.LOW: 0, Confidence.MEDIUM: 1, Confidence.HIGH: 2}
 
@@ -219,7 +222,10 @@ def _speed_below_capability(stats: NormalizedInterfaceStats) -> bool:
 
 
 def _corroborating_signals(
-    stats: NormalizedInterfaceStats, *, include_bytes_per_frame: bool = True
+    stats: NormalizedInterfaceStats,
+    *,
+    include_bytes_per_frame: bool = True,
+    life_window: IntervalEstimate | None = None,
 ) -> list[Signal]:
     signals: list[Signal] = []
     if _speed_below_capability(stats):
@@ -261,14 +267,27 @@ def _corroborating_signals(
             )
         )
     if stats.interface_resets:
-        signals.append(
-            Signal(
-                kind=SignalKind.INTERFACE_RESETS,
-                weight=Confidence.LOW,
-                values={"interface_resets": stats.interface_resets},
-                supports=VerdictCategory.PHYSICAL_MEDIA,
+        # "60 resets" on a counter 9.7 years old is six a year — maintenance,
+        # not evidence. Normalize by the counter's age when it is known, and
+        # only cite resets that are actually frequent; an unknown age keeps
+        # the raw count (it cannot be judged, only shown).
+        resets_per_year: float | None = None
+        if life_window is not None and life_window.minutes > 0:
+            resets_per_year = stats.interface_resets / (life_window.minutes / 525_600)
+        if resets_per_year is None or resets_per_year >= RESETS_PER_YEAR_FLOOR:
+            values: dict[str, int | float | str] = {
+                "interface_resets": stats.interface_resets
+            }
+            if resets_per_year is not None:
+                values["resets_per_year"] = round(resets_per_year, 1)
+            signals.append(
+                Signal(
+                    kind=SignalKind.INTERFACE_RESETS,
+                    weight=Confidence.LOW,
+                    values=values,
+                    supports=VerdictCategory.PHYSICAL_MEDIA,
+                )
             )
-        )
     return signals
 
 
@@ -520,15 +539,36 @@ def _evaluate_stats(
     if cls in (CounterClass.RECEIVE_ERRORS, CounterClass.GENERIC_ERRORS):
         reconciliation = reconcile_input_errors(stats)
         if reconciliation is not None and not reconciliation.balanced:
-            flags.append(
-                DataQualityFlag(
-                    DataQualityKind.COUNTER_RECONCILIATION_FAILED,
-                    {
-                        "residual": reconciliation.residual,
-                        "residual_fraction": round(reconciliation.residual_fraction, 4),
-                    },
+            # A residual no larger than what the counters advance between two
+            # show commands is sampling skew, not an accounting problem — it
+            # must not cap confidence. (Audited twice: residual -23/-24 at
+            # ~1 err/s, i.e. the ~24 s between `show interface` and the
+            # counters table.)
+            rate = window.errors_per_second() if window is not None else None
+            if rate is not None and abs(reconciliation.residual) <= max(
+                1.0, rate * SKEW_WINDOW_SECONDS
+            ):
+                flags.append(
+                    DataQualityFlag(
+                        DataQualityKind.RECONCILIATION_SKEW,
+                        {
+                            "residual": reconciliation.residual,
+                            "errors_per_second": round(rate, 2),
+                        },
+                    )
                 )
-            )
+            else:
+                flags.append(
+                    DataQualityFlag(
+                        DataQualityKind.COUNTER_RECONCILIATION_FAILED,
+                        {
+                            "residual": reconciliation.residual,
+                            "residual_fraction": round(
+                                reconciliation.residual_fraction, 4
+                            ),
+                        },
+                    )
+                )
 
     ratio, ratio_basis = _case_ratio(cls, window, life)
     if ratio.flag is not None:
@@ -799,6 +839,48 @@ def _discards_verdict(
     return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "below_threshold")
 
 
+def _fault_onset_signal(
+    stats: NormalizedInterfaceStats,
+    window: DeltaWindow,
+    life_window: IntervalEstimate | None,
+) -> list[Signal]:
+    """Date the fault when the arithmetic allows it: if the lifetime total at
+    the current rate spans (about) the time since the last valid frame, the
+    fault has been running at this rate since traffic stopped — a concrete
+    date to correlate with change windows. Audited case: 429.9M errors /
+    59.12 per s = 84.2 days = exactly the reported last-input age."""
+    rate = window.errors_per_second()
+    if (
+        not rate
+        or not stats.input_errors
+        or not stats.last_input_minutes
+        or stats.last_input_minutes <= 0
+    ):
+        return []
+    onset_minutes = stats.input_errors / rate / 60
+    if abs(onset_minutes - stats.last_input_minutes) > (
+        FAULT_ONSET_TOLERANCE * stats.last_input_minutes
+    ):
+        return []
+    # The counter epoch must be able to contain the onset; a shorter epoch
+    # means the agreement is a coincidence of a cleared counter.
+    if life_window is not None and onset_minutes > life_window.minutes * (
+        1 + FAULT_ONSET_TOLERANCE
+    ):
+        return []
+    return [
+        Signal(
+            kind=SignalKind.FAULT_ONSET_ESTIMATE,
+            weight=Confidence.MEDIUM,
+            values={
+                "onset_minutes": round(onset_minutes, 1),
+                "last_input_minutes": round(stats.last_input_minutes, 1),
+            },
+            supports=VerdictCategory.PHYSICAL_MEDIA,
+        )
+    ]
+
+
 def _receive_errors_verdict(
     stats: NormalizedInterfaceStats,
     window: DeltaWindow | None,
@@ -836,7 +918,7 @@ def _receive_errors_verdict(
                     },
                     supports=VerdictCategory.PHYSICAL_MEDIA,
                 ),
-                *_corroborating_signals(stats),
+                *_corroborating_signals(stats, life_window=life_window),
             ],
             what=what_media,
         )
@@ -916,11 +998,16 @@ def _receive_errors_verdict(
                             values=zero_traffic_values,
                             supports=VerdictCategory.PHYSICAL_MEDIA,
                         ),
+                        *_fault_onset_signal(stats, window, life_window),
                         *_unattributed_signals(stats),
                         # A byte counter above MTU is a corollary of errors
                         # without traffic (bytes with almost no counted
                         # frames), not independent evidence — skip it here.
-                        *_corroborating_signals(stats, include_bytes_per_frame=False),
+                        *_corroborating_signals(
+                            stats,
+                            include_bytes_per_frame=False,
+                            life_window=life_window,
+                        ),
                     ],
                     what=what_media,
                 )
@@ -959,7 +1046,11 @@ def _receive_errors_verdict(
             )
 
         media = _media_dominance_verdict(
-            stats, flags, verdict, _corroborating_signals(stats), what_media
+            stats,
+            flags,
+            verdict,
+            _corroborating_signals(stats, life_window=life_window),
+            what_media,
         )
         if media is not None:
             return media
@@ -969,7 +1060,7 @@ def _receive_errors_verdict(
             return negotiation
 
         fcs_verdict = _fcs_fraction_verdict(
-            stats, window, verdict, what_media, active=True
+            stats, window, verdict, what_media, active=True, life_window=life_window
         )
         if fcs_verdict is not None:
             return fcs_verdict
@@ -978,7 +1069,7 @@ def _receive_errors_verdict(
             VerdictCategory.PHYSICAL_MEDIA,
             Confidence.MEDIUM,
             "error_rate_above_threshold",
-            extra_signals=_corroborating_signals(stats),
+            extra_signals=_corroborating_signals(stats, life_window=life_window),
             what=what_media,
         )
 
@@ -1005,21 +1096,27 @@ def _receive_errors_verdict(
     if lifetime_ratio.value is None or lifetime_ratio.value < thresholds.error_rate:
         return verdict(VerdictCategory.IGNORE, Confidence.HIGH, "below_threshold")
     media = _media_dominance_verdict(
-        stats, flags, verdict, _corroborating_signals(stats), what_media
+        stats,
+        flags,
+        verdict,
+        _corroborating_signals(stats, life_window=life_window),
+        what_media,
     )
     if media is not None:
         return media
     negotiation = _link_negotiation_verdict(stats, None, verdict)
     if negotiation is not None:
         return negotiation
-    fcs_verdict = _fcs_fraction_verdict(stats, None, verdict, what_media, active=False)
+    fcs_verdict = _fcs_fraction_verdict(
+        stats, None, verdict, what_media, active=False, life_window=life_window
+    )
     if fcs_verdict is not None:
         return fcs_verdict
     return verdict(
         VerdictCategory.PHYSICAL_MEDIA,
         Confidence.HIGH,  # capped MEDIUM by NO_SECOND_OBSERVATION
         "error_rate_above_threshold",
-        extra_signals=_corroborating_signals(stats),
+        extra_signals=_corroborating_signals(stats, life_window=life_window),
         what=what_media,
     )
 
@@ -1103,6 +1200,7 @@ def _fcs_fraction_verdict(
     verdict,
     what_media: Signal,
     active: bool,
+    life_window: IntervalEstimate | None = None,
 ) -> Verdict | None:
     """High FCS share with errors moving: frames are arriving but corrupted —
     marginal signal rather than link-level corruption."""
@@ -1130,7 +1228,7 @@ def _fcs_fraction_verdict(
                 },
                 supports=VerdictCategory.PHYSICAL_MEDIA,
             ),
-            *_corroborating_signals(stats),
+            *_corroborating_signals(stats, life_window=life_window),
         ],
         what=what_media,
     )

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Evidence is now time-aware. Interface resets are normalized by the
+  counter's age and cited only when actually frequent ("60 resets" over 9.7
+  years is six a year — maintenance, not evidence). When the lifetime error
+  total at the current rate spans exactly the time since the last valid
+  frame, the report dates the fault's onset — a concrete date to correlate
+  with change windows. A reconciliation residual no larger than what the
+  counters advance between two show commands is reported as sampling skew
+  (no confidence cost) instead of "does not balance". Fiber next steps now
+  print the DOM reading the tool already collected instead of sending the
+  operator to fetch it, and non-copper ports without a DOM parse say so.
+  The 100M-fallback line now connects to the symbol-corruption evidence when
+  both are present: one damaged-pair story instead of disconnected facts.
 - The canonical model and parsers now capture three pieces of context the
   devices were already printing: the device-computed
   `reliability x/255` triple (with txload/rxload; a value below 255 becomes

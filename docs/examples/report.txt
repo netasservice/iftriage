@@ -15,7 +15,6 @@ CASES
   PHYSICAL_MEDIA — confidence MEDIUM (fcs_fraction_active).
   Evidence:
     - FCS errors are 100.0% of input errors: frames arriving but corrupted (marginal signal).
-    - 2 interface resets.
   Delta (iftriage, run-to-run): 412 over 18.0 h (host-side timestamps)
   Delta (CSV, Splunk window): 2,123
   Error rate: 0.01/s (23/h)
@@ -48,8 +47,9 @@ Next steps — non-disruptive: identify the attached device and its native
     - Delta sources disagree: iftriage run-to-run 0 vs CSV change 9,459; the tool's own delta is used for rate math.
   What would change this: If errors stop advancing after a coordinated manual counter clear and repoll, reclassify HISTORIC_NOT_ACTIVE.
 Next steps — non-disruptive: inspect and clean the fiber connectors and
-    patch panel; check the transceiver's DOM receive-power trend; verify the
-    optic is seated.
+    patch panel; check the transceiver's DOM receive-power trend (this
+    reading: -15.2 dBm — a single reading,
+    not a trend); verify the optic is seated.
   Disruptive, coordinate first: a manual counter clear and a repoll at 24 h;
     replace the transceiver if DOM stays out of range.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
