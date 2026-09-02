@@ -484,6 +484,21 @@ def _evaluate_stats(
     signals: list[Signal] = []
     value_field = _VALUE_FIELD[cls]
 
+    # Modern switched networks run full duplex everywhere; half duplex is
+    # worth a line on ANY verdict — it is a negotiation problem or a
+    # legacy/failing endpoint, and it makes collision counters meaningful.
+    if (stats.duplex or "").lower().startswith("half"):
+        signals.append(
+            Signal(
+                kind=SignalKind.HALF_DUPLEX_LINK,
+                weight=Confidence.LOW,
+                values={
+                    "duplex": stats.duplex or "half",
+                    "speed": stats.speed or "?",
+                },
+            )
+        )
+
     # --- populations and provenance ------------------------------------------
     interval: IntervalEstimate | None = None
     window: DeltaWindow | None = None
@@ -1024,6 +1039,24 @@ def _receive_errors_verdict(
                     },
                 )
             )
+            # Say WHY the zero-traffic claim gave up HIGH: the reader must see
+            # the collision activity that vetoed it, and whether a duplex
+            # mismatch could be confirmed at all.
+            signals.append(
+                Signal(
+                    kind=SignalKind.COLLISION_ACTIVITY_ON_ERRORING_LINK,
+                    weight=Confidence.MEDIUM,
+                    values={
+                        "collisions": stats.collisions or 0,
+                        "late_collisions": stats.late_collisions or 0,
+                        "duplex": stats.duplex or "?",
+                        "neighbor_duplex": stats.neighbor_duplex or "?",
+                    },
+                )
+            )
+            # The onset estimate belongs to the zero-traffic observation,
+            # which is retained — the arithmetic is no less valid here.
+            signals.extend(_fault_onset_signal(stats, window, life_window))
 
         buffer_delta = buffer_group_delta(window)
         buffer_share = _share(buffer_delta, window.input_errors)

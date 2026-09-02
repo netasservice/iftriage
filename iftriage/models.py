@@ -53,6 +53,8 @@ class SignalKind(StrEnum):
     FCS_FRACTION_ACTIVE = "fcs_fraction_active"
     BUFFER_GROUP_DOMINANT = "buffer_group_dominant"
     DISCARDS_WITHOUT_CONGESTION_SIGNATURE = "discards_without_congestion_signature"
+    HALF_DUPLEX_LINK = "half_duplex_link"
+    COLLISION_ACTIVITY_ON_ERRORING_LINK = "collision_activity_on_erroring_link"
     LATE_COLLISIONS_FULL_DUPLEX = "late_collisions_full_duplex"
     GIANTS_WITH_MTU_MISMATCH = "giants_with_mtu_mismatch"
     SPEED_BELOW_CAPABILITY = "speed_below_capability"

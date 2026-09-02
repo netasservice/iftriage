@@ -536,6 +536,7 @@ Interface Ethernet4/15 detected 1 LLDP neighbors:
 [LINK_NEGOTIATION — confidence HIGH] sw-acc-02 Gi3/0/20 (Late-Col)
   LINK_NEGOTIATION — confidence HIGH (duplex_mismatch_confirmed).
   Evidence:
+    - The link is running half duplex at 100Mb/s. Modern switched networks negotiate full duplex everywhere; half duplex here points at a negotiation problem or a legacy/failing endpoint, and makes the collision counters meaningful evidence.
     - 38,449,023 late collisions on a half-duplex link (neighbor SEP001122AABB99, Cisco IP Phone 8841, reports full): negotiation/duplex mismatch, fixed via CLI.
   Delta (iftriage, run-to-run): 3,096 over 18.0 h (host-side timestamps)
   Delta (CSV, Splunk window): -154,073

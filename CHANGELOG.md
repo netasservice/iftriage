@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Half duplex is now mentioned on every judged verdict, whatever the
+  counter and whatever the outcome: modern switched networks negotiate full
+  duplex everywhere, so a half-duplex port is always worth a line — it points
+  at a negotiation problem or a legacy/failing endpoint, and it makes the
+  collision counters meaningful evidence.
+- When collision activity vetoes the zero-traffic HIGH claim, the report now
+  says so explicitly — the collision and late-collision counts, and whether a
+  duplex mismatch could be confirmed at all (no CDP/LLDP neighbor reporting
+  its duplex means it can be neither confirmed nor cleared).
+- The fault-onset estimate is also emitted on the collision fall-through
+  path: the arithmetic belongs to the retained zero-traffic observation and
+  is no less valid there.
+
 ## [0.8.0] - 2026-09-02
 
 ### Added
