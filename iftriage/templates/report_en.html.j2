@@ -18,6 +18,10 @@ FCS errors are {{ '%.1f'|format(100 * s.values.fcs_fraction) }}% of input errors
 {{ '{:,}'.format(s.values.discards) }} {{ s.values.direction }} discards at meaningful rate with no buffer-pressure signature beside them (overrun/ignored/no-buffer flat): consistent with policy drops — an unallowed VLAN on the trunk, an ACL, or storm-control — rather than congestion. Check policy before provisioning capacity.
 {%- elif s.kind.value == 'reliability_degraded' -%}
 Interface reliability {{ s.values.reliability }}/255: the device's own error-weighted average reports the link as degraded (255/255 is healthy).
+{%- elif s.kind.value == 'half_duplex_link' -%}
+The link is running {{ s.values.duplex }} duplex at {{ s.values.speed }}. Modern switched networks negotiate full duplex everywhere; half duplex here points at a negotiation problem or a legacy/failing endpoint, and makes the collision counters meaningful evidence.
+{%- elif s.kind.value == 'collision_activity_on_erroring_link' -%}
+{{ '{:,}'.format(s.values.late_collisions) }} late collisions and {{ '{:,}'.format(s.values.collisions) }} collisions accompany the receive errors: collision activity points at negotiation, so the errors cannot be pinned on the medium alone{% if s.values.neighbor_duplex in ('?', '') %} — and no neighbor reports its duplex, so a mismatch can be neither confirmed nor cleared from here{% endif %}.
 {%- elif s.kind.value == 'late_collisions_full_duplex' -%}
 {{ '{:,}'.format(s.values.late_collisions) }} late collisions on a {{ s.values.duplex }}-duplex link{% if s.values.neighbor_duplex is defined and s.values.neighbor_duplex not in ('?', '') %} (neighbor {{ s.values.neighbor_name }}{% if s.values.neighbor_platform is defined and s.values.neighbor_platform not in ('?', '') %}, {{ s.values.neighbor_platform }},{% endif %} reports {{ s.values.neighbor_duplex }}){% endif %}: negotiation/duplex mismatch — fixed via CLI, not by touching media.
 {%- elif s.kind.value == 'giants_with_mtu_mismatch' -%}

@@ -336,6 +336,57 @@ def test_zero_traffic_with_collisions_but_no_duplex_evidence_is_not_high():
     assert SignalKind.ZERO_TRAFFIC_ERRORS in signal_kinds(verdict)
 
 
+def test_half_duplex_is_mentioned_on_every_verdict():
+    # Modern switched networks run full duplex everywhere: half duplex gets
+    # a line even when the flagged counter itself is benign.
+    clean = make_stats(duplex="half", speed="100Mb/s")
+    verdict = run(make_case("Rcv-Err"), clean)
+    assert verdict.category is VerdictCategory.IGNORE
+    assert SignalKind.HALF_DUPLEX_LINK in signal_kinds(verdict)
+
+    full = make_stats(duplex="full")
+    assert SignalKind.HALF_DUPLEX_LINK not in signal_kinds(
+        run(make_case("Rcv-Err"), full)
+    )
+
+
+def test_collision_veto_is_visible_and_the_onset_still_dated():
+    # When collision activity vetoes the zero-traffic HIGH, the report must
+    # say so — and the onset arithmetic, which belongs to the retained
+    # zero-traffic observation, still gets dated. Audit case: 83.4 d at the
+    # current rate matches the 83 d since the last valid frame.
+    lifetime = 425_968_779
+    delta = 3_926_618
+    earlier = make_stats(
+        input_errors=lifetime - delta,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        duplex="half",
+        collisions=158_962,
+        late_collisions=86_386,
+        last_clearing_minutes=173 * 1440.0,
+    )
+    current = make_stats(
+        input_errors=lifetime,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        duplex="half",
+        collisions=161_390,
+        late_collisions=87_896,
+        last_input_minutes=83 * 1440.0,
+        last_clearing_minutes=173 * 1440.0,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1104)
+    kinds = signal_kinds(verdict)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert verdict.confidence is not Confidence.HIGH
+    assert SignalKind.COLLISION_ACTIVITY_ON_ERRORING_LINK in kinds
+    assert SignalKind.FAULT_ONSET_ESTIMATE in kinds
+    assert SignalKind.HALF_DUPLEX_LINK in kinds
+
+
 def test_zero_traffic_with_unknown_collision_counters_caps_medium():
     # The guard cannot run when the collision counters were not parsed; the
     # zero-traffic verdict stands but says so and gives up HIGH.

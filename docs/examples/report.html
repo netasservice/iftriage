@@ -565,7 +565,7 @@ Et4/15               31.42    3.28     7.06     -2.63     -15.21       0:00:03 a
   </div>
 <div class="muted">ACCESS-PHONE-RACK01-RU01</div>  <p>LINK_NEGOTIATION — confidence HIGH (duplex_mismatch_confirmed).</p>
   <div class="evidence"><strong>Evidence</strong>
-  <ul><li>38,449,023 late collisions on a half-duplex link (neighbor SEP001122AABB99, Cisco IP Phone 8841, reports full): negotiation/duplex mismatch — fixed via CLI, not by touching media.</li></ul></div>
+  <ul><li>The link is running half duplex at 100Mb/s. Modern switched networks negotiate full duplex everywhere; half duplex here points at a negotiation problem or a legacy/failing endpoint, and makes the collision counters meaningful evidence.</li><li>38,449,023 late collisions on a half-duplex link (neighbor SEP001122AABB99, Cisco IP Phone 8841, reports full): negotiation/duplex mismatch — fixed via CLI, not by touching media.</li></ul></div>
   <table class="kv muted">
 <tr><td>Δ (iftriage, run-to-run)</td><td>3,096 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>-154,073</td></tr><tr><td>Error rate</td><td>0.05/s (172/h)</td></tr><tr><td>Error ratio</td><td>100.0000% of transmitted frames</td></tr>  </table>
   <p class="muted"><strong>Data quality:</strong></p>
