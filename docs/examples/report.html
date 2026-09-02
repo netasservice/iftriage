@@ -531,17 +531,17 @@ Group  Port-channel  Protocol    Ports
   <div>
     <span class="verdict v-CONGESTION_BUFFER">
       CONGESTION_BUFFER</span>
-<span class="confidence">confidence HIGH</span>    &nbsp;<strong>sw-core-01</strong> — Eth4/15
+<span class="confidence">confidence MEDIUM</span>    &nbsp;<strong>sw-core-01</strong> — Eth4/15
     (InDiscards)
   </div>
-<div class="muted">UPLINK-TO-CORE</div>  <p>CONGESTION_BUFFER — confidence HIGH (discards_at_rate).</p>
+<div class="muted">UPLINK-TO-CORE</div>  <p>CONGESTION_BUFFER — confidence MEDIUM (discards_at_rate_no_congestion_signature).</p>
   <div class="evidence"><strong>Evidence</strong>
-  <ul><li>3,600 input discards at meaningful rate: frames arrived intact and were dropped — oversubscription, policer, or ring sizing, not media.</li></ul></div>
+  <ul><li>3,600 input discards at meaningful rate with no buffer-pressure signature beside them (overrun/ignored/no-buffer flat): consistent with policy drops — an unallowed VLAN on the trunk, an ACL, or storm-control — rather than congestion. Check policy before provisioning capacity.</li></ul></div>
   <table class="kv muted">
 <tr><td>Δ (iftriage, run-to-run)</td><td>3,600 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>286</td></tr><tr><td>Error rate</td><td>0.06/s (200/h)</td></tr><tr><td>Error ratio</td><td>2.0000% of received frames</td></tr>  </table>
   <p class="muted"><strong>Data quality:</strong></p>
   <ul class="muted"><li>Interval (18.0 h) derived from host-side timestamps, not device time.</li><li>CSV poll timestamp is 39.6 h old at report time; the CSV's rates describe that period, not the present.</li><li>Δ sources disagree: iftriage run-to-run 3,600 vs CSV change 286. The tool's own observation is used for rate math because its interval is measured.</li></ul>
-<p class="muted"><strong>Next steps:</strong> review oversubscription, policers, and buffer/ring sizing on this path. Not a media dispatch.</p>  <p class="muted">Compared against the sample from
+<p class="muted"><strong>Next steps:</strong> check the port's policy first — trunk allowed VLANs, ACL hit counters, storm-control — before provisioning capacity; the buffer-side counters are flat. Not a media dispatch.</p>  <p class="muted">Compared against the sample from
   2026-08-29 02:29 UTC
   (18.0 h earlier, run #1).</p>
   <details><summary>Raw evidence (8 commands)</summary>

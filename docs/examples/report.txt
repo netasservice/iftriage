@@ -71,10 +71,10 @@ Next steps: fix via CLI — align speed/duplex (and MTU where giants
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
   Data-quality flags: negative_delta
 --------------------------------------------------------------------------------
-[CONGESTION_BUFFER — confidence HIGH] sw-core-01 Eth4/15 (InDiscards)
-  CONGESTION_BUFFER — confidence HIGH (discards_at_rate).
+[CONGESTION_BUFFER — confidence MEDIUM] sw-core-01 Eth4/15 (InDiscards)
+  CONGESTION_BUFFER — confidence MEDIUM (discards_at_rate_no_congestion_signature).
   Evidence:
-    - 3,600 input discards at meaningful rate: frames arrived intact and were dropped (oversubscription, policer, or ring sizing), not media.
+    - 3,600 input discards at meaningful rate with no buffer-pressure signature (overrun/ignored/no-buffer flat): consistent with policy drops (unallowed VLAN, ACL, storm-control), not congestion.
   Delta (iftriage, run-to-run): 3,600 over 18.0 h (host-side timestamps)
   Delta (CSV, Splunk window): 286
   Error rate: 0.06/s (200/h)
@@ -83,8 +83,9 @@ Next steps: fix via CLI — align speed/duplex (and MTU where giants
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 39.6 h old at report time; its rates describe that period.
     - Delta sources disagree: iftriage run-to-run 3,600 vs CSV change 286; the tool's own delta is used for rate math.
-Next steps: review oversubscription, policers, and buffer/ring sizing on
-    this path. Not a media dispatch.
+  Next steps: check the port's policy first — trunk allowed VLANs, ACL hit
+    counters, storm-control — before provisioning capacity; the buffer-side
+    counters are flat. Not a media dispatch.
   Compared against the sample from 2026-08-29 02:29 UTC (18.0 h earlier, run #1).
 --------------------------------------------------------------------------------
 [PARSE_ERROR] sw-acc-01 Gi1/0/47 (Rcv-Err)

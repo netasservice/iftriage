@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- The unattributed receive-error residual (the symbol-corruption proxy) now
+  subtracts every congestion-side bucket the platform reports (overrun,
+  ignored, no-buffer, giants), so buffer drops can no longer be labeled
+  "symbol-level corruption" on a congested port.
+- Input discards at rate on a port whose buffer-side counters are all flat
+  are now reported as policy drops (unallowed VLAN, ACL, storm-control) with
+  policy-first next steps, at MEDIUM — CONGESTION_BUFFER previously claimed
+  buffer pressure the counters themselves refuted. Unknown buffer counters
+  cap the claim instead of strengthening it.
+- The bytes-per-frame-above-MTU observation is no longer listed as extra
+  evidence under a zero-traffic verdict: with almost no counted frames the
+  average exceeds the MTU by construction — it is the same observation, not
+  corroboration.
 - The metrics block now follows the case's own counter. "Error rate" was
   hardwired to the input-errors delta, so a Late-Col case printed
   "0.00/s" beside a 955K late-collision delta; it is now the flagged

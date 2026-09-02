@@ -613,6 +613,95 @@ def test_indiscards_at_rate_is_congestion_buffer_not_physical():
     assert verdict.category is VerdictCategory.CONGESTION_BUFFER
 
 
+def test_discards_at_rate_without_congestion_signature_reads_as_policy():
+    # Buffer-side counters known and flat: CONGESTION_BUFFER would claim
+    # buffer pressure the counters refute — the report says policy drops.
+    earlier = make_stats(discards_in=0, overrun=0, ignored=0, no_buffer=0)
+    current = make_stats(
+        discards_in=30_000,
+        input_packets=2_000_000,
+        overrun=0,
+        ignored=0,
+        no_buffer=0,
+    )
+    verdict = run(make_case("InDiscards"), current, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.CONGESTION_BUFFER
+    assert verdict.confidence is Confidence.MEDIUM
+    assert "no_congestion_signature" in verdict.reason
+    assert SignalKind.DISCARDS_WITHOUT_CONGESTION_SIGNATURE in signal_kinds(verdict)
+
+
+def test_discards_at_rate_with_buffer_activity_stays_high():
+    earlier = make_stats(discards_in=0, overrun=0, ignored=0, no_buffer=0)
+    current = make_stats(
+        discards_in=30_000,
+        input_packets=2_000_000,
+        overrun=20_000,
+        ignored=5_000,
+        no_buffer=0,
+    )
+    verdict = run(make_case("InDiscards"), current, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.CONGESTION_BUFFER
+    assert verdict.confidence is Confidence.HIGH
+    assert "discards_at_rate" in verdict.reason
+
+
+def test_discards_with_unknown_buffer_counters_caps_medium():
+    earlier = make_stats(discards_in=0)
+    current = make_stats(discards_in=30_000, input_packets=2_000_000)
+    verdict = run(make_case("InDiscards"), current, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.CONGESTION_BUFFER
+    assert verdict.confidence is Confidence.MEDIUM
+    assert DataQualityKind.NULL_RULE_INPUT in flag_kinds(verdict)
+
+
+def test_lifetime_congestion_buckets_never_read_as_symbol_corruption():
+    # The unattributed residual excludes overrun/ignored/no-buffer when the
+    # platform reports them: buffer drops must not be labeled symbol-level
+    # corruption on a congested port.
+    earlier = make_stats(
+        input_errors=90_000,
+        crc_errors=50,
+    )
+    current = make_stats(
+        input_errors=180_000,
+        crc_errors=100,
+        rcv_err=180_000,
+        fcs_errors=100,
+        align_errors=0,
+        overrun=120_000,
+        ignored=50_000,
+        input_packets=2_200_000,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+    assert "unattributed_rx_dominant" not in verdict.reason
+
+
+def test_zero_traffic_verdict_omits_the_bytes_per_frame_corollary():
+    # Bytes-per-frame above MTU is the same observation as errors-without-
+    # traffic wearing a hat: with almost no counted frames the average
+    # explodes by construction. It must not be listed as extra evidence.
+    earlier = make_stats(
+        input_errors=319_466_596,
+        crc_errors=185,
+        input_packets=561_806,
+        input_rate_pps=0,
+        bytes_input=88_557_466_233,
+        mtu=9160,
+    )
+    current = make_stats(
+        input_errors=320_792_846,
+        crc_errors=185,
+        input_packets=561_806,
+        input_rate_pps=0,
+        bytes_input=88_559_000_000,
+        mtu=9160,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=int(39.8 * 60))
+    assert "zero_traffic_errors" in verdict.reason
+    assert SignalKind.BYTES_PER_FRAME_ABOVE_MTU not in signal_kinds(verdict)
+
+
 def test_discards_below_the_threshold_is_ignore():
     stats = make_stats(discards_in=50, input_packets=1_000_000)
     verdict = run(make_case("InDiscards"), stats)

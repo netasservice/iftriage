@@ -218,7 +218,9 @@ def _speed_below_capability(stats: NormalizedInterfaceStats) -> bool:
     )
 
 
-def _corroborating_signals(stats: NormalizedInterfaceStats) -> list[Signal]:
+def _corroborating_signals(
+    stats: NormalizedInterfaceStats, *, include_bytes_per_frame: bool = True
+) -> list[Signal]:
     signals: list[Signal] = []
     if _speed_below_capability(stats):
         signals.append(
@@ -232,7 +234,9 @@ def _corroborating_signals(stats: NormalizedInterfaceStats) -> list[Signal]:
                 supports=VerdictCategory.PHYSICAL_MEDIA,
             )
         )
-    if bytes_per_frame_exceeds_mtu(stats):
+    # `is True`: None means the average or the MTU was unknowable, which is
+    # not the same claim as "within MTU".
+    if include_bytes_per_frame and bytes_per_frame_exceeds_mtu(stats) is True:
         average = bytes_per_frame(stats)
         signals.append(
             Signal(
@@ -566,7 +570,15 @@ def _evaluate_stats(
     # ---- discards: congestion/buffer, not physical --------------------------
     if cls in (CounterClass.IN_DISCARDS, CounterClass.OUT_DISCARDS):
         return _discards_verdict(
-            cls, stats, window, value_delta, flat, life_window, thresholds, verdict
+            cls,
+            stats,
+            window,
+            value_delta,
+            flat,
+            life_window,
+            thresholds,
+            flags,
+            verdict,
         )
 
     # ---- receive errors: the core ladder ------------------------------------
@@ -654,6 +666,24 @@ def _late_collisions_verdict(
     )
 
 
+def _congestion_corroboration(
+    stats: NormalizedInterfaceStats, window: DeltaWindow | None
+) -> bool | None:
+    """Buffer-pressure activity beside the discard counter itself: overrun,
+    ignored, or no-buffer movement (delta when a window exists, lifetime
+    otherwise). None when all three are unknown — the guard cannot run."""
+    if window is not None:
+        deltas = [window.overrun, window.ignored, window.no_buffer]
+        known = [part for part in deltas if part is not None]
+        if known:
+            return sum(known) > 0
+    lifetime = [stats.overrun, stats.ignored, stats.no_buffer]
+    known = [part for part in lifetime if part is not None]
+    if not known:
+        return None
+    return sum(known) > 0
+
+
 def _discards_verdict(
     cls: CounterClass,
     stats: NormalizedInterfaceStats,
@@ -662,6 +692,7 @@ def _discards_verdict(
     flat: bool | None,
     life_window: IntervalEstimate | None,
     thresholds: Thresholds,
+    flags: list[DataQualityFlag],
     verdict,
 ) -> Verdict:
     direction_in = cls is CounterClass.IN_DISCARDS
@@ -710,6 +741,39 @@ def _discards_verdict(
             what=_WHAT_HISTORIC,
         )
     if rate is not None and rate >= thresholds.discard_rate:
+        # CONGESTION_BUFFER is a claim about buffer pressure; input discards
+        # on a port whose buffer-side counters are all flat are policy drops
+        # (an unallowed VLAN, an ACL, storm-control) — same category, but the
+        # report must say so, because the remediation is entirely different.
+        corroboration = (
+            _congestion_corroboration(stats, window) if direction_in else True
+        )
+        if corroboration is False:
+            return verdict(
+                VerdictCategory.CONGESTION_BUFFER,
+                Confidence.MEDIUM,
+                "discards_at_rate_no_congestion_signature",
+                extra_signals=[
+                    Signal(
+                        kind=SignalKind.DISCARDS_WITHOUT_CONGESTION_SIGNATURE,
+                        weight=Confidence.MEDIUM,
+                        values={
+                            "discards": value_delta
+                            if value_delta is not None
+                            else (lifetime_value or 0),
+                            "direction": "input" if direction_in else "output",
+                        },
+                        supports=VerdictCategory.CONGESTION_BUFFER,
+                    )
+                ],
+            )
+        if corroboration is None:
+            flags.append(
+                DataQualityFlag(
+                    DataQualityKind.NULL_RULE_INPUT,
+                    {"fields": "overrun/ignored/no_buffer"},
+                )
+            )
         return verdict(
             VerdictCategory.CONGESTION_BUFFER,
             Confidence.HIGH,
@@ -843,7 +907,10 @@ def _receive_errors_verdict(
                             supports=VerdictCategory.PHYSICAL_MEDIA,
                         ),
                         *_unattributed_signals(stats),
-                        *_corroborating_signals(stats),
+                        # A byte counter above MTU is a corollary of errors
+                        # without traffic (bytes with almost no counted
+                        # frames), not independent evidence — skip it here.
+                        *_corroborating_signals(stats, include_bytes_per_frame=False),
                     ],
                     what=what_media,
                 )

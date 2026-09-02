@@ -70,6 +70,19 @@ def test_unattributed_rx_prefers_subtracting_symbol_when_present():
     assert unattributed_rx(stats) == 316073814 - 1000
 
 
+def test_unattributed_rx_subtracts_congestion_buckets_when_present():
+    stats = NormalizedInterfaceStats(
+        rcv_err=100_000,
+        fcs_errors=100,
+        align_errors=0,
+        overrun=60_000,
+        ignored=25_000,
+        no_buffer=1_000,
+        giants=900,
+    )
+    assert unattributed_rx(stats) == 100_000 - 100 - 60_000 - 25_000 - 1_000 - 900
+
+
 def test_unattributed_rx_requires_named_buckets():
     stats = golden_stats()
     stats.fcs_errors = None

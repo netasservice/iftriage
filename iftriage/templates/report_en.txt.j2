@@ -9,6 +9,8 @@ Runts dominate the input-error total with zero collision activity: frames are no
 FCS errors are {{ '%.1f'|format(100 * s.values.fcs_fraction) }}% of input errors: frames arriving but corrupted (marginal signal).
 {%- elif s.kind.value == 'buffer_group_dominant' -%}
 {% if s.values.buffer_group is defined %}Overrun/ignored/no-buffer/input-queue drops account for {{ '{:,}'.format(s.values.buffer_group) }} of {{ '{:,}'.format(s.values.input_errors) }} input errors in the window: congestion, not media.{% else %}{{ '{:,}'.format(s.values.discards) }} {{ s.values.direction }} discards at meaningful rate: frames arrived intact and were dropped (oversubscription, policer, or ring sizing), not media.{% endif %}
+{%- elif s.kind.value == 'discards_without_congestion_signature' -%}
+{{ '{:,}'.format(s.values.discards) }} {{ s.values.direction }} discards at meaningful rate with no buffer-pressure signature (overrun/ignored/no-buffer flat): consistent with policy drops (unallowed VLAN, ACL, storm-control), not congestion.
 {%- elif s.kind.value == 'late_collisions_full_duplex' -%}
 {{ '{:,}'.format(s.values.late_collisions) }} late collisions on a {{ s.values.duplex }}-duplex link{% if s.values.neighbor_duplex is defined and s.values.neighbor_duplex not in ('?', '') %} (neighbor {{ s.values.neighbor_name }} reports {{ s.values.neighbor_duplex }}){% endif %}: negotiation/duplex mismatch, fixed via CLI.
 {%- elif s.kind.value == 'giants_with_mtu_mismatch' -%}
@@ -62,8 +64,13 @@ If the counter advances again on a future run, the case reopens and is reclassif
   Next steps: fix via CLI — align speed/duplex (and MTU where giants
     dominate) on both ends. Not a media dispatch.
 {%- elif category == 'CONGESTION_BUFFER' -%}
-  Next steps: review oversubscription, policers, and buffer/ring sizing on
+{%- set policy = r.verdict.signals | selectattr('kind.value', 'equalto', 'discards_without_congestion_signature') | list -%}
+{% if policy %}  Next steps: check the port's policy first — trunk allowed VLANs, ACL hit
+    counters, storm-control — before provisioning capacity; the buffer-side
+    counters are flat. Not a media dispatch.
+{%- else %}  Next steps: review oversubscription, policers, and buffer/ring sizing on
     this path. Not a media dispatch.
+{%- endif %}
 {%- elif category == 'HISTORIC_NOT_ACTIVE' -%}
   Next steps: coordinate a manual counter clear, then requeue for a future
     run. Do not dispatch anyone.

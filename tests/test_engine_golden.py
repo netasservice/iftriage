@@ -103,7 +103,10 @@ def test_golden_verdict_is_physical_media_high():
     assert SignalKind.ZERO_TRAFFIC_ERRORS in kinds
     assert SignalKind.UNATTRIBUTED_RX_DOMINANT in kinds
     assert SignalKind.SPEED_BELOW_CAPABILITY in kinds
-    assert SignalKind.BYTES_PER_FRAME_ABOVE_MTU in kinds
+    # Bytes-per-frame above MTU is a corollary of the zero-traffic
+    # observation (bytes with almost no counted frames), not independent
+    # evidence — the zero-traffic verdict must not list it.
+    assert SignalKind.BYTES_PER_FRAME_ABOVE_MTU not in kinds
     assert SignalKind.INTERFACE_RESETS in kinds
 
 
