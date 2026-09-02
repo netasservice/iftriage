@@ -277,18 +277,47 @@ def _fcs_contradiction(stats: NormalizedInterfaceStats) -> Signal | None:
     )
 
 
+# Transmit-side counters: their population is attempted transmissions, not
+# received frames — a late collision or an output discard never arrived.
+_TX_SIDE_CLASSES = frozenset({CounterClass.LATE_COLLISIONS, CounterClass.OUT_DISCARDS})
+
+
+def _case_ratio(
+    cls: CounterClass, window: DeltaWindow | None, life: LifetimeView
+) -> tuple[RatioResult, str]:
+    """The flagged counter's share of its own population, with the label the
+    report prints for the denominator. Falls back to the lifetime population
+    when no delta exists — a single sample still supports a share, just not a
+    rate."""
+    field = _VALUE_FIELD[cls]
+    if cls in _TX_SIDE_CLASSES:
+        if window is not None:
+            return window.ratio_against_transmitted(field), "transmitted frames"
+        return life.ratio_against_transmitted(field), "lifetime transmitted frames"
+    if window is not None:
+        return window.ratio_of(field), "received frames"
+    return life.ratio_of(field), "lifetime received frames"
+
+
 def _build_metrics(
     window: DeltaWindow | None,
+    value_field: str,
     value_delta: int | None,
     csv_change: int | None,
     ratio: RatioResult | None,
+    ratio_basis: str | None,
     stale_minutes: float | None,
 ) -> VerdictMetrics:
     interval = window.interval if window is not None else None
+    # The rate is the CASE's counter over the window — never a different
+    # counter than the delta printed beside it.
+    rate = window.rate_of(value_field) if window is not None else None
+    has_ratio = ratio is not None and ratio.value is not None
     return VerdictMetrics(
-        errors_per_second=window.errors_per_second() if window else None,
-        errors_per_hour=window.errors_per_hour() if window else None,
+        errors_per_second=rate,
+        errors_per_hour=rate * 3600 if rate is not None else None,
         error_ratio=ratio.value if ratio else None,
+        ratio_basis=ratio_basis if has_ratio else None,
         delta_tool=value_delta,
         delta_csv=csv_change,
         interval_minutes=interval.minutes if interval else None,
@@ -488,14 +517,16 @@ def _evaluate_stats(
                 )
             )
 
-    ratio = window.ratio_of(value_field) if window is not None else None
-    if ratio is not None and ratio.flag is not None:
+    ratio, ratio_basis = _case_ratio(cls, window, life)
+    if ratio.flag is not None:
         flags.append(
             DataQualityFlag(
                 DataQualityKind.RATIO_OUT_OF_RANGE, {"detail": ratio.detail or ""}
             )
         )
-    metrics = _build_metrics(window, value_delta, csv_change, ratio, stale_minutes)
+    metrics = _build_metrics(
+        window, value_field, value_delta, csv_change, ratio, ratio_basis, stale_minutes
+    )
 
     link_down = (stats.link_status or "").lower() != "up"
     if link_down:

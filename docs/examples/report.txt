@@ -61,8 +61,8 @@ Next steps — non-disruptive: inspect and clean the fiber connectors and
     - 38,449,023 late collisions on a half-duplex link (neighbor SEP001122AABB99 reports full): negotiation/duplex mismatch, fixed via CLI.
   Delta (iftriage, run-to-run): 3,096 over 18.0 h (host-side timestamps)
   Delta (CSV, Splunk window): -154,073
-  Error rate: 0.00/s (0/h)
-  Error ratio: 27.1961% of received frames
+  Error rate: 0.05/s (172/h)
+  Error ratio: 100.0000% of transmitted frames
   Data quality:
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 41.9 h old at report time; its rates describe that period.
@@ -77,7 +77,7 @@ Next steps: fix via CLI — align speed/duplex (and MTU where giants
     - 3,600 input discards at meaningful rate: frames arrived intact and were dropped (oversubscription, policer, or ring sizing), not media.
   Delta (iftriage, run-to-run): 3,600 over 18.0 h (host-side timestamps)
   Delta (CSV, Splunk window): 286
-  Error rate: 0.00/s (0/h)
+  Error rate: 0.06/s (200/h)
   Error ratio: 2.0000% of received frames
   Data quality:
     - Interval (18.0 h) derived from host-side timestamps, not device time.

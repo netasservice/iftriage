@@ -170,7 +170,7 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
     {% if m.delta_tool is not none %}<tr><td>Δ (iftriage, run-to-run)</td><td>{{ '{:,}'.format(m.delta_tool) }}{% if m.interval_minutes %} over {{ window(m.interval_minutes) }} ({{ m.interval_source }}){% endif %}</td></tr>{% endif %}
     {% if m.delta_csv is not none %}<tr><td>Δ (CSV, Splunk window)</td><td>{{ '{:,}'.format(m.delta_csv) }}</td></tr>{% endif %}
     {% if m.errors_per_second is not none %}<tr><td>Error rate</td><td>{{ '%.2f'|format(m.errors_per_second) }}/s ({{ '{:,.0f}'.format(m.errors_per_hour) }}/h)</td></tr>{% endif %}
-    {% if m.error_ratio is not none %}<tr><td>Error ratio</td><td>{{ '%.4f'|format(100 * m.error_ratio) }}% of received frames</td></tr>{% endif %}
+    {% if m.error_ratio is not none %}<tr><td>Error ratio</td><td>{{ '%.4f'|format(100 * m.error_ratio) }}% of {{ m.ratio_basis or 'received frames' }}</td></tr>{% endif %}
   </table>
   {% endif %}
   {% if r.verdict and r.verdict.data_quality %}

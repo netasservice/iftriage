@@ -3,6 +3,8 @@ the v2 ladder (verdict + confidence + signals)."""
 
 from datetime import UTC, datetime
 
+import pytest
+
 from iftriage.config import Thresholds
 from iftriage.models import (
     Confidence,
@@ -470,6 +472,64 @@ def test_dom_out_of_range_is_physical_media():
     verdict = run(make_case("Rcv-Err"), stats)
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
     assert SignalKind.DOM_RX_OUT_OF_RANGE in signal_kinds(verdict)
+
+
+def test_metrics_follow_the_case_counter_for_late_collisions():
+    # The audit found "Error rate 0.00/s" printed beside a 955,413 late-
+    # collision delta: the rate came from input_errors. It must follow the
+    # case's own counter, and its ratio population is attempted TX frames.
+    earlier = make_stats(
+        late_collisions=57_507_585,
+        output_packets=234_000_000,
+        input_errors=1,
+        crc_errors=1,
+    )
+    current = make_stats(
+        late_collisions=58_462_998,
+        output_packets=235_417_421,
+        input_errors=1,
+        crc_errors=1,
+    )
+    verdict = run(make_case("Late-Col"), current, earlier, minutes=1104)
+    metrics = verdict.metrics
+    assert metrics.delta_tool == 955_413
+    assert metrics.errors_per_second == pytest.approx(955_413 / (1104 * 60))
+    assert metrics.ratio_basis == "transmitted frames"
+    assert metrics.error_ratio == pytest.approx(955_413 / (1_417_421 + 955_413))
+
+
+def test_metrics_rate_uses_discards_for_an_indiscards_case():
+    earlier = make_stats(
+        discards_in=46_238_505,
+        input_packets=4_342_000_000,
+        input_errors=0,
+        crc_errors=0,
+    )
+    current = make_stats(
+        discards_in=46_620_415,
+        input_packets=4_348_528_282,
+        input_errors=0,
+        crc_errors=0,
+    )
+    verdict = run(make_case("InDiscards"), current, earlier, minutes=1104)
+    assert verdict.metrics.delta_tool == 381_910
+    assert verdict.metrics.errors_per_second == pytest.approx(381_910 / (1104 * 60))
+    assert verdict.metrics.ratio_basis == "received frames"
+
+
+def test_single_sample_case_still_prints_a_lifetime_ratio():
+    stats = make_stats(
+        input_errors=162_385_599,
+        crc_errors=161_248_798,
+        input_packets=633_344_904_992,
+    )
+    verdict = run(make_case("Rcv-Err"), stats)
+    metrics = verdict.metrics
+    assert metrics.error_ratio == pytest.approx(
+        162_385_599 / (633_344_904_992 + 162_385_599)
+    )
+    assert metrics.ratio_basis == "lifetime received frames"
+    assert metrics.errors_per_second is None  # a share, never a rate
 
 
 def test_no_division_when_everything_is_zero():

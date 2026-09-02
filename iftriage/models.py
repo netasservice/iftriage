@@ -240,6 +240,7 @@ class VerdictMetrics:
     errors_per_second: float | None = None
     errors_per_hour: float | None = None
     error_ratio: float | None = None  # only ever a value inside [0, 1]
+    ratio_basis: str | None = None  # the denominator population, for the label
     delta_tool: int | None = None  # the CSV-flagged counter, run-to-run
     delta_csv: int | None = None  # the CSV `change` column, as supplied
     interval_minutes: float | None = None

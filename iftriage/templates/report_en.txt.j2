@@ -139,7 +139,7 @@ CASES
 {% endif %}
 {% if m.errors_per_second is not none %}  Error rate: {{ '%.2f'|format(m.errors_per_second) }}/s ({{ '{:,.0f}'.format(m.errors_per_hour) }}/h)
 {% endif %}
-{% if m.error_ratio is not none %}  Error ratio: {{ '%.4f'|format(100 * m.error_ratio) }}% of received frames
+{% if m.error_ratio is not none %}  Error ratio: {{ '%.4f'|format(100 * m.error_ratio) }}% of {{ m.ratio_basis or 'received frames' }}
 {% endif %}
 {% endif %}
 {% if r.verdict and r.verdict.data_quality %}

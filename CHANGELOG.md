@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- The metrics block now follows the case's own counter. "Error rate" was
+  hardwired to the input-errors delta, so a Late-Col case printed
+  "0.00/s" beside a 955K late-collision delta; it is now the flagged
+  counter over the measured window. "Error ratio" names its denominator
+  population — transmit-side counters (Late-Col, OutDiscards) are shares
+  of attempted transmissions, never of received frames — and single-sample
+  cases now print their lifetime share, labeled as such.
+- The interval provenance label "(device uptime)" — which read as if the
+  device had been up for 18 hours on a chassis with years of uptime — is now
+  "(device clock (uptime delta))": the window was measured by the difference
+  of the device's own uptime readings.
 - The `zero_traffic_errors` rule no longer returns PHYSICAL_MEDIA HIGH while
   ignoring collision activity. It now applies the same collision guard as the
   media-dominance rule: with collisions or late collisions on the counters,

@@ -138,6 +138,39 @@ def test_ratio_out_of_range_is_flagged_not_returned():
     assert "discards_out" in (outcome.detail or "")
 
 
+def test_rate_of_follows_the_named_field():
+    window = compute_delta_window(
+        NormalizedInterfaceStats(late_collisions=57_507_585, input_errors=1),
+        NormalizedInterfaceStats(late_collisions=58_462_998, input_errors=1),
+        HOST_WINDOW,
+    )
+    assert window.rate_of("late_collisions") == pytest.approx(
+        955_413 / HOST_WINDOW.seconds
+    )
+    assert window.rate_of("input_errors") == 0.0
+
+
+def test_ratio_against_transmitted_adds_the_lost_frames_back():
+    window = compute_delta_window(
+        NormalizedInterfaceStats(late_collisions=0, output_packets=0),
+        NormalizedInterfaceStats(late_collisions=400, output_packets=600),
+        HOST_WINDOW,
+    )
+    outcome = window.ratio_against_transmitted("late_collisions")
+    assert outcome.value == pytest.approx(0.4)
+
+
+def test_ratio_against_transmitted_without_output_packets_is_undefined():
+    window = compute_delta_window(
+        NormalizedInterfaceStats(late_collisions=0),
+        NormalizedInterfaceStats(late_collisions=400),
+        HOST_WINDOW,
+    )
+    outcome = window.ratio_against_transmitted("late_collisions")
+    assert outcome.value is None
+    assert outcome.flag is None
+
+
 def test_error_ratio_uses_received_frames_denominator():
     window = compute_delta_window(
         NormalizedInterfaceStats(input_packets=0, input_errors=0),

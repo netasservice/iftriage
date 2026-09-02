@@ -166,6 +166,30 @@ class DeltaWindow:
             f"delta_{field_name} / delta_received_frames",
         )
 
+    def rate_of(self, field_name: str) -> float | None:
+        """Per-second rate of one delta bucket over the window."""
+        value = getattr(self, field_name)
+        if value is None or self.interval is None or self.interval.seconds <= 0:
+            return None
+        return value / self.interval.seconds
+
+    def ratio_against_transmitted(self, field_name: str) -> RatioResult:
+        """Share of one delta bucket within attempted transmissions.
+
+        Frames lost to output discards or late collisions are absent from
+        `packets output`, so the bucket is added back — the quotient is
+        bounded to [0, 1] by construction.
+        """
+        value = getattr(self, field_name)
+        attempted = (
+            self.output_packets + value
+            if value is not None and self.output_packets is not None
+            else None
+        )
+        return _ratio(
+            value, attempted, f"delta_{field_name} / delta_attempted_tx_frames"
+        )
+
 
 def compute_delta_window(
     earlier: NormalizedInterfaceStats,
@@ -208,6 +232,27 @@ class LifetimeView:
             self.stats.input_errors,
             self.received_frames(),
             "lifetime_input_errors / lifetime_received_frames",
+        )
+
+    def ratio_of(self, field_name: str) -> RatioResult:
+        """Share of one lifetime bucket within lifetime received frames."""
+        return _ratio(
+            getattr(self.stats, field_name),
+            self.received_frames(),
+            f"lifetime_{field_name} / lifetime_received_frames",
+        )
+
+    def ratio_against_transmitted(self, field_name: str) -> RatioResult:
+        """Share of one lifetime bucket within attempted transmissions —
+        same add-back as the delta variant, on lifetime fields."""
+        value = getattr(self.stats, field_name)
+        attempted = (
+            self.stats.output_packets + value
+            if value is not None and self.stats.output_packets is not None
+            else None
+        )
+        return _ratio(
+            value, attempted, f"lifetime_{field_name} / lifetime_attempted_tx_frames"
         )
 
     def errors_per_second(self, window: IntervalEstimate | None) -> float | None:

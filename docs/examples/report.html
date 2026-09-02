@@ -345,7 +345,7 @@ Et4/15               31.42    3.28     7.06     -2.63     -15.21       0:00:03 a
   <div class="evidence"><strong>Evidence</strong>
   <ul><li>38,449,023 late collisions on a half-duplex link (neighbor SEP001122AABB99 reports full): negotiation/duplex mismatch — fixed via CLI, not by touching media.</li></ul></div>
   <table class="kv muted">
-<tr><td>Δ (iftriage, run-to-run)</td><td>3,096 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>-154,073</td></tr><tr><td>Error rate</td><td>0.00/s (0/h)</td></tr><tr><td>Error ratio</td><td>27.1961% of received frames</td></tr>  </table>
+<tr><td>Δ (iftriage, run-to-run)</td><td>3,096 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>-154,073</td></tr><tr><td>Error rate</td><td>0.05/s (172/h)</td></tr><tr><td>Error ratio</td><td>100.0000% of transmitted frames</td></tr>  </table>
   <p class="muted"><strong>Data quality:</strong></p>
   <ul class="muted"><li>Interval (18.0 h) derived from host-side timestamps, not device time.</li><li>CSV poll timestamp is 41.9 h old at report time; the CSV's rates describe that period, not the present.</li></ul>
 <p class="muted"><strong>Next steps:</strong> fix via CLI — align speed/duplex (and MTU where giants dominate) on both ends. Not a media dispatch.</p>  <p class="muted">Compared against the sample from
@@ -538,7 +538,7 @@ Group  Port-channel  Protocol    Ports
   <div class="evidence"><strong>Evidence</strong>
   <ul><li>3,600 input discards at meaningful rate: frames arrived intact and were dropped — oversubscription, policer, or ring sizing, not media.</li></ul></div>
   <table class="kv muted">
-<tr><td>Δ (iftriage, run-to-run)</td><td>3,600 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>286</td></tr><tr><td>Error rate</td><td>0.00/s (0/h)</td></tr><tr><td>Error ratio</td><td>2.0000% of received frames</td></tr>  </table>
+<tr><td>Δ (iftriage, run-to-run)</td><td>3,600 over 18.0 h (host-side timestamps)</td></tr><tr><td>Δ (CSV, Splunk window)</td><td>286</td></tr><tr><td>Error rate</td><td>0.06/s (200/h)</td></tr><tr><td>Error ratio</td><td>2.0000% of received frames</td></tr>  </table>
   <p class="muted"><strong>Data quality:</strong></p>
   <ul class="muted"><li>Interval (18.0 h) derived from host-side timestamps, not device time.</li><li>CSV poll timestamp is 39.6 h old at report time; the CSV's rates describe that period, not the present.</li><li>Δ sources disagree: iftriage run-to-run 3,600 vs CSV change 286. The tool's own observation is used for rate math because its interval is measured.</li></ul>
 <p class="muted"><strong>Next steps:</strong> review oversubscription, policers, and buffer/ring sizing on this path. Not a media dispatch.</p>  <p class="muted">Compared against the sample from
