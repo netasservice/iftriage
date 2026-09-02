@@ -172,6 +172,46 @@ def test_history_roundtrip(tmp_path):
     history.close()
 
 
+def test_verdict_history_and_the_chronic_benign_flag(tmp_path):
+    from iftriage.cli import _is_chronic_benign
+
+    history = History(tmp_path / "history.db")
+    cases, _ = ingest_csv(FIXTURES / "sample_top20.csv")
+    case = next(c for c in cases if not c.excluded)
+    for name in ("a.csv", "b.csv", "c.csv"):
+        history.archive_ingest(name, "raw", cases)
+    for _ in range(2):
+        run_id, _ = history.start_run("x.csv")
+        stored = CaseResult(case=case)
+        stored.verdict = Verdict(VerdictCategory.IGNORE, "IGNORE — below threshold.")
+        history.save_results(run_id, [stored])
+
+    assert history.verdict_history(case.switch, case.interface, case.counter) == [
+        "IGNORE",
+        "IGNORE",
+    ]
+
+    current = CaseResult(case=case)
+    current.verdict = Verdict(VerdictCategory.IGNORE, "IGNORE — below threshold.")
+    current.recurrence = 3
+    assert _is_chronic_benign(current, history)
+
+    # A single non-IGNORE anywhere in the history breaks the chain: the case
+    # was once real, so the feed is not the problem.
+    run_id, _ = history.start_run("y.csv")
+    once_real = CaseResult(case=case)
+    once_real.verdict = Verdict(
+        VerdictCategory.PHYSICAL_MEDIA, "PHYSICAL_MEDIA — test."
+    )
+    history.save_results(run_id, [once_real])
+    assert not _is_chronic_benign(current, history)
+
+    # Low recurrence never qualifies, whatever the verdicts say.
+    current.recurrence = 2
+    assert not _is_chronic_benign(current, history)
+    history.close()
+
+
 def _po_result_with_members():
     cases, _ = ingest_csv(FIXTURES / "sample_top20.csv")
     po_case = next(case for case in cases if case.interface == "Po214")

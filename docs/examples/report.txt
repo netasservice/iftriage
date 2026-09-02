@@ -22,7 +22,7 @@ CASES
   Data quality:
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 42.3 h old at report time; its rates describe that period.
-    - Delta sources disagree: iftriage run-to-run 412 vs CSV change 2,123; the tool's own delta is used for rate math.
+    - Delta sources disagree: iftriage run-to-run 412 vs CSV change 2,123; the tool's own delta is used for rate math; the CSV's delta window is not stated in the export and has proven inconsistent across rows — confirm it in the Splunk search.
   What would change this: If errors stop advancing after a coordinated manual counter clear and repoll, reclassify HISTORIC_NOT_ACTIVE.
 Next steps — non-disruptive: identify the attached device and its native
     speed; inspect the patch cord and the jack; correlate the error history
@@ -44,7 +44,7 @@ Next steps — non-disruptive: identify the attached device and its native
   Data quality:
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 40.2 h old at report time; its rates describe that period.
-    - Delta sources disagree: iftriage run-to-run 0 vs CSV change 9,459; the tool's own delta is used for rate math.
+    - Delta sources disagree: iftriage run-to-run 0 vs CSV change 9,459; the tool's own delta is used for rate math; the CSV's delta window is not stated in the export and has proven inconsistent across rows — confirm it in the Splunk search.
   What would change this: If errors stop advancing after a coordinated manual counter clear and repoll, reclassify HISTORIC_NOT_ACTIVE.
 Next steps — non-disruptive: inspect and clean the fiber connectors and
     patch panel; check the transceiver's DOM receive-power trend (this
@@ -84,7 +84,7 @@ Next steps: fix via CLI — align speed/duplex (and MTU where giants
   Data quality:
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 39.6 h old at report time; its rates describe that period.
-    - Delta sources disagree: iftriage run-to-run 3,600 vs CSV change 286; the tool's own delta is used for rate math.
+    - Delta sources disagree: iftriage run-to-run 3,600 vs CSV change 286; the tool's own delta is used for rate math; the CSV's delta window is not stated in the export and has proven inconsistent across rows — confirm it in the Splunk search.
   Next steps: check the port's policy first — trunk allowed VLANs, ACL hit
     counters, storm-control — before provisioning capacity; the buffer-side
     counters are flat. Not a media dispatch.
@@ -106,7 +106,7 @@ Next steps: fix via CLI — align speed/duplex (and MTU where giants
   Data quality:
     - Interval (18.0 h) derived from host-side timestamps, not device time.
     - CSV poll timestamp is 39.1 h old at report time; its rates describe that period.
-    - Delta sources disagree: iftriage run-to-run 0 vs CSV change 28; the tool's own delta is used for rate math.
+    - Delta sources disagree: iftriage run-to-run 0 vs CSV change 28; the tool's own delta is used for rate math; the CSV's delta window is not stated in the export and has proven inconsistent across rows — confirm it in the Splunk search.
   What would change this: If the counter advances again on a future run, the case reopens and is reclassified.
 Next steps: coordinate a manual counter clear, then requeue for a future
     run. Do not dispatch anyone.

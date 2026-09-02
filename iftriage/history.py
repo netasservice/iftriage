@@ -470,6 +470,22 @@ class History:
             )
             return int(cur.fetchone()[0])
 
+    def verdict_history(
+        self, switch: str, interface: str, counter: str, limit: int = 10
+    ) -> list[str]:
+        """Verdict categories stored for this case in prior runs, newest
+        first. Used to spot chronic benign top-20 residents; an empty list
+        means the case was never judged before."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT verdict FROM case_results "
+                "WHERE switch=? AND interface=? AND counter=? "
+                "AND verdict IS NOT NULL "
+                "ORDER BY run_id DESC, rowid DESC LIMIT ?",
+                (switch, interface, counter, limit),
+            )
+            return [str(row[0]) for row in cur.fetchall()]
+
     def latest_case_result(
         self, switch: str, interface: str, counter: str
     ) -> StoredCase | None:

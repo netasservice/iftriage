@@ -323,4 +323,8 @@ class CaseResult:
     member_errors: dict[str, str] = field(default_factory=dict)
     verdict: Verdict | None = None
     duplicate_of: str | None = None  # set when this is a member of a Po also in the CSV
-    recurrence: int = 0  # prior runs in which this switch+interface appeared
+    recurrence: int = 0
+    # High recurrence with a history of nothing but IGNORE: the top-20 feed
+    # ranks by absolute delta, so a busy uplink's negligible ratio can hold a
+    # seat forever. The report recommends fixing the search, not the port.
+    chronic_benign: bool = False  # prior runs in which this switch+interface appeared

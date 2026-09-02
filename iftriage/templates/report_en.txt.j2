@@ -97,7 +97,7 @@ CSV poll timestamp is {{ window(f.values.staleness_minutes) }} old at report tim
 {%- elif f.kind.value == 'interval_from_ingest_time' -%}
 Interval ({{ window(f.values.interval_minutes) }}) derived from host-side timestamps, not device time.
 {%- elif f.kind.value == 'delta_source_disagreement' -%}
-Delta sources disagree: iftriage run-to-run {{ '{:,}'.format(f.values.delta_tool) }} vs CSV change {{ '{:,}'.format(f.values.delta_csv) }}; the tool's own delta is used for rate math.
+Delta sources disagree: iftriage run-to-run {{ '{:,}'.format(f.values.delta_tool) }} vs CSV change {{ '{:,}'.format(f.values.delta_csv) }}; the tool's own delta is used for rate math; the CSV's delta window is not stated in the export and has proven inconsistent across rows — confirm it in the Splunk search.
 {%- elif f.kind.value == 'reconciliation_skew' -%}
 Input-error reconciliation is off by {{ f.values.residual }} — consistent with the counters advancing (~{{ f.values.errors_per_second }}/s) between the two show commands, not an accounting problem.
 {%- elif f.kind.value == 'counter_reconciliation_failed' -%}
@@ -195,7 +195,7 @@ CASES
 {% endfor %}
 {% endif %}
 {% if r.recurrence > 1 %}
-  Recurrence: appeared in {{ r.recurrence }} ingested top-20 lists.
+  Recurrence: appeared in {{ r.recurrence }} ingested top-20 lists.{% if r.chronic_benign %} Every stored verdict for it is IGNORE — a chronic benign resident: the top-20 ranks by absolute delta, so a busy link's negligible ratio holds a seat permanently, displacing ports with real faults. Consider re-ranking the Splunk search by error ratio, or excluding this interface, rather than re-triaging it.{% endif +%}
 {% endif %}
 {% if r.case.dq_flags %}
   Data-quality flags: {{ r.case.dq_flags | join(', ') }}

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Chronic-benign detection: a case that keeps appearing in the ingested
+  top-20 (3+ lists) and has never been judged anything but IGNORE — this run
+  and at least two stored runs — is marked as a chronic benign resident, with
+  the report recommending the fix where it belongs: re-rank the Splunk
+  search by error ratio (it ranks by absolute delta, so a busy link's
+  negligible ratio holds a seat permanently) or exclude the interface.
+  The source-disagreement note and the README now say plainly that the CSV
+  `change` column's delta window is unstated and has proven inconsistent
+  across rows, and that it is never used for rate math.
 - Evidence is now time-aware. Interface resets are normalized by the
   counter's age and cited only when actually frequent ("60 resets" over 9.7
   years is six a year — maintenance, not evidence). When the lifetime error

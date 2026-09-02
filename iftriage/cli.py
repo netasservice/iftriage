@@ -22,7 +22,7 @@ from .collectors import (
 from .config import load_config
 from .history import History, HistoryError
 from .ingest import IngestError, ingest_csv
-from .models import Credentials, Platform
+from .models import Credentials, Platform, VerdictCategory
 from .normalize import is_portchannel_name
 from .platforms import get_profile
 from .platforms.base import PORTCHANNEL_KEY
@@ -276,7 +276,28 @@ def _evaluate_all(results, config, history: History) -> None:
         result.recurrence = history.recurrence_count(
             result.case.switch, result.case.interface
         )
+        result.chronic_benign = _is_chronic_benign(result, history)
     mark_portchannel_duplicates(results)
+
+
+# A case must keep coming back (recurrence) and keep being judged harmless
+# (this run and at least two stored runs, all IGNORE) before the report is
+# allowed to call the feed itself the problem.
+_CHRONIC_MIN_RECURRENCE = 3
+_CHRONIC_MIN_PRIOR_VERDICTS = 2
+
+
+def _is_chronic_benign(result, history: History) -> bool:
+    if result.verdict is None or result.verdict.category is not VerdictCategory.IGNORE:
+        return False
+    if result.recurrence < _CHRONIC_MIN_RECURRENCE:
+        return False
+    prior = history.verdict_history(
+        result.case.switch, result.case.interface, result.case.counter
+    )
+    if len(prior) < _CHRONIC_MIN_PRIOR_VERDICTS:
+        return False
+    return all(v == VerdictCategory.IGNORE.value for v in prior)
 
 
 def _render_and_print(results, findings, meta, config, output_dir) -> None:
