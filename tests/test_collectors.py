@@ -721,6 +721,31 @@ def test_collect_members_samples_each_validated_member(tmp_path, monkeypatch):
     assert "GigabitEthernet3/0/23:interface" in result.raw_outputs
 
 
+def test_members_inherit_the_devices_uptime(tmp_path, monkeypatch):
+    # The member pass skips `show version` on purpose; members must inherit
+    # the device-level fields from the parent case, or their interval
+    # provenance degrades to host-side timestamps while the bundle keeps the
+    # device clock.
+    _member_pass_session(monkeypatch)
+    result = _po_result()
+    result.stats.uptime_minutes = 123_456.0
+    result.stats.model = "C9410R"
+    result.stats.os_version = "17.06.05"
+
+    collect_members(
+        [result],
+        _quiet_config(),
+        Credentials(username="ops", password="pw"),
+        AuditLog(tmp_path / "audit.log"),
+        None,
+    )
+
+    for member_stats in result.member_stats.values():
+        assert member_stats.uptime_minutes == 123_456.0
+        assert member_stats.model == "C9410R"
+        assert member_stats.os_version == "17.06.05"
+
+
 def test_member_case_samples_its_siblings_not_itself(tmp_path, monkeypatch):
     commands = _member_pass_session(monkeypatch)
     result = CaseResult(case=_case("sw-a", "Gi3/0/23"))

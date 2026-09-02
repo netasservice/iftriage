@@ -138,6 +138,7 @@ def test_ios_xe_cdp_neighbors():
     assert parsed["neighbor_name"] == "dist-sw-01.example.net"
     assert parsed["neighbor_port"] == "TenGigabitEthernet1/0/5"
     assert parsed["neighbor_duplex"] == "full"
+    assert parsed["neighbor_platform"] == "cisco C9500-32C"
 
 
 def test_ios_xe_etherchannel_summary():

@@ -245,3 +245,21 @@ def test_a_pre_replay_schema_run_is_barred_from_replay_but_serves_as_a_baseline(
     assert history.latest_case_result("sw-a", "Gi1/0/1", "Rcv-Err") is None
     assert select_baselines([case], history, SETTINGS, NOW).matched == 1
     history.close()
+
+
+def test_attach_baselines_carries_the_earlier_samples_raw_outputs(tmp_path):
+    db = tmp_path / "history.db"
+    case = _case()
+    stored = _stored(case, hours_ago=18, crc=10)
+    stored.raw_outputs = {"interface": "Gi1/0/1 is up, earlier sample ..."}
+    history = _write_run(db, [stored], hours_ago=18)
+
+    selection = select_baselines([case], history, SETTINGS, NOW)
+    result = CaseResult(case=case)
+    result.stats = NormalizedInterfaceStats(link_status="up", crc_errors=40)
+    attach_baselines([result], selection, NOW)
+
+    assert result.baseline_raw_outputs == {
+        "interface": "Gi1/0/1 is up, earlier sample ..."
+    }
+    history.close()

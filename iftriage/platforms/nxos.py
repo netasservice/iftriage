@@ -13,6 +13,7 @@ from .base import (
     parse_flap_count,
     parse_last_clearing,
     parse_portchannel_summary,
+    parse_reliability_loads,
     parse_uptime_minutes,
     register,
 )
@@ -120,6 +121,13 @@ def _parse_show_interface(raw: str) -> dict:
     if match:
         result["output_rate_pps"] = int(match.group(2))
     result.update(parse_last_clearing(raw))
+    result.update(parse_reliability_loads(raw))
+    match = re.search(
+        r"vPC Status:\s*([^,\n]+),\s*vPC number:\s*(\d+)", raw, re.IGNORECASE
+    )
+    if match:
+        result["vpc_status"] = match.group(1).strip()
+        result["vpc_number"] = int(match.group(2))
     return result
 
 

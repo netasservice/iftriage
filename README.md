@@ -323,9 +323,39 @@ was collected, since nothing stops you from rebuilding week-old data.
 
 The whole CSV is answered or nothing is: if any row has no stored collection —
 a new interface, a different CSV, or a database written before 0.6.0 — the
-command exits 2 and names the rows to collect. `--baseline`, `--no-baseline`
-and `--user` are ignored (a note says so); `--dry-run` is rejected as
-contradictory.
+command exits 2 and names the rows to collect. `--user` is ignored (a note
+says so); `--dry-run` is rejected as contradictory.
+
+**Replaying the last two collections.** When the database also holds, per
+case, a second-newest replayable collection whose spacing from the newest
+respects the `baseline.min_window_minutes` .. `baseline.max_window_days`
+window (the *spacing between the two collections* — both may be a month old,
+only their gap matters), `--from-history` offers to build the report from the
+latest TWO collections, the older acting as the baseline:
+
+```bash
+iftriage run top20.csv --from-history                 # asks when pairs exist
+iftriage run top20.csv --from-history --baseline      # pair without asking
+iftriage run top20.csv --from-history --no-baseline   # latest collection only
+```
+
+The same flags answer the same question they answer on a live run, and the
+same philosophy applies: without a flag and without a terminal, the answer is
+no — the latest collection is replayed faithfully. Partial coverage is
+normal: cases with no eligible previous collection (never collected twice,
+too close, too old, or stored by a pre-v2 run) fall back to their faithful
+single replay, with a per-case note saying why. Pairing deliberately
+replaces any baseline the newest run stored live — the operator asked for
+these two collections, and the per-case provenance line names the run the
+comparison came from. Nothing is written back to the database either way.
+
+**Raw evidence, side by side.** Whenever a report rests on two collections —
+a live run that accepted a baseline, or a two-collection replay — the HTML
+report renders both raw outputs of every command in two columns, the older on
+the left and the newer on the right, aligned per command so eyeballing what
+changed needs no scrolling back and forth; the text report carries the same
+comparison as sequential blocks (older first, labeled with its timestamp and
+run number).
 
 Credentials are resolved per value, first match wins:
 
@@ -365,8 +395,19 @@ column aborts the run with exit code 2 and names what it found instead.
 | `description` | Interface description; carried into the report |
 | `status` / `protocol` | Link and line-protocol state at poll time |
 | `counter` | Counter name (`Rcv-Err`, `Late-Col`, `InDiscards`, `OutDiscards`, `Rx`, ...) |
-| `prev_count` / `count` | Counter 24h ago / at poll time |
+| `prev_count` / `count` | Counter at the previous poll / at poll time |
 | `change` | The delta Splunk ranked on |
+
+> **The `change` column's window is whatever the Splunk search made it.** A
+> field audit compared it against the tool's own measured deltas across five
+> cases and found five incompatible ratios — some rows behaved like a ~30-min
+> poll delta, others like a 24 h delta. iftriage therefore never uses `change`
+> for rate math (its own two observations are measured); it only flags the
+> disagreement. If the flag keeps appearing, the place to fix it is the Splunk
+> search, not the tool. The same bias explains chronic top-20 residents: the
+> search ranks by absolute delta, so a busy uplink with a negligible error
+> *ratio* can hold a seat permanently — the report marks these and recommends
+> re-ranking the search by ratio.
 
 ```csv
 _time,switch,mgmt_ip,interface,description,status,protocol,counter,prev_count,count,change

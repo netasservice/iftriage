@@ -44,6 +44,18 @@ from .models import (
 # verdict's confidence instead of faking a value.
 REPLAY_SCHEMA = 3
 
+# The one column list that rebuilds a StoredCase; both case-result readers
+# share it so their SELECTs and _stored_case's positional mapping cannot
+# drift apart.
+_STORED_CASE_SELECT = (
+    "SELECT r.id, r.started_at, c.platform, c.canonical_interface, "
+    "c.stats_json, c.baseline_stats_json, c.baseline_minutes, "
+    "c.raw_outputs_json, c.collection_error, c.parse_errors_json, "
+    "c.parent_portchannel, c.baseline_note, c.members_json, "
+    "c.baseline_taken_at, c.baseline_run_id "
+    "FROM case_results AS c JOIN runs AS r ON r.id = c.run_id "
+)
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS ingests (
     id INTEGER PRIMARY KEY,
@@ -305,6 +317,10 @@ class StoredSample:
     taken_at: datetime
     stats: NormalizedInterfaceStats
     member_stats: dict[str, NormalizedInterfaceStats] = field(default_factory=dict)
+    # The earlier collection's raw command output, keyed like
+    # CaseResult.raw_outputs — carried so the report can render both samples
+    # of each command side by side.
+    raw_outputs: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -470,6 +486,47 @@ class History:
             )
             return int(cur.fetchone()[0])
 
+    def verdict_history(
+        self, switch: str, interface: str, counter: str, limit: int = 10
+    ) -> list[str]:
+        """Verdict categories stored for this case in prior runs, newest
+        first. Used to spot chronic benign top-20 residents; an empty list
+        means the case was never judged before."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT verdict FROM case_results "
+                "WHERE switch=? AND interface=? AND counter=? "
+                "AND verdict IS NOT NULL "
+                "ORDER BY run_id DESC, rowid DESC LIMIT ?",
+                (switch, interface, counter, limit),
+            )
+            return [str(row[0]) for row in cur.fetchall()]
+
+    def raw_outputs_for(
+        self, run_id: int, switch: str, interface: str, counter: str
+    ) -> dict[str, str]:
+        """The raw command output one run stored for one case; {} when the
+        row is absent (a baseline run that predates this database copy) — the
+        report then falls back to single-column evidence."""
+        try:
+            with self._lock:
+                cur = self._conn.execute(
+                    "SELECT raw_outputs_json FROM case_results "
+                    "WHERE run_id=? AND switch=? AND interface=? AND counter=? "
+                    "ORDER BY rowid DESC LIMIT 1",
+                    (run_id, switch, interface, counter),
+                )
+                row = cur.fetchone()
+        except sqlite3.Error as exc:
+            raise HistoryError(f"could not read {self.path}: {exc}") from exc
+        if row is None or not row[0]:
+            return {}
+        try:
+            loaded = json.loads(row[0])
+        except json.JSONDecodeError:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
     def latest_case_result(
         self, switch: str, interface: str, counter: str
     ) -> StoredCase | None:
@@ -479,20 +536,51 @@ class History:
         missing fields the verdict depends on, and reusing them would look like
         a faithful replay while quietly answering a different question.
         """
+        return self._one_stored_case(
+            _STORED_CASE_SELECT + "WHERE c.switch=? AND c.interface=? AND c.counter=? "
+            "AND r.replay_schema >= ? "
+            "ORDER BY c.run_id DESC, c.rowid DESC LIMIT 1",
+            (switch, interface, counter, REPLAY_SCHEMA),
+            switch,
+            interface,
+            counter,
+        )
+
+    def previous_case_result(
+        self, switch: str, interface: str, counter: str, before_run_id: int
+    ) -> StoredCase | None:
+        """Newest replayable collection stored for one CSV case in a run
+        STRICTLY EARLIER than `before_run_id` — the second observation a
+        two-run replay pairs with the latest one.
+
+        Strictly-earlier by run id, not LIMIT 2 on the latest query:
+        duplicate CSV rows write two case_results rows in the same run, and
+        the second of those is the same collection, not an earlier one.
+        Unlike `latest_sample`, the replay-schema filter applies: this row
+        supplies member stats and raw evidence rendered as first-class report
+        content, so a pre-v2 row cannot honestly stand in.
+        """
+        return self._one_stored_case(
+            _STORED_CASE_SELECT + "WHERE c.switch=? AND c.interface=? AND c.counter=? "
+            "AND r.replay_schema >= ? AND c.run_id < ? "
+            "ORDER BY c.run_id DESC, c.rowid DESC LIMIT 1",
+            (switch, interface, counter, REPLAY_SCHEMA, before_run_id),
+            switch,
+            interface,
+            counter,
+        )
+
+    def _one_stored_case(
+        self,
+        sql: str,
+        params: tuple,
+        switch: str,
+        interface: str,
+        counter: str,
+    ) -> StoredCase | None:
         try:
             with self._lock:
-                cur = self._conn.execute(
-                    "SELECT r.id, r.started_at, c.platform, c.canonical_interface, "
-                    "c.stats_json, c.baseline_stats_json, c.baseline_minutes, "
-                    "c.raw_outputs_json, c.collection_error, c.parse_errors_json, "
-                    "c.parent_portchannel, c.baseline_note, c.members_json, "
-                    "c.baseline_taken_at, c.baseline_run_id "
-                    "FROM case_results AS c JOIN runs AS r ON r.id = c.run_id "
-                    "WHERE c.switch=? AND c.interface=? AND c.counter=? "
-                    "AND r.replay_schema >= ? "
-                    "ORDER BY c.run_id DESC, c.rowid DESC LIMIT 1",
-                    (switch, interface, counter, REPLAY_SCHEMA),
-                )
+                cur = self._conn.execute(sql, params)
                 row = cur.fetchone()
         except sqlite3.Error as exc:
             raise HistoryError(f"could not read {self.path}: {exc}") from exc
@@ -540,7 +628,8 @@ class History:
         try:
             with self._lock:
                 cur = self._conn.execute(
-                    "SELECT r.id, r.started_at, c.stats_json, c.members_json "
+                    "SELECT r.id, r.started_at, c.stats_json, c.members_json, "
+                    "c.raw_outputs_json "
                     "FROM case_results AS c JOIN runs AS r ON r.id = c.run_id "
                     "WHERE c.switch=? AND c.counter=? "
                     "AND (c.interface=? OR c.canonical_interface=?) "
@@ -564,6 +653,7 @@ class History:
         try:
             stats = _stats_from_json(row[2])
             member_stats, _, _ = _members_from_json(row[3])
+            raw_outputs = json.loads(row[4]) if row[4] else {}
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             raise HistoryError(
                 f"stored sample for {switch} {interface} ({counter}) is "
@@ -579,6 +669,7 @@ class History:
             taken_at=taken_at,
             stats=stats,
             member_stats=member_stats,
+            raw_outputs=raw_outputs,
         )
 
     @staticmethod

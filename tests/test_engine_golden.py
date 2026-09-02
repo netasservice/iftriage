@@ -103,8 +103,14 @@ def test_golden_verdict_is_physical_media_high():
     assert SignalKind.ZERO_TRAFFIC_ERRORS in kinds
     assert SignalKind.UNATTRIBUTED_RX_DOMINANT in kinds
     assert SignalKind.SPEED_BELOW_CAPABILITY in kinds
-    assert SignalKind.BYTES_PER_FRAME_ABOVE_MTU in kinds
-    assert SignalKind.INTERFACE_RESETS in kinds
+    # Bytes-per-frame above MTU is a corollary of the zero-traffic
+    # observation (bytes with almost no counted frames), not independent
+    # evidence — the zero-traffic verdict must not list it.
+    assert SignalKind.BYTES_PER_FRAME_ABOVE_MTU not in kinds
+    # 7 resets over the device's ~2.9-year uptime is ~2.4/year —
+    # maintenance noise, not evidence of a current fault; the time-normalized
+    # rule suppresses it.
+    assert SignalKind.INTERFACE_RESETS not in kinds
 
 
 def test_golden_fcs_is_evidence_against_not_supporting():
@@ -127,7 +133,7 @@ def test_golden_data_quality_flags():
     assert verdict.metrics.delta_tool == 1_326_250
     assert verdict.metrics.delta_csv == 112_905
     # The interval came from the device's own uptime difference.
-    assert verdict.metrics.interval_source == "device uptime"
+    assert verdict.metrics.interval_source == "device clock (uptime delta)"
 
 
 def _rendered_golden(tmp_path):
@@ -172,7 +178,7 @@ def test_golden_rendered_output_labels_both_deltas_and_staleness(tmp_path):
     text = paths["txt"].read_text()
     assert "Delta (iftriage, run-to-run): 1,326,250" in text
     assert "Delta (CSV, Splunk window): 112,905" in text
-    assert "device uptime" in text
+    assert "device clock (uptime delta)" in text
     assert "old at report time" in text  # the staleness headline
     html = paths["html"].read_text()
     assert "Δ (iftriage, run-to-run)" in html
@@ -252,7 +258,7 @@ def test_enriched_csv_carries_confidence_and_labeled_deltas(tmp_path):
     assert row[column["confidence"]] == "HIGH"
     assert row[column["delta_tool"]] == "1326250"
     assert row[column["delta_csv"]] == "112905"
-    assert row[column["interval_source"]] == "device uptime"
+    assert row[column["interval_source"]] == "device clock (uptime delta)"
     assert "stale_poll_timestamp" in row[column["data_quality"]]
     assert row[column["rcv_err"]] == "316073999"
     assert row[column["runts"]] == "4718847"

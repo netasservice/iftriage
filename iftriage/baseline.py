@@ -148,6 +148,7 @@ def attach_baselines(
         result.baseline_minutes = (taken_now - sample.taken_at).total_seconds() / 60
         result.baseline_taken_at = sample.taken_at
         result.baseline_run_id = sample.run_id
+        result.baseline_raw_outputs = sample.raw_outputs
         # A member with no earlier sample simply gets no delta; the rules
         # already fail closed on a missing one.
         result.member_baseline_stats = {

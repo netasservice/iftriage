@@ -3,6 +3,8 @@ the v2 ladder (verdict + confidence + signals)."""
 
 from datetime import UTC, datetime
 
+import pytest
+
 from iftriage.config import Thresholds
 from iftriage.models import (
     Confidence,
@@ -403,6 +405,119 @@ def test_unattributed_rx_dominant_is_physical_high():
     )
 
 
+def test_degraded_reliability_is_corroborating_evidence():
+    # reliability 132/255 is the device's own error-weighted average saying
+    # half the traffic is bad — the best free corroboration there is.
+    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    climbing = make_stats(
+        input_errors=5_600,
+        crc_errors=5_600,
+        input_packets=1_100_000,
+        reliability=132,
+    )
+    verdict = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert SignalKind.RELIABILITY_DEGRADED in signal_kinds(verdict)
+
+
+def test_healthy_reliability_emits_no_signal():
+    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    climbing = make_stats(
+        input_errors=5_600,
+        crc_errors=5_600,
+        input_packets=1_100_000,
+        reliability=255,
+    )
+    verdict = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
+    assert SignalKind.RELIABILITY_DEGRADED not in signal_kinds(verdict)
+
+
+def test_small_reconciliation_residual_reads_as_sampling_skew():
+    # Residual -23 at ~1 err/s is the ~24 s between the two show commands
+    # advancing the counter — skew, not an accounting problem, and it must
+    # not cost the verdict its confidence.
+    earlier = make_stats(
+        input_errors=100_000,
+        crc_errors=100,
+        rcv_err=95_000,
+        fcs_errors=100,
+        align_errors=0,
+        runts=5_000,
+    )
+    current = make_stats(
+        input_errors=200_000,
+        crc_errors=185,
+        rcv_err=190_023,  # 23 ahead of the identity: read moments apart
+        fcs_errors=185,
+        align_errors=0,
+        runts=10_000,
+        input_packets=1_200_000,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+    assert DataQualityKind.RECONCILIATION_SKEW in flag_kinds(verdict)
+    assert DataQualityKind.COUNTER_RECONCILIATION_FAILED not in flag_kinds(verdict)
+    assert verdict.confidence is Confidence.HIGH
+
+
+def test_resets_on_an_old_counter_are_not_evidence():
+    nine_years = 9.7 * 365 * 1440
+    earlier = make_stats(
+        input_errors=5_000,
+        crc_errors=5_000,
+        input_packets=1_000_000,
+        last_clearing_minutes=nine_years,
+    )
+    climbing = make_stats(
+        input_errors=5_600,
+        crc_errors=5_600,
+        input_packets=1_100_000,
+        interface_resets=60,
+        last_clearing_minutes=nine_years,
+    )
+    verdict = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
+    # 60 resets over 9.7 years is ~6/year: maintenance noise.
+    assert SignalKind.INTERFACE_RESETS not in signal_kinds(verdict)
+
+
+def test_resets_on_a_young_counter_stay_evidence():
+    earlier = make_stats(input_errors=5_000, crc_errors=5_000, input_packets=1_000_000)
+    climbing = make_stats(
+        input_errors=5_600,
+        crc_errors=5_600,
+        input_packets=1_100_000,
+        interface_resets=7,
+    )
+    # Counter cleared a day ago (make_stats default): 7 resets in a day.
+    verdict = run(make_case("Rcv-Err"), climbing, earlier, minutes=1080)
+    assert SignalKind.INTERFACE_RESETS in signal_kinds(verdict)
+
+
+def test_fault_onset_is_dated_when_the_arithmetic_agrees():
+    # 429.9M lifetime errors at ~59/s spans 84 days — exactly the age of the
+    # last valid frame: the fault has run at this rate since traffic stopped.
+    lifetime = 429_895_397
+    last_input_minutes = 84 * 1440.0
+    delta = 3_924_057  # ~59.24/s over the 18.4 h window
+    earlier = make_stats(
+        input_errors=lifetime - delta,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        last_clearing_minutes=174 * 1440.0,
+    )
+    current = make_stats(
+        input_errors=lifetime,
+        crc_errors=2,
+        input_packets=80_914_346,
+        input_rate_pps=0,
+        last_input_minutes=last_input_minutes,
+        last_clearing_minutes=174 * 1440.0,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1104)
+    assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
+    assert SignalKind.FAULT_ONSET_ESTIMATE in signal_kinds(verdict)
+
+
 def test_reconciliation_residual_above_one_percent_caps_low():
     # input_errors != runts + rcv_err by 5%.
     current = make_stats(
@@ -470,6 +585,64 @@ def test_dom_out_of_range_is_physical_media():
     verdict = run(make_case("Rcv-Err"), stats)
     assert verdict.category is VerdictCategory.PHYSICAL_MEDIA
     assert SignalKind.DOM_RX_OUT_OF_RANGE in signal_kinds(verdict)
+
+
+def test_metrics_follow_the_case_counter_for_late_collisions():
+    # The audit found "Error rate 0.00/s" printed beside a 955,413 late-
+    # collision delta: the rate came from input_errors. It must follow the
+    # case's own counter, and its ratio population is attempted TX frames.
+    earlier = make_stats(
+        late_collisions=57_507_585,
+        output_packets=234_000_000,
+        input_errors=1,
+        crc_errors=1,
+    )
+    current = make_stats(
+        late_collisions=58_462_998,
+        output_packets=235_417_421,
+        input_errors=1,
+        crc_errors=1,
+    )
+    verdict = run(make_case("Late-Col"), current, earlier, minutes=1104)
+    metrics = verdict.metrics
+    assert metrics.delta_tool == 955_413
+    assert metrics.errors_per_second == pytest.approx(955_413 / (1104 * 60))
+    assert metrics.ratio_basis == "transmitted frames"
+    assert metrics.error_ratio == pytest.approx(955_413 / (1_417_421 + 955_413))
+
+
+def test_metrics_rate_uses_discards_for_an_indiscards_case():
+    earlier = make_stats(
+        discards_in=46_238_505,
+        input_packets=4_342_000_000,
+        input_errors=0,
+        crc_errors=0,
+    )
+    current = make_stats(
+        discards_in=46_620_415,
+        input_packets=4_348_528_282,
+        input_errors=0,
+        crc_errors=0,
+    )
+    verdict = run(make_case("InDiscards"), current, earlier, minutes=1104)
+    assert verdict.metrics.delta_tool == 381_910
+    assert verdict.metrics.errors_per_second == pytest.approx(381_910 / (1104 * 60))
+    assert verdict.metrics.ratio_basis == "received frames"
+
+
+def test_single_sample_case_still_prints_a_lifetime_ratio():
+    stats = make_stats(
+        input_errors=162_385_599,
+        crc_errors=161_248_798,
+        input_packets=633_344_904_992,
+    )
+    verdict = run(make_case("Rcv-Err"), stats)
+    metrics = verdict.metrics
+    assert metrics.error_ratio == pytest.approx(
+        162_385_599 / (633_344_904_992 + 162_385_599)
+    )
+    assert metrics.ratio_basis == "lifetime received frames"
+    assert metrics.errors_per_second is None  # a share, never a rate
 
 
 def test_no_division_when_everything_is_zero():
@@ -551,6 +724,95 @@ def test_indiscards_at_rate_is_congestion_buffer_not_physical():
     stats = make_stats(discards_in=200_000, input_packets=1_000_000)
     verdict = run(make_case("InDiscards"), stats)
     assert verdict.category is VerdictCategory.CONGESTION_BUFFER
+
+
+def test_discards_at_rate_without_congestion_signature_reads_as_policy():
+    # Buffer-side counters known and flat: CONGESTION_BUFFER would claim
+    # buffer pressure the counters refute — the report says policy drops.
+    earlier = make_stats(discards_in=0, overrun=0, ignored=0, no_buffer=0)
+    current = make_stats(
+        discards_in=30_000,
+        input_packets=2_000_000,
+        overrun=0,
+        ignored=0,
+        no_buffer=0,
+    )
+    verdict = run(make_case("InDiscards"), current, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.CONGESTION_BUFFER
+    assert verdict.confidence is Confidence.MEDIUM
+    assert "no_congestion_signature" in verdict.reason
+    assert SignalKind.DISCARDS_WITHOUT_CONGESTION_SIGNATURE in signal_kinds(verdict)
+
+
+def test_discards_at_rate_with_buffer_activity_stays_high():
+    earlier = make_stats(discards_in=0, overrun=0, ignored=0, no_buffer=0)
+    current = make_stats(
+        discards_in=30_000,
+        input_packets=2_000_000,
+        overrun=20_000,
+        ignored=5_000,
+        no_buffer=0,
+    )
+    verdict = run(make_case("InDiscards"), current, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.CONGESTION_BUFFER
+    assert verdict.confidence is Confidence.HIGH
+    assert "discards_at_rate" in verdict.reason
+
+
+def test_discards_with_unknown_buffer_counters_caps_medium():
+    earlier = make_stats(discards_in=0)
+    current = make_stats(discards_in=30_000, input_packets=2_000_000)
+    verdict = run(make_case("InDiscards"), current, earlier, minutes=1080)
+    assert verdict.category is VerdictCategory.CONGESTION_BUFFER
+    assert verdict.confidence is Confidence.MEDIUM
+    assert DataQualityKind.NULL_RULE_INPUT in flag_kinds(verdict)
+
+
+def test_lifetime_congestion_buckets_never_read_as_symbol_corruption():
+    # The unattributed residual excludes overrun/ignored/no-buffer when the
+    # platform reports them: buffer drops must not be labeled symbol-level
+    # corruption on a congested port.
+    earlier = make_stats(
+        input_errors=90_000,
+        crc_errors=50,
+    )
+    current = make_stats(
+        input_errors=180_000,
+        crc_errors=100,
+        rcv_err=180_000,
+        fcs_errors=100,
+        align_errors=0,
+        overrun=120_000,
+        ignored=50_000,
+        input_packets=2_200_000,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=1080)
+    assert "unattributed_rx_dominant" not in verdict.reason
+
+
+def test_zero_traffic_verdict_omits_the_bytes_per_frame_corollary():
+    # Bytes-per-frame above MTU is the same observation as errors-without-
+    # traffic wearing a hat: with almost no counted frames the average
+    # explodes by construction. It must not be listed as extra evidence.
+    earlier = make_stats(
+        input_errors=319_466_596,
+        crc_errors=185,
+        input_packets=561_806,
+        input_rate_pps=0,
+        bytes_input=88_557_466_233,
+        mtu=9160,
+    )
+    current = make_stats(
+        input_errors=320_792_846,
+        crc_errors=185,
+        input_packets=561_806,
+        input_rate_pps=0,
+        bytes_input=88_559_000_000,
+        mtu=9160,
+    )
+    verdict = run(make_case("Rcv-Err"), current, earlier, minutes=int(39.8 * 60))
+    assert "zero_traffic_errors" in verdict.reason
+    assert SignalKind.BYTES_PER_FRAME_ABOVE_MTU not in signal_kinds(verdict)
 
 
 def test_discards_below_the_threshold_is_ignore():
@@ -760,7 +1022,9 @@ def test_member_case_keeps_its_own_verdict_and_lists_siblings():
     assert verdict.category is VerdictCategory.IGNORE
     assert "Ethernet4/16" not in verdict.reason
     assert verdict.member_findings["Ethernet4/16"].startswith("PHYSICAL_MEDIA")
-    assert any("member of port-channel Po195" in d for d in verdict.details)
+    # With a member breakdown present, the breakdown's own header labels the
+    # relationship — the details line would say it twice.
+    assert not any("member of port-channel Po195" in d for d in verdict.details)
 
 
 def test_member_case_verdict_matches_the_plain_single_interface_path():

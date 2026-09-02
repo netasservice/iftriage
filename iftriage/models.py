@@ -52,11 +52,14 @@ class SignalKind(StrEnum):
     RUNTS_DOMINANT_NO_COLLISIONS = "runts_dominant_no_collisions"
     FCS_FRACTION_ACTIVE = "fcs_fraction_active"
     BUFFER_GROUP_DOMINANT = "buffer_group_dominant"
+    DISCARDS_WITHOUT_CONGESTION_SIGNATURE = "discards_without_congestion_signature"
     LATE_COLLISIONS_FULL_DUPLEX = "late_collisions_full_duplex"
     GIANTS_WITH_MTU_MISMATCH = "giants_with_mtu_mismatch"
     SPEED_BELOW_CAPABILITY = "speed_below_capability"
+    RELIABILITY_DEGRADED = "reliability_degraded"
     BYTES_PER_FRAME_ABOVE_MTU = "bytes_per_frame_above_mtu"
     DOM_RX_OUT_OF_RANGE = "dom_rx_out_of_range"
+    FAULT_ONSET_ESTIMATE = "fault_onset_estimate"
     ZERO_DELTA_NONZERO_LIFETIME = "zero_delta_nonzero_lifetime"
     LOW_FCS_DOES_NOT_CLEAR_MEDIA = "low_fcs_does_not_clear_media"
     INTERFACE_RESETS = "interface_resets"
@@ -69,6 +72,7 @@ class DataQualityKind(StrEnum):
 
     RATIO_OUT_OF_RANGE = "ratio_out_of_range"
     COUNTER_RECONCILIATION_FAILED = "counter_reconciliation_failed"
+    RECONCILIATION_SKEW = "reconciliation_skew"
     DELTA_SOURCE_DISAGREEMENT = "delta_source_disagreement"
     STALE_POLL_TIMESTAMP = "stale_poll_timestamp"
     INTERVAL_FROM_INGEST_TIME = "interval_from_ingest_time"
@@ -176,6 +180,13 @@ class NormalizedInterfaceStats:
     collisions: int | None = None
     output_errors: int | None = None
     interface_resets: int | None = None
+    # Device-computed health/load averages ("reliability 132/255,
+    # txload 1/255, rxload 6/255"). Reliability is the device's own
+    # error-weighted exponential average: 255/255 is healthy, anything lower
+    # is the device itself reporting degradation.
+    reliability: int | None = None
+    txload: int | None = None
+    rxload: int | None = None
     # Device-reported load-interval rates. The interval length matters as much
     # as the value ("30 seconds" vs "5 minute"), so it travels alongside.
     input_rate_pps: int | None = None
@@ -195,6 +206,14 @@ class NormalizedInterfaceStats:
     neighbor_name: str | None = None
     neighbor_port: str | None = None
     neighbor_duplex: str | None = None
+    # CDP "Platform:" string ("Cisco IP Phone 8841", "cisco C9500-32C") —
+    # remediation language depends on WHAT is at the far end: a managed
+    # phone's duplex is fixed in the call manager, not at the jack.
+    neighbor_platform: str | None = None
+    # NX-OS vPC membership ("vPC Status: Up, vPC number: 214"): a healthy
+    # peer leg means member-level remediation can be hitless.
+    vpc_status: str | None = None
+    vpc_number: int | None = None
     port_channel_members: dict[str, list[str]] | None = (
         None  # Po name -> member interfaces
     )
@@ -240,6 +259,7 @@ class VerdictMetrics:
     errors_per_second: float | None = None
     errors_per_hour: float | None = None
     error_ratio: float | None = None  # only ever a value inside [0, 1]
+    ratio_basis: str | None = None  # the denominator population, for the label
     delta_tool: int | None = None  # the CSV-flagged counter, run-to-run
     delta_csv: int | None = None  # the CSV `change` column, as supplied
     interval_minutes: float | None = None
@@ -284,6 +304,9 @@ class CaseResult:
     baseline_taken_at: datetime | None = None
     baseline_run_id: int | None = None
     raw_outputs: dict[str, str] = field(default_factory=dict)
+    # Raw command output of the EARLIER collection, keyed like raw_outputs,
+    # so the report can place the two samples of each command side by side.
+    baseline_raw_outputs: dict[str, str] = field(default_factory=dict)
     collection_error: str | None = None  # unreachable / auth failed / timeout / aborted
     # Why this case has no delta: nothing stored, too recent, too old, or the
     # stored sample was discarded. Reported per case so an un-compared
@@ -303,4 +326,8 @@ class CaseResult:
     member_errors: dict[str, str] = field(default_factory=dict)
     verdict: Verdict | None = None
     duplicate_of: str | None = None  # set when this is a member of a Po also in the CSV
-    recurrence: int = 0  # prior runs in which this switch+interface appeared
+    recurrence: int = 0
+    # High recurrence with a history of nothing but IGNORE: the top-20 feed
+    # ranks by absolute delta, so a busy uplink's negligible ratio can hold a
+    # seat forever. The report recommends fixing the search, not the port.
+    chronic_benign: bool = False  # prior runs in which this switch+interface appeared

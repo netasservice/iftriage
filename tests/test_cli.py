@@ -563,9 +563,7 @@ def test_from_history_refuses_when_a_case_was_never_collected(
     assert "sw-new Gi1/0/9 (Rcv-Err)" in err
 
 
-def test_from_history_says_which_collection_flags_it_ignores(
-    tmp_path, capsys, monkeypatch
-):
+def test_from_history_still_ignores_the_user_flag(tmp_path, capsys, monkeypatch):
     csv = _stored_run(tmp_path, monkeypatch)
     capsys.readouterr()
     _forbid_collection(monkeypatch)
@@ -585,7 +583,128 @@ def test_from_history_says_which_collection_flags_it_ignores(
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert "ignoring --no-baseline, --user" in out
+    assert "ignoring --user" in out
+    # --no-baseline is no longer ignored: it answers the pairing offer.
+    assert "Replaying the latest stored collection only." in out
+
+
+def _two_stored_runs(tmp_path, monkeypatch, ips=("10.0.0.1", "10.0.0.2")):
+    """Two completed runs 18 h apart (the first back-dated), for pairing."""
+    csv = _stored_run(tmp_path, monkeypatch, ips)
+    _backdate(tmp_path)
+    assert (
+        main(["run", str(csv), "--no-baseline", "--output", str(tmp_path / "second")])
+        == 0
+    )
+    return csv
+
+
+def test_from_history_offers_the_previous_collection_and_pairs_on_yes(
+    tmp_path, capsys, monkeypatch
+):
+    csv = _two_stored_runs(tmp_path, monkeypatch)
+    capsys.readouterr()
+    _forbid_collection(monkeypatch)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    rc = main(["run", str(csv), "--from-history", "--output", str(tmp_path / "out")])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "A previous stored collection exists for" in out
+    assert "Paired" in out
+    report = next((tmp_path / "out").glob("iftriage_report_*.txt")).read_text()
+    # Both live runs answered --no-baseline; the pairing is what makes the
+    # rebuilt report a two-sample one.
+    assert "Baseline: 2 of 2 case(s)" in report
+
+
+def test_from_history_baseline_flag_pairs_without_prompting(
+    tmp_path, capsys, monkeypatch
+):
+    csv = _two_stored_runs(tmp_path, monkeypatch)
+    capsys.readouterr()
+    _forbid_collection(monkeypatch)
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt="": pytest.fail("--baseline must not prompt"),
+    )
+
+    rc = main(
+        [
+            "run",
+            str(csv),
+            "--from-history",
+            "--baseline",
+            "--output",
+            str(tmp_path / "out"),
+        ]
+    )
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Paired" in out
+
+
+def test_from_history_defaults_to_latest_only_without_a_terminal(
+    tmp_path, capsys, monkeypatch
+):
+    csv = _two_stored_runs(tmp_path, monkeypatch)
+    capsys.readouterr()
+    _forbid_collection(monkeypatch)
+
+    def eof(prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof)
+
+    rc = main(["run", str(csv), "--from-history", "--output", str(tmp_path / "out")])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Paired" not in out
+    assert "Rebuilt from stored collection" in out
+
+
+def test_from_history_two_runs_too_close_offer_nothing(tmp_path, capsys, monkeypatch):
+    # Two runs seconds apart: below the minimum comparison window, so there
+    # is nothing to offer and no prompt fires.
+    csv = _stored_run(tmp_path, monkeypatch)
+    assert (
+        main(["run", str(csv), "--no-baseline", "--output", str(tmp_path / "second")])
+        == 0
+    )
+    capsys.readouterr()
+    _forbid_collection(monkeypatch)
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt="": pytest.fail("nothing eligible: must not prompt"),
+    )
+
+    rc = main(["run", str(csv), "--from-history", "--output", str(tmp_path / "out")])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "No eligible previous collection" in out
+
+
+def test_from_history_pairing_writes_nothing_back(tmp_path, capsys, monkeypatch):
+    csv = _two_stored_runs(tmp_path, monkeypatch)
+    capsys.readouterr()
+    _forbid_collection(monkeypatch)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    assert (
+        main(["run", str(csv), "--from-history", "--output", str(tmp_path / "out")])
+        == 0
+    )
+
+    conn = sqlite3.connect(tmp_path / "iftriage_history.db")
+    runs = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+    ingests = conn.execute("SELECT COUNT(*) FROM ingests").fetchone()[0]
+    conn.close()
+    assert runs == 2  # the two live runs; the replay recorded nothing
+    assert ingests == 2
 
 
 # ---- comparing against an earlier stored sample -----------------------------

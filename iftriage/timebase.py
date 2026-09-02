@@ -27,7 +27,7 @@ WINDOW_LABEL_TOLERANCE = 0.10
 class IntervalSource(StrEnum):
     """Where an interval length came from, strongest first."""
 
-    DEVICE_UPTIME = "device uptime"
+    DEVICE_UPTIME = "device clock (uptime delta)"
     DEVICE_LAST_CLEAR = "device counter-clear age"
     CSV_POLL_TIME = "CSV poll timestamps"
     HOST_INGEST_TIME = "host-side timestamps"

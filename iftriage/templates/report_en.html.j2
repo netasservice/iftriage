@@ -3,7 +3,7 @@
 {#- Sentence catalog: the engine emits signal/flag KINDS plus named counter
     values; every sentence an operator reads lives here. A new report
     language is a copy of this file with translated macro bodies. -#}
-{%- macro signal_text(s) -%}
+{%- macro signal_text(s, kinds=None) -%}
 {%- if s.kind.value == 'zero_traffic_errors' -%}
 Receive errors advanced {{ '{:,}'.format(s.values.delta_input_errors) }} (~{{ s.values.errors_per_second }}/s) while the device-reported input rate was {{ s.values.input_rate_pps if s.values.input_rate_pps != -1 else '?' }} pps{% if s.values.last_input_minutes != -1 %} and last input was {{ window(s.values.last_input_minutes) }} prior{% endif %}. Errors are accumulating without valid traffic, which places the fault at the link, not in the traffic.
 {%- elif s.kind.value == 'unattributed_rx_dominant' -%}
@@ -14,22 +14,28 @@ Runts dominate the input-error total with zero collision activity: frames are no
 FCS errors are {{ '%.1f'|format(100 * s.values.fcs_fraction) }}% of input errors: frames are arriving but corrupted — marginal signal rather than link-level corruption.
 {%- elif s.kind.value == 'buffer_group_dominant' -%}
 {% if s.values.buffer_group is defined %}Overrun/ignored/no-buffer/input-queue drops account for {{ '{:,}'.format(s.values.buffer_group) }} of {{ '{:,}'.format(s.values.input_errors) }} input errors in the window: congestion or buffer pressure, not a media problem.{% else %}{{ '{:,}'.format(s.values.discards) }} {{ s.values.direction }} discards at meaningful rate: frames arrived intact and were dropped — oversubscription, policer, or ring sizing, not media.{% endif %}
+{%- elif s.kind.value == 'discards_without_congestion_signature' -%}
+{{ '{:,}'.format(s.values.discards) }} {{ s.values.direction }} discards at meaningful rate with no buffer-pressure signature beside them (overrun/ignored/no-buffer flat): consistent with policy drops — an unallowed VLAN on the trunk, an ACL, or storm-control — rather than congestion. Check policy before provisioning capacity.
+{%- elif s.kind.value == 'reliability_degraded' -%}
+Interface reliability {{ s.values.reliability }}/255: the device's own error-weighted average reports the link as degraded (255/255 is healthy).
 {%- elif s.kind.value == 'late_collisions_full_duplex' -%}
-{{ '{:,}'.format(s.values.late_collisions) }} late collisions on a {{ s.values.duplex }}-duplex link{% if s.values.neighbor_duplex is defined and s.values.neighbor_duplex not in ('?', '') %} (neighbor {{ s.values.neighbor_name }} reports {{ s.values.neighbor_duplex }}){% endif %}: negotiation/duplex mismatch — fixed via CLI, not by touching media.
+{{ '{:,}'.format(s.values.late_collisions) }} late collisions on a {{ s.values.duplex }}-duplex link{% if s.values.neighbor_duplex is defined and s.values.neighbor_duplex not in ('?', '') %} (neighbor {{ s.values.neighbor_name }}{% if s.values.neighbor_platform is defined and s.values.neighbor_platform not in ('?', '') %}, {{ s.values.neighbor_platform }},{% endif %} reports {{ s.values.neighbor_duplex }}){% endif %}: negotiation/duplex mismatch — fixed via CLI, not by touching media.
 {%- elif s.kind.value == 'giants_with_mtu_mismatch' -%}
 Giants dominate the error profile ({{ '{:,}'.format(s.values.giants) }}, local MTU {{ s.values.mtu }}): consistent with an MTU mismatch between ends. The far end's MTU is not known to this tool — unresolved.
 {%- elif s.kind.value == 'speed_below_capability' -%}
-Link negotiated {{ s.values.speed }} on a {{ s.values.media_type }} port. Consistent with damaged pairs forcing a fallback, but equally consistent with a genuinely 100M endpoint — unresolved.
+Link negotiated {{ s.values.speed }} on a {{ s.values.media_type }} port{% if kinds and ('unattributed_rx_dominant' in kinds or 'runts_dominant_no_collisions' in kinds or 'zero_traffic_errors' in kinds) %} while symbol-level corruption dominates the receive errors: 1000BaseT needs all four pairs, and a damaged pair forces exactly this fallback — one damaged-pair story explains the speed, the corruption{% if 'interface_resets' in kinds %}, and the resets{% endif %}. Still consistent with a genuinely 100M endpoint — the TDR resolves it{% else %}. Consistent with damaged pairs forcing a fallback, but equally consistent with a genuinely 100M endpoint — unresolved{% endif %}.
 {%- elif s.kind.value == 'bytes_per_frame_above_mtu' -%}
 Byte counter implies ~{{ '{:,}'.format(s.values.bytes_per_frame) }} B/frame against MTU {{ s.values.mtu }}, indicating errored octets are being counted — weak corroboration of PHY-level errors.
 {%- elif s.kind.value == 'dom_rx_out_of_range' -%}
 DOM receive power {{ '%.1f'|format(s.values.dom_rx_power_dbm) }} dBm is outside {{ '%g'|format(s.values.dom_rx_low_dbm) }}..{{ '%g'|format(s.values.dom_rx_high_dbm) }} dBm: degraded optical path.
+{%- elif s.kind.value == 'fault_onset_estimate' -%}
+The lifetime total at the current rate spans {{ window(s.values.onset_minutes) }} — matching the {{ window(s.values.last_input_minutes) }} since the last valid frame. The fault has likely run at this rate since valid traffic stopped: a concrete date to correlate with change windows.
 {%- elif s.kind.value == 'zero_delta_nonzero_lifetime' -%}
 The lifetime counter is large ({{ '{:,}'.format(s.values.values() | first) }}) but did not move between this tool's two observations: an old event, not an incident. Nobody needs to be dispatched.
 {%- elif s.kind.value == 'low_fcs_does_not_clear_media' -%}
 FCS-Err is only {{ '{:,}'.format(s.values.fcs_errors) }} of {{ '{:,}'.format(s.values.input_errors) }}. Low FCS does not rule out media faults: symbol corruption and short frames are discarded before the FCS check, so severe link damage can present with near-zero FCS. Verdict retained.
 {%- elif s.kind.value == 'interface_resets' -%}
-{{ s.values.interface_resets }} interface resets.
+{{ s.values.interface_resets }} interface resets{% if s.values.resets_per_year is defined %} (~{{ s.values.resets_per_year }}/year over the counter's life){% endif %}.
 {%- elif s.kind.value == 'errors_stopped_after_clear' -%}
 If the errors stop advancing after a coordinated manual counter clear and a repoll, with the port otherwise untouched, reclassify HISTORIC_NOT_ACTIVE.
 {%- elif s.kind.value == 'errors_resumed' -%}
@@ -46,24 +52,31 @@ If the counter advances again on a future run, the case reopens and is reclassif
 {%- set copper = 'baset' in media -%}
 {%- set fiber = r.stats and r.stats.dom_rx_power_dbm is not none -%}
 {%- set category = r.verdict.category.value -%}
+{%- set bundle_case = r.verdict.member_findings and not r.parent_portchannel -%}
+{%- set clear_target = 'the culpable member interface (the bundle aggregates its members)' if bundle_case else 'this interface' -%}
 {%- if category == 'PHYSICAL_MEDIA' -%}
 {%- if copper -%}
-<p class="muted"><strong>Next steps — non-disruptive:</strong> identify the attached device and its native speed; inspect the patch cord and the jack; correlate the error history with the interface resets. DOM is not implemented on this copper port — expected, not a finding.</p>
-<p class="muted"><strong>Disruptive, coordinate first:</strong> TDR (<code>test cable-diagnostics tdr</code>) on {{ r.case.interface }}; a manual counter clear on this interface and a repoll at 24&nbsp;h to establish a clean baseline.</p>
+<p class="muted"><strong>Next steps — non-disruptive:</strong> identify the attached device and its native speed; inspect the patch cord and the jack{% if r.stats and r.stats.interface_resets %}; correlate the error history with the interface resets{% endif %}. DOM is not implemented on this copper port — expected, not a finding.</p>
+<p class="muted"><strong>Disruptive, coordinate first:</strong> TDR (<code>test cable-diagnostics tdr</code>) on {{ r.case.interface }}; a manual counter clear on {{ clear_target }} and a repoll at 24&nbsp;h to establish a clean baseline.</p>
 {%- elif fiber -%}
-<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect and clean the fiber connectors and patch panel; check the transceiver's DOM receive-power trend; verify the optic is seated.</p>
+<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect and clean the fiber connectors and patch panel; check the transceiver's DOM receive-power trend (this reading: {{ '%.1f'|format(r.stats.dom_rx_power_dbm) }} dBm — a single reading, not a trend); verify the optic is seated.</p>
 <p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear and a repoll at 24&nbsp;h; replace the transceiver if DOM stays out of range.</p>
 {%- else -%}
-<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect the physical path.</p>
-<p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear on this interface and a repoll at 24&nbsp;h.</p>
+<p class="muted"><strong>Next steps — non-disruptive:</strong> inspect the physical path.{% if media and not copper %} DOM could not be read from the transceiver output on this port — check it manually.{% endif %}</p>
+<p class="muted"><strong>Disruptive, coordinate first:</strong> a manual counter clear on {{ clear_target }} and a repoll at 24&nbsp;h.</p>
 {%- endif -%}
 {%- elif category == 'LINK_NEGOTIATION' -%}
-<p class="muted"><strong>Next steps:</strong> fix via CLI — align speed/duplex (and MTU where giants dominate) on both ends. Not a media dispatch.</p>
+{%- set phone = r.stats and ('phone' in (r.stats.neighbor_platform or '') | lower or (r.stats.neighbor_name or '').startswith('SEP')) -%}
+<p class="muted"><strong>Next steps:</strong> fix via CLI — align speed/duplex (and MTU where giants dominate) on both ends.{% if phone %} The endpoint is a managed IP phone: its speed/duplex is set from the call manager (CUCM), not at the jack.{% endif %} Not a media dispatch.</p>
 {%- elif category == 'CONGESTION_BUFFER' -%}
-<p class="muted"><strong>Next steps:</strong> review oversubscription, policers, and buffer/ring sizing on this path. Not a media dispatch.</p>
+{%- set policy = r.verdict.signals | selectattr('kind.value', 'equalto', 'discards_without_congestion_signature') | list -%}
+{% if policy %}<p class="muted"><strong>Next steps:</strong> check the port's policy first — trunk allowed VLANs, ACL hit counters, storm-control — before provisioning capacity; the buffer-side counters are flat. Not a media dispatch.</p>{% else %}<p class="muted"><strong>Next steps:</strong> review oversubscription, policers, and buffer/ring sizing on this path. Not a media dispatch.</p>{% endif %}
 {%- elif category == 'HISTORIC_NOT_ACTIVE' -%}
 <p class="muted"><strong>Next steps:</strong> coordinate a manual counter clear, then requeue for a future run. Do not dispatch anyone.</p>
 {%- endif -%}
+{%- if r.stats and r.stats.vpc_status and r.stats.vpc_status | lower == 'up' and category in ('PHYSICAL_MEDIA', 'LINK_NEGOTIATION', 'CONGESTION_BUFFER') %}
+<p class="muted">This port serves vPC {{ r.stats.vpc_number }} and the vPC is up: the peer switch carries a leg to the same host, so member-level remediation can be hitless — verify the peer leg is healthy first, and check it for the same errors.</p>
+{%- endif %}
 {%- endmacro -%}
 {%- macro dq_text(f) -%}
 {%- if f.kind.value == 'stale_poll_timestamp' -%}
@@ -71,7 +84,9 @@ CSV poll timestamp is {{ window(f.values.staleness_minutes) }} old at report tim
 {%- elif f.kind.value == 'interval_from_ingest_time' -%}
 Interval ({{ window(f.values.interval_minutes) }}) derived from host-side timestamps, not device time.
 {%- elif f.kind.value == 'delta_source_disagreement' -%}
-Δ sources disagree: iftriage run-to-run {{ '{:,}'.format(f.values.delta_tool) }} vs CSV change {{ '{:,}'.format(f.values.delta_csv) }}. The tool's own observation is used for rate math because its interval is measured.
+Δ sources disagree: iftriage run-to-run {{ '{:,}'.format(f.values.delta_tool) }} vs CSV change {{ '{:,}'.format(f.values.delta_csv) }}. The tool's own delta is used for rate math (its interval is measured); the CSV export does not state its delta window and it has proven inconsistent across rows — confirm it in the Splunk search before comparing the two figures.
+{%- elif f.kind.value == 'reconciliation_skew' -%}
+Input-error reconciliation is off by {{ f.values.residual }} — consistent with the counters advancing (~{{ f.values.errors_per_second }}/s) between the two show commands, not an accounting problem.
 {%- elif f.kind.value == 'counter_reconciliation_failed' -%}
 Input-error reconciliation does not balance: residual {{ '{:,}'.format(f.values.residual) }} ({{ '%.1f'|format(100 * f.values.residual_fraction) }}% of the total).
 {%- elif f.kind.value == 'no_second_observation' -%}
@@ -111,6 +126,12 @@ The CSV `_time` column carries no timezone; UTC was assumed.
   .v-UNVERIFIED           { background: #ececec; color: #555; }
   .v-PARSE_ERROR          { background: #f3e3fd; color: #5d1d8f; }
   details { margin-top: 0.6em; }
+  .rawgrid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.6em;
+             align-items: start; }
+  /* grid items default to min-width auto, which defeats pre's overflow-x */
+  .rawgrid pre { min-width: 0; margin: 0.2em 0 0.6em 0; }
+  .rawhead { font-weight: 600; }
+  .rawmissing { color: #99a; font-style: italic; }
   pre { background: #0f1720; color: #d8e1ea; padding: 0.8em; border-radius: 6px;
         overflow-x: auto; font-size: 0.8em; }
   .muted { color: #667; font-size: 0.9em; }
@@ -154,14 +175,15 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
   <p>{{ r.verdict.reason if r.verdict else 'No verdict.' }}</p>
   {% if r.verdict and r.verdict.signals %}
   {% set supporting = r.verdict.signals | rejectattr('contradicts') | list %}
+  {% set kinds = r.verdict.signals | map(attribute='kind.value') | list %}
   {% set against = r.verdict.signals | selectattr('contradicts') | list %}
   {% if supporting %}
   <div class="evidence"><strong>Evidence</strong>
-  <ul>{% for s in supporting %}<li>{{ signal_text(s) }}</li>{% endfor %}</ul></div>
+  <ul>{% for s in supporting %}<li>{{ signal_text(s, kinds) }}</li>{% endfor %}</ul></div>
   {% endif %}
   {% if against %}
   <div class="against"><strong>Evidence against</strong>
-  <ul>{% for s in against %}<li>{{ signal_text(s) }}</li>{% endfor %}</ul></div>
+  <ul>{% for s in against %}<li>{{ signal_text(s, kinds) }}</li>{% endfor %}</ul></div>
   {% endif %}
   {% endif %}
   {% if r.verdict and r.verdict.metrics %}
@@ -170,7 +192,7 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
     {% if m.delta_tool is not none %}<tr><td>Δ (iftriage, run-to-run)</td><td>{{ '{:,}'.format(m.delta_tool) }}{% if m.interval_minutes %} over {{ window(m.interval_minutes) }} ({{ m.interval_source }}){% endif %}</td></tr>{% endif %}
     {% if m.delta_csv is not none %}<tr><td>Δ (CSV, Splunk window)</td><td>{{ '{:,}'.format(m.delta_csv) }}</td></tr>{% endif %}
     {% if m.errors_per_second is not none %}<tr><td>Error rate</td><td>{{ '%.2f'|format(m.errors_per_second) }}/s ({{ '{:,.0f}'.format(m.errors_per_hour) }}/h)</td></tr>{% endif %}
-    {% if m.error_ratio is not none %}<tr><td>Error ratio</td><td>{{ '%.4f'|format(100 * m.error_ratio) }}% of received frames</td></tr>{% endif %}
+    {% if m.error_ratio is not none %}<tr><td>Error ratio</td><td>{{ '%.4f'|format(100 * m.error_ratio) }}% of {{ m.ratio_basis or 'received frames' }}</td></tr>{% endif %}
   </table>
   {% endif %}
   {% if r.verdict and r.verdict.data_quality %}
@@ -183,7 +205,7 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
   {% if r.verdict %}{{ next_steps(r) }}{% endif %}
   {% if r.duplicate_of %}
   <p class="muted">Note: member of {{ r.duplicate_of }}, which is also in this
-  report — same physical issue counted twice.</p>
+  report — same underlying issue counted twice.</p>
   {% endif %}
   {% set judged_on_counters = r.stats and (not r.verdict or r.verdict.category != VerdictCategory.PARSE_ERROR) %}
   {% if judged_on_counters and r.baseline_taken_at %}
@@ -208,7 +230,7 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
   {% endif %}
   {% if r.recurrence > 1 %}
   <p class="muted">Recurrence: this interface has appeared in {{ r.recurrence }}
-  ingested top-20 lists.</p>
+  ingested top-20 lists.{% if r.chronic_benign %} Every stored verdict for it is IGNORE — a chronic benign resident: the top-20 ranks by absolute delta, so a busy link's negligible ratio holds a seat permanently, displacing ports with real faults. Consider re-ranking the Splunk search by error ratio, or excluding this interface, rather than re-triaging it.{% endif %}</p>
   {% endif %}
   {% if r.case.dq_flags %}
   <p class="muted">Data-quality flags: {{ r.case.dq_flags | join(', ') }}</p>
@@ -216,13 +238,30 @@ contacted for this report. Device data comes from {{ meta.collected_from }}.</di
   {% if r.verdict and r.verdict.details %}
   <p class="muted">{{ r.verdict.details | join(' · ') }}</p>
   {% endif %}
-  {% if r.raw_outputs %}
+  {% if r.raw_outputs or r.baseline_raw_outputs %}
+  {% if r.baseline_raw_outputs %}
+  {% set extra_keys = r.baseline_raw_outputs | reject('in', r.raw_outputs) | list %}
+  {% set raw_keys = (r.raw_outputs | list) + extra_keys %}
+  <details><summary>Raw evidence — two collections, side by side ({{ raw_keys | length }} commands)</summary>
+    <div class="rawgrid">
+      <p class="muted rawhead">Earlier{% if r.baseline_taken_at %} — {{ r.baseline_taken_at.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}{% if r.baseline_run_id %} (run #{{ r.baseline_run_id }}){% endif %}</p>
+      <p class="muted rawhead">Current{% if r.stats and r.stats.collected_at %} — {{ r.stats.collected_at.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}</p>
+      {% for key in raw_keys %}
+      <p class="muted">{{ key }}</p>
+      <p class="muted">{{ key }}</p>
+      {% if key in r.baseline_raw_outputs %}<pre>{{ r.baseline_raw_outputs[key] }}</pre>{% else %}<p class="rawmissing">not captured in this collection</p>{% endif %}
+      {% if key in r.raw_outputs %}<pre>{{ r.raw_outputs[key] }}</pre>{% else %}<p class="rawmissing">not captured in this collection</p>{% endif %}
+      {% endfor %}
+    </div>
+  </details>
+  {% else %}
   <details><summary>Raw evidence ({{ r.raw_outputs | length }} commands)</summary>
     {% for key, raw in r.raw_outputs.items() %}
     <p class="muted">{{ key }}</p>
     <pre>{{ raw }}</pre>
     {% endfor %}
   </details>
+  {% endif %}
   {% endif %}
 </div>
 {% endfor %}

@@ -166,6 +166,30 @@ class DeltaWindow:
             f"delta_{field_name} / delta_received_frames",
         )
 
+    def rate_of(self, field_name: str) -> float | None:
+        """Per-second rate of one delta bucket over the window."""
+        value = getattr(self, field_name)
+        if value is None or self.interval is None or self.interval.seconds <= 0:
+            return None
+        return value / self.interval.seconds
+
+    def ratio_against_transmitted(self, field_name: str) -> RatioResult:
+        """Share of one delta bucket within attempted transmissions.
+
+        Frames lost to output discards or late collisions are absent from
+        `packets output`, so the bucket is added back — the quotient is
+        bounded to [0, 1] by construction.
+        """
+        value = getattr(self, field_name)
+        attempted = (
+            self.output_packets + value
+            if value is not None and self.output_packets is not None
+            else None
+        )
+        return _ratio(
+            value, attempted, f"delta_{field_name} / delta_attempted_tx_frames"
+        )
+
 
 def compute_delta_window(
     earlier: NormalizedInterfaceStats,
@@ -208,6 +232,27 @@ class LifetimeView:
             self.stats.input_errors,
             self.received_frames(),
             "lifetime_input_errors / lifetime_received_frames",
+        )
+
+    def ratio_of(self, field_name: str) -> RatioResult:
+        """Share of one lifetime bucket within lifetime received frames."""
+        return _ratio(
+            getattr(self.stats, field_name),
+            self.received_frames(),
+            f"lifetime_{field_name} / lifetime_received_frames",
+        )
+
+    def ratio_against_transmitted(self, field_name: str) -> RatioResult:
+        """Share of one lifetime bucket within attempted transmissions —
+        same add-back as the delta variant, on lifetime fields."""
+        value = getattr(self.stats, field_name)
+        attempted = (
+            self.stats.output_packets + value
+            if value is not None and self.stats.output_packets is not None
+            else None
+        )
+        return _ratio(
+            value, attempted, f"lifetime_{field_name} / lifetime_attempted_tx_frames"
         )
 
     def errors_per_second(self, window: IntervalEstimate | None) -> float | None:
@@ -275,24 +320,37 @@ def reconcile_input_errors(
 
 
 def unattributed_rx(stats: NormalizedInterfaceStats) -> int | None:
-    """The aggregate receive-error column minus its named buckets — the
-    symbol-error proxy on platforms without a symbol counter.
+    """The aggregate receive-error column minus every named bucket the
+    platform reported — the symbol-error proxy on platforms without a symbol
+    counter.
 
-    Requires `rcv_err`, `fcs_errors`, and `align_errors`; `symbol_errors` is
-    subtracted when the platform exposes it. Negative results mean the
+    Requires `rcv_err`, `fcs_errors`, and `align_errors`; `symbol_errors`,
+    `overrun`, `ignored`, `no_buffer`, and `giants` are each subtracted when
+    present, so congestion-side drops are never mistaken for symbol
+    corruption on a port that reports them. Negative results mean the
     buckets overlap differently than assumed and are returned as-is for the
     reconciliation flag to catch.
     """
     if stats.rcv_err is None or stats.fcs_errors is None or stats.align_errors is None:
         return None
     residual = stats.rcv_err - stats.fcs_errors - stats.align_errors
-    if stats.symbol_errors is not None:
-        residual -= stats.symbol_errors
+    for optional_bucket in (
+        stats.symbol_errors,
+        stats.overrun,
+        stats.ignored,
+        stats.no_buffer,
+        stats.giants,
+    ):
+        if optional_bucket is not None:
+            residual -= optional_bucket
     return residual
 
 
 def bytes_per_frame(stats: NormalizedInterfaceStats) -> float | None:
-    """Lifetime bytes over lifetime packets — same population by design."""
+    """Lifetime bytes over lifetime packets. NOT the same population when
+    frames are erroring: the byte counter can include octets from frames the
+    packet counter rejected, which is exactly what
+    `bytes_per_frame_exceeds_mtu` exists to detect."""
     if not stats.input_packets or stats.bytes_input is None:
         return None
     return stats.bytes_input / stats.input_packets

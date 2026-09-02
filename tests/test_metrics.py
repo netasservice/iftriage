@@ -70,6 +70,19 @@ def test_unattributed_rx_prefers_subtracting_symbol_when_present():
     assert unattributed_rx(stats) == 316073814 - 1000
 
 
+def test_unattributed_rx_subtracts_congestion_buckets_when_present():
+    stats = NormalizedInterfaceStats(
+        rcv_err=100_000,
+        fcs_errors=100,
+        align_errors=0,
+        overrun=60_000,
+        ignored=25_000,
+        no_buffer=1_000,
+        giants=900,
+    )
+    assert unattributed_rx(stats) == 100_000 - 100 - 60_000 - 25_000 - 1_000 - 900
+
+
 def test_unattributed_rx_requires_named_buckets():
     stats = golden_stats()
     stats.fcs_errors = None
@@ -136,6 +149,39 @@ def test_ratio_out_of_range_is_flagged_not_returned():
     assert outcome.value is None
     assert outcome.flag == RATIO_OUT_OF_RANGE
     assert "discards_out" in (outcome.detail or "")
+
+
+def test_rate_of_follows_the_named_field():
+    window = compute_delta_window(
+        NormalizedInterfaceStats(late_collisions=57_507_585, input_errors=1),
+        NormalizedInterfaceStats(late_collisions=58_462_998, input_errors=1),
+        HOST_WINDOW,
+    )
+    assert window.rate_of("late_collisions") == pytest.approx(
+        955_413 / HOST_WINDOW.seconds
+    )
+    assert window.rate_of("input_errors") == 0.0
+
+
+def test_ratio_against_transmitted_adds_the_lost_frames_back():
+    window = compute_delta_window(
+        NormalizedInterfaceStats(late_collisions=0, output_packets=0),
+        NormalizedInterfaceStats(late_collisions=400, output_packets=600),
+        HOST_WINDOW,
+    )
+    outcome = window.ratio_against_transmitted("late_collisions")
+    assert outcome.value == pytest.approx(0.4)
+
+
+def test_ratio_against_transmitted_without_output_packets_is_undefined():
+    window = compute_delta_window(
+        NormalizedInterfaceStats(late_collisions=0),
+        NormalizedInterfaceStats(late_collisions=400),
+        HOST_WINDOW,
+    )
+    outcome = window.ratio_against_transmitted("late_collisions")
+    assert outcome.value is None
+    assert outcome.flag is None
 
 
 def test_error_ratio_uses_received_frames_denominator():

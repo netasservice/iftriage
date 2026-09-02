@@ -6,7 +6,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Side-by-side raw evidence: whenever a report rests on two collections (a
+  live run with a baseline, or a two-collection replay), the HTML report
+  renders both raw outputs of every command in two aligned columns — older
+  left, newer right, per-command, with placeholders when a side lacks a
+  command so rows never shift — and the text report carries the same
+  comparison as sequential blocks, older first. The earlier raws are read
+  from the baseline run's own stored row: no schema change, nothing new
+  persisted.
+- `--from-history` can now build the report from the latest TWO stored
+  collections: when a second-newest replayable collection exists per case and
+  its spacing from the newest respects the `baseline` window (the gap between
+  the collections, not the wall clock), the command offers to pair them, the
+  older acting as the baseline. `--baseline` / `--no-baseline` answer the
+  offer up front — they were previously ignored under `--from-history` — and
+  a run without a terminal replays the latest collection only, faithfully.
+  Partial coverage falls back per case with a note; nothing is written back.
+- Chronic-benign detection: a case that keeps appearing in the ingested
+  top-20 (3+ lists) and has never been judged anything but IGNORE — this run
+  and at least two stored runs — is marked as a chronic benign resident, with
+  the report recommending the fix where it belongs: re-rank the Splunk
+  search by error ratio (it ranks by absolute delta, so a busy link's
+  negligible ratio holds a seat permanently) or exclude the interface.
+  The source-disagreement note and the README now say plainly that the CSV
+  `change` column's delta window is unstated and has proven inconsistent
+  across rows, and that it is never used for rate math.
+- Evidence is now time-aware. Interface resets are normalized by the
+  counter's age and cited only when actually frequent ("60 resets" over 9.7
+  years is six a year — maintenance, not evidence). When the lifetime error
+  total at the current rate spans exactly the time since the last valid
+  frame, the report dates the fault's onset — a concrete date to correlate
+  with change windows. A reconciliation residual no larger than what the
+  counters advance between two show commands is reported as sampling skew
+  (no confidence cost) instead of "does not balance". Fiber next steps now
+  print the DOM reading the tool already collected instead of sending the
+  operator to fetch it, and non-copper ports without a DOM parse say so.
+  The 100M-fallback line now connects to the symbol-corruption evidence when
+  both are present: one damaged-pair story instead of disconnected facts.
+- The canonical model and parsers now capture three pieces of context the
+  devices were already printing: the device-computed
+  `reliability x/255` triple (with txload/rxload; a value below 255 becomes
+  corroborating evidence — the device's own error-weighted average reporting
+  degradation), NX-OS vPC membership (`vPC Status/number` — actionable
+  verdicts on a healthy vPC now say member-level remediation can be hitless
+  and point at the peer leg), and the CDP neighbor `Platform:` string (a
+  duplex mismatch against a managed IP phone now says the fix lives in CUCM,
+  not at the jack). No new device commands; the allow-list is unchanged.
+
 ### Fixed
+- Report polish from the field audit: next steps no longer suggest
+  correlating with interface resets on a port that has none, and a
+  port-channel case's counter-clear step targets the culpable member (the
+  bundle only aggregates). The executive summary counts distinct issues when
+  port-channel duplicates are present; the duplicate note says "same
+  underlying issue" (an IGNORE discards pair is not a "physical issue"); and
+  a port-channel verdict no longer prints the same verdict string three
+  times (headline, member breakdown, and a bundle-analysis line that now
+  appears only when the bundle view disagrees).
+- Port-channel member samples now inherit the device-level fields (uptime,
+  model, OS version) from their parent case: the member pass deliberately
+  skips `show version`, which left members without a device clock — their
+  interval provenance degraded to host-side timestamps, with a spurious
+  data-quality flag, while the bundle on the same switch kept the device
+  clock.
+- The unattributed receive-error residual (the symbol-corruption proxy) now
+  subtracts every congestion-side bucket the platform reports (overrun,
+  ignored, no-buffer, giants), so buffer drops can no longer be labeled
+  "symbol-level corruption" on a congested port.
+- Input discards at rate on a port whose buffer-side counters are all flat
+  are now reported as policy drops (unallowed VLAN, ACL, storm-control) with
+  policy-first next steps, at MEDIUM — CONGESTION_BUFFER previously claimed
+  buffer pressure the counters themselves refuted. Unknown buffer counters
+  cap the claim instead of strengthening it.
+- The bytes-per-frame-above-MTU observation is no longer listed as extra
+  evidence under a zero-traffic verdict: with almost no counted frames the
+  average exceeds the MTU by construction — it is the same observation, not
+  corroboration.
+- The metrics block now follows the case's own counter. "Error rate" was
+  hardwired to the input-errors delta, so a Late-Col case printed
+  "0.00/s" beside a 955K late-collision delta; it is now the flagged
+  counter over the measured window. "Error ratio" names its denominator
+  population — transmit-side counters (Late-Col, OutDiscards) are shares
+  of attempted transmissions, never of received frames — and single-sample
+  cases now print their lifetime share, labeled as such.
+- The interval provenance label "(device uptime)" — which read as if the
+  device had been up for 18 hours on a chassis with years of uptime — is now
+  "(device clock (uptime delta))": the window was measured by the difference
+  of the device's own uptime readings.
 - The `zero_traffic_errors` rule no longer returns PHYSICAL_MEDIA HIGH while
   ignoring collision activity. It now applies the same collision guard as the
   media-dominance rule: with collisions or late collisions on the counters,

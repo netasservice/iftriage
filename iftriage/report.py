@@ -72,6 +72,14 @@ def build_summary(results: list[CaseResult]) -> dict:
     line = f"{len(results)} cases: " + ", ".join(
         f"{count} {name}" for name, count in ordered
     )
+    duplicates = sum(1 for result in results if result.duplicate_of)
+    if duplicates:
+        # A port-channel and its member are two CSV rows but one issue; the
+        # executive count must not read as two dispatches.
+        distinct = len(results) - duplicates
+        line += (
+            f" — {distinct} distinct issue(s); {duplicates} port-channel duplicate(s)"
+        )
     return {
         "total": len(results),
         "counts": {name: count for name, count in ordered},
