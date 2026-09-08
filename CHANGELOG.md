@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- The GitHub organization was renamed from `netcraftworks` to `netasservice`.
+  The install and release-download commands in the README point at the new
+  path; GitHub still redirects the old one, but the documented commands should
+  name the repository as it is.
+
 ## [0.9.0] - 2026-09-02
 
 ### Added
