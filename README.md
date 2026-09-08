@@ -193,7 +193,7 @@ tagged release — it needs no build toolchain and is byte-identical to what the
 pipeline tested:
 
 ```bash
-gh release download v0.2.0 --repo netcraftworks/iftriage -p '*.whl'
+gh release download v0.2.0 --repo netasservice/iftriage -p '*.whl'
 ```
 
 ```bash
@@ -204,7 +204,7 @@ Installing straight from the repository works too, and requires only git
 credentials:
 
 ```bash
-pip install "git+https://github.com/netcraftworks/iftriage.git@v0.2.0"
+pip install "git+https://github.com/netasservice/iftriage.git@v0.2.0"
 ```
 
 From a checkout:
